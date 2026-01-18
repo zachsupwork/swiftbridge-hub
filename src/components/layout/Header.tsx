@@ -21,13 +21,13 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2" aria-label="CryptoDeFiBridge Home">
+          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink" aria-label="CryptoDeFiBridge Home">
             <img 
               src={logoImage} 
               alt="CryptoDeFiBridge Logo" 
-              className="w-8 h-8 rounded-lg"
+              className="w-8 h-8 rounded-lg flex-shrink-0"
             />
-            <span className="text-xl font-bold text-gradient">CryptoDeFiBridge</span>
+            <span className="text-xl font-bold text-gradient truncate max-w-[140px] sm:max-w-none">CryptoDeFiBridge</span>
           </Link>
 
           {/* Desktop Navigation */}
