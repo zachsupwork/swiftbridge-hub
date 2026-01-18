@@ -128,6 +128,15 @@ export interface TransactionStatus {
   };
 }
 
+export interface TokenAmount extends Token {
+  amount: string;
+  blockNumber?: number;
+}
+
+export interface TokenBalancesResponse {
+  [chainId: string]: TokenAmount[];
+}
+
 // Popular tokens to show first
 const POPULAR_TOKENS: Record<number, string[]> = {
   1: ['ETH', 'USDC', 'USDT', 'DAI', 'WETH', 'WBTC', 'LINK', 'UNI'],
@@ -293,6 +302,24 @@ export async function getTransactionStatus(
     `${LIFI_BASE_URL}/v1/status?txHash=${txHash}&bridge=across&fromChain=${fromChainId}&toChain=${toChainId}`
   );
   return data;
+}
+
+export async function getTokenBalances(
+  walletAddress: string,
+  chainIds: number[]
+): Promise<TokenBalancesResponse> {
+  try {
+    const chainsParam = chainIds.join(',');
+    const data = await fetchWithTimeout<TokenBalancesResponse>(
+      `${LIFI_BASE_URL}/v1/token/balances?walletAddress=${walletAddress}&chains=${chainsParam}`,
+      undefined,
+      30000 // longer timeout for balance fetching
+    );
+    return data;
+  } catch (error) {
+    console.error('Failed to fetch token balances:', error);
+    return {};
+  }
 }
 
 export function getIntegratorFee(): number {
