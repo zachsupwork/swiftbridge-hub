@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info } from 'lucide-react';
 import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
 import { TokenSelector } from './TokenSelector';
@@ -383,12 +383,51 @@ export function SwapCard() {
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">You receive</label>
-            <div className="w-full p-3 rounded-xl glass text-2xl font-bold text-muted-foreground">
-              {route
-                ? formatUnits(BigInt(route.toAmount), toToken?.decimals || 18).slice(0, 10)
-                : '0.00'}
+            <div className="w-full p-3 rounded-xl glass text-2xl font-bold">
+              <AnimatePresence mode="wait">
+                {state === 'quoting' ? (
+                  <motion.span
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-2 text-muted-foreground"
+                  >
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-base">Finding best route…</span>
+                  </motion.span>
+                ) : route ? (
+                  <motion.span
+                    key="result"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="text-foreground"
+                  >
+                    {formatUnits(BigInt(route.toAmount), toToken?.decimals || 18).slice(0, 10)}
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="placeholder"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-sm text-muted-foreground/70 font-normal"
+                  >
+                    {isConnected 
+                      ? "Wallet connected — click Get Quote" 
+                      : "Click Get Quote to calculate output"}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
           </div>
+        </div>
+
+        {/* Quote info helper text */}
+        <div className="flex items-start gap-2 px-1 text-xs text-muted-foreground/60">
+          <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <span>
+            Quotes are calculated after clicking Get Quote. Cross-chain prices may change based on route and liquidity.
+          </span>
         </div>
 
         {/* Error message */}
