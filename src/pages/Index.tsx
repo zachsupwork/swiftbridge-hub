@@ -14,10 +14,12 @@ const Index = () => {
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
             <span className="text-gradient">CryptoDeFiBridge</span>
             <br />
-            <span className="text-foreground">Cross-Chain DeFi Bridge & Swap Aggregator</span>
+            <span className="text-foreground text-2xl md:text-3xl">Cross-Chain DeFi Bridge & Swap Aggregator</span>
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Swap tokens across multiple blockchains using the best liquidity routes with transparent fees. Non-custodial and secure.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Swap tokens across multiple blockchains using the best liquidity routes.
+            <br className="hidden sm:block" />
+            <span className="text-foreground/80">Non-custodial. Transparent fees. Secure by design.</span>
           </p>
         </motion.div>
 

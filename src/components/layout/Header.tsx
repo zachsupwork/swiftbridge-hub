@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, BarChart3, Menu, X, ArrowLeftRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import logoImage from '@/assets/logo.svg';
+import logoImage from '@/assets/cdb-logo.png';
 
 const navItems = [
   { path: '/swap', label: 'Swap', icon: ArrowLeftRight },
