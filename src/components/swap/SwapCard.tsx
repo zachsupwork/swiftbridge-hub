@@ -20,6 +20,7 @@ import {
   TransactionValidationError,
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
+import { isChainSupported, getChainName, getSupportedChainIds } from '@/lib/wagmiConfig';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
@@ -113,8 +114,26 @@ export function SwapCard() {
     setTxSimulation(null);
 
     try {
-      // Switch chain if needed
+      // Validate chain is supported before attempting switch
+      if (!isChainSupported(fromChainId)) {
+        throw new TransactionValidationError(
+          `Chain "${getChainName(fromChainId)}" (ID: ${fromChainId}) is not supported yet. Supported chains: ${getSupportedChainIds().join(', ')}`
+        );
+      }
+
+      // Debug logging for chain info
+      console.log('🔗 Route chain info:', {
+        fromChainId: route.fromChainId,
+        toChainId: route.toChainId,
+        walletChainId,
+        fromChainSupported: isChainSupported(route.fromChainId),
+        toChainSupported: isChainSupported(route.toChainId),
+        configuredChains: getSupportedChainIds(),
+      });
+
+      // Switch chain only if needed and chain is supported
       if (walletChainId !== fromChainId) {
+        console.log(`🔄 Switching wallet from chain ${walletChainId} to ${fromChainId}`);
         await switchChainAsync({ chainId: fromChainId });
       }
 
@@ -196,6 +215,9 @@ export function SwapCard() {
   };
 
   const isTestnet = fromChainId === 11155111 || toChainId === 11155111;
+  const isFromChainSupported = isChainSupported(fromChainId);
+  const isToChainSupported = isChainSupported(toChainId);
+  const isRouteChainSupported = route ? isChainSupported(route.fromChainId) : true;
 
   if (state === 'tracking' && txHash && route && swapId) {
     return (
@@ -401,10 +423,20 @@ export function SwapCard() {
           <Button disabled className="w-full py-6 text-lg">
             Connect Wallet to Swap
           </Button>
+        ) : !isFromChainSupported || !isToChainSupported ? (
+          <Button disabled className="w-full py-6 text-lg bg-destructive/20 text-destructive">
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            Chain Not Supported
+          </Button>
         ) : state === 'quoting' || state === 'approving' || state === 'swapping' ? (
           <Button disabled className="w-full py-6 text-lg gradient-primary">
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
             {state === 'quoting' ? 'Finding best route...' : state === 'approving' ? 'Approving...' : 'Confirm in wallet...'}
+          </Button>
+        ) : route && !isRouteChainSupported ? (
+          <Button disabled className="w-full py-6 text-lg bg-destructive/20 text-destructive">
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            Route Chain Not Configured
           </Button>
         ) : route ? (
           <Button
