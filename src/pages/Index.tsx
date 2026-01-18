@@ -12,12 +12,12 @@ const Index = () => {
           className="text-center mb-12"
         >
           <h1 className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="text-gradient">Swap & Bridge</span>
+            <span className="text-gradient">CryptoDeFiBridge</span>
             <br />
-            <span className="text-foreground">Across Any Chain</span>
+            <span className="text-foreground">Cross-Chain DeFi Bridge & Swap Aggregator</span>
           </h1>
-          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Find the best rates across DEXs and bridges. Powered by LI.FI.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Swap tokens across multiple blockchains using the best liquidity routes with transparent fees. Non-custodial and secure.
           </p>
         </motion.div>
 
@@ -30,32 +30,23 @@ const Index = () => {
           transition={{ delay: 0.3 }}
           className="grid md:grid-cols-3 gap-6 mt-16 max-w-4xl mx-auto"
         >
-          {[
-            {
-              icon: '⚡',
-              title: 'Lightning Fast',
-              description: 'Get quotes in seconds from multiple DEXs and bridges',
-            },
-            {
-              icon: '🔒',
-              title: 'Non-Custodial',
-              description: 'You control your funds. We never hold your tokens',
-            },
-            {
-              icon: '💎',
-              title: 'Best Rates',
-              description: 'Aggregated routes ensure you always get optimal pricing',
-            },
-          ].map((feature, idx) => (
-            <div
-              key={feature.title}
-              className="glass rounded-xl p-6 text-center hover:scale-105 transition-transform"
-            >
-              <div className="text-4xl mb-4">{feature.icon}</div>
-              <h3 className="font-semibold mb-2">{feature.title}</h3>
-              <p className="text-sm text-muted-foreground">{feature.description}</p>
-            </div>
-          ))}
+          <article className="glass rounded-xl p-6 text-center hover:scale-105 transition-transform">
+            <div className="text-4xl mb-4" aria-hidden="true">⚡</div>
+            <h2 className="font-semibold mb-2 text-lg">Swap Tokens Across Chains</h2>
+            <p className="text-sm text-muted-foreground">Get quotes in seconds from multiple DEXs and bridges for the best cross-chain routes.</p>
+          </article>
+          
+          <article className="glass rounded-xl p-6 text-center hover:scale-105 transition-transform">
+            <div className="text-4xl mb-4" aria-hidden="true">🔒</div>
+            <h2 className="font-semibold mb-2 text-lg">Non-Custodial DeFi Swaps</h2>
+            <p className="text-sm text-muted-foreground">You control your funds. We never hold your tokens. True decentralized finance.</p>
+          </article>
+          
+          <article className="glass rounded-xl p-6 text-center hover:scale-105 transition-transform">
+            <div className="text-4xl mb-4" aria-hidden="true">💎</div>
+            <h2 className="font-semibold mb-2 text-lg">Best Cross-Chain Routes</h2>
+            <p className="text-sm text-muted-foreground">Aggregated routes ensure you always get optimal pricing across all supported chains.</p>
+          </article>
         </motion.div>
       </div>
     </Layout>

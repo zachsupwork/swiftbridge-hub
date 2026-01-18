@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeftRight, Wallet, BarChart3, Menu, X } from 'lucide-react';
+import { Wallet, BarChart3, Menu, X, ArrowLeftRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import logoImage from '@/assets/logo.svg';
 
 const navItems = [
   { path: '/swap', label: 'Swap', icon: ArrowLeftRight },
@@ -20,11 +21,13 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-              <ArrowLeftRight className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-gradient">SwiftSwap</span>
+          <Link to="/" className="flex items-center gap-2" aria-label="CryptoDeFiBridge Home">
+            <img 
+              src={logoImage} 
+              alt="CryptoDeFiBridge Logo" 
+              className="w-8 h-8 rounded-lg"
+            />
+            <span className="text-xl font-bold text-gradient">CryptoDeFiBridge</span>
           </Link>
 
           {/* Desktop Navigation */}
