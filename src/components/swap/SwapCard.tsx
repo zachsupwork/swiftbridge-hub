@@ -1,17 +1,25 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowDown, Settings, Loader2, AlertTriangle, Zap } from 'lucide-react';
+import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug } from 'lucide-react';
 import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
 import { TokenSelector } from './TokenSelector';
 import { ChainSelector } from './ChainSelector';
 import { FeeBreakdown } from './FeeBreakdown';
 import { TransactionTracker } from './TransactionTracker';
+import { SimulationSummary } from './SimulationSummary';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Token, Chain, Route, getRoutes, getIntegratorFee, getStepTransaction } from '@/lib/lifiClient';
+import { Token, Route, getRoutes, getIntegratorFee, getStepTransaction } from '@/lib/lifiClient';
 import { saveSwap, SwapRecord } from '@/lib/swapStorage';
 import { cn } from '@/lib/utils';
+import {
+  normalizeTxRequest,
+  getTransactionSimulation,
+  logTransactionDetails,
+  TransactionValidationError,
+  type TransactionSimulation,
+} from '@/lib/transactionHelper';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
@@ -33,6 +41,8 @@ export function SwapCard() {
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [swapId, setSwapId] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [txSimulation, setTxSimulation] = useState<TransactionSimulation | null>(null);
 
   // Clear tokens when chain changes
   useEffect(() => {
@@ -48,6 +58,7 @@ export function SwapCard() {
     setRoute(null);
     setState('idle');
     setError(null);
+    setTxSimulation(null);
   }, [fromChainId, toChainId, fromToken, toToken, fromAmount]);
 
   const handleSwapChains = useCallback(() => {
@@ -99,6 +110,7 @@ export function SwapCard() {
 
     setState('swapping');
     setError(null);
+    setTxSimulation(null);
 
     try {
       // Switch chain if needed
@@ -110,16 +122,28 @@ export function SwapCard() {
       const stepWithTx = await getStepTransaction(route.steps[0]);
       
       if (!stepWithTx.transactionRequest) {
-        throw new Error('No transaction data received');
+        throw new TransactionValidationError('No transaction data received');
       }
 
       const tx = stepWithTx.transactionRequest;
 
-      // Send transaction
+      // Generate simulation for debug display
+      const simulation = getTransactionSimulation(tx, fromToken.address, fromToken.symbol);
+      setTxSimulation(simulation);
+
+      // Normalize the transaction request with proper value handling
+      // This ensures ERC-20 swaps have value=0 and native swaps use LI.FI's value
+      const normalizedTx = normalizeTxRequest(tx, fromToken.address);
+
+      // Log transaction details for debugging
+      logTransactionDetails(fromChainId, normalizedTx, simulation);
+
+      // Send the normalized transaction
       const hash = await sendTransactionAsync({
-        to: tx.to as `0x${string}`,
-        data: tx.data as `0x${string}`,
-        value: BigInt(tx.value || '0'),
+        to: normalizedTx.to,
+        data: normalizedTx.data,
+        value: normalizedTx.value,
+        gas: normalizedTx.gas,
       });
 
       setTxHash(hash);
@@ -149,8 +173,14 @@ export function SwapCard() {
       setState('tracking');
     } catch (err) {
       console.error('Swap failed:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
-      setError(errorMessage);
+      
+      // Handle validation errors with specific messages
+      if (err instanceof TransactionValidationError) {
+        setError(err.message);
+      } else {
+        const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
+        setError(errorMessage);
+      }
       setState('quoted');
     }
   };
@@ -162,6 +192,7 @@ export function SwapCard() {
     setFromAmount('');
     setState('idle');
     setError(null);
+    setTxSimulation(null);
   };
 
   const isTestnet = fromChainId === 11155111 || toChainId === 11155111;
@@ -199,15 +230,27 @@ export function SwapCard() {
             <Zap className="w-5 h-5 text-primary" />
             Swap
           </h2>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={cn(
-              "p-2 rounded-lg transition-colors",
-              showSettings ? "bg-primary/10 text-primary" : "hover:bg-muted"
-            )}
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowDebug(!showDebug)}
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                showDebug ? "bg-primary/10 text-primary" : "hover:bg-muted"
+              )}
+              title="Debug panel"
+            >
+              <Bug className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                showSettings ? "bg-primary/10 text-primary" : "hover:bg-muted"
+              )}
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Settings */}
@@ -340,6 +383,18 @@ export function SwapCard() {
 
         {/* Fee breakdown */}
         {route && <FeeBreakdown route={route} />}
+
+        {/* Debug: Simulation Summary */}
+        {showDebug && txSimulation && (
+          <SimulationSummary
+            to={txSimulation.to}
+            valueEth={txSimulation.valueEth}
+            gasLimit={txSimulation.gasLimit}
+            isNativeToken={txSimulation.isNativeToken}
+            fromTokenSymbol={txSimulation.fromTokenSymbol}
+            dataLength={txSimulation.dataLength}
+          />
+        )}
 
         {/* Action buttons */}
         {!isConnected ? (
