@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useAccount } from 'wagmi';
-import { formatUnits } from 'viem';
-import { Wallet, RefreshCw, ExternalLink, Loader2 } from 'lucide-react';
+import { useAccount, useChainId } from 'wagmi';
+import { Wallet, RefreshCw, Loader2 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { getChains, getTokens, Chain, Token } from '@/lib/lifiClient';
@@ -15,37 +14,51 @@ interface TokenBalance {
   balanceUSD: string;
 }
 
+// Define main chain IDs to prevent duplicates
+const MAIN_CHAIN_IDS = [1, 10, 137, 42161, 8453] as const;
+
 export default function Portfolio() {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const [loading, setLoading] = useState(false);
   const [balances, setBalances] = useState<TokenBalance[]>([]);
-  const [selectedChains, setSelectedChains] = useState<number[]>([1, 10, 137, 42161, 8453]);
+  const [selectedChains, setSelectedChains] = useState<number[]>([...MAIN_CHAIN_IDS]);
   const [chains, setChains] = useState<Chain[]>([]);
+  
+  // Track previous address to detect account changes
+  const prevAddressRef = useRef<string | undefined>(undefined);
+  const prevChainIdRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     getChains().then(setChains);
   }, []);
 
-  const fetchBalances = async () => {
-    if (!address) return;
+  const fetchBalances = useCallback(async (walletAddress: string) => {
+    if (!walletAddress) return;
     
     setLoading(true);
     const allBalances: TokenBalance[] = [];
 
     try {
-      for (const chainId of selectedChains) {
-        const chain = chains.find(c => c.id === chainId);
+      for (const selectedChainId of selectedChains) {
+        const chain = chains.find(c => c.id === selectedChainId);
         if (!chain) continue;
 
-        const tokens = await getTokens(chainId);
+        const tokens = await getTokens(selectedChainId);
         
         // For demo, show popular tokens with mock balances
         // In production, you'd use multicall or balance API
         const popularTokens = tokens.slice(0, 5);
         
         for (const token of popularTokens) {
-          // Mock balance for demo
-          const mockBalance = Math.random() * 10;
+          // Generate consistent mock balance based on address + token for demo
+          // This ensures the same wallet shows same balances on refresh
+          const seed = walletAddress.toLowerCase() + token.address.toLowerCase();
+          const hash = seed.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+          }, 0);
+          const mockBalance = Math.abs(hash % 1000) / 100;
           const mockUSD = mockBalance * parseFloat(token.priceUSD || '0');
           
           if (mockUSD > 0.01) {
@@ -67,17 +80,58 @@ export default function Portfolio() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [chains, selectedChains]);
 
+  // Clear balances and reset when disconnected
+  useEffect(() => {
+    if (!isConnected || !address) {
+      setBalances([]);
+      prevAddressRef.current = undefined;
+      return;
+    }
+  }, [isConnected, address]);
+
+  // Handle account changes - refetch when address changes
+  useEffect(() => {
+    if (!isConnected || !address || chains.length === 0) return;
+
+    // Check if address changed (account switch)
+    if (prevAddressRef.current !== address) {
+      console.log('Account changed:', prevAddressRef.current, '->', address);
+      // Clear old balances immediately for new account
+      if (prevAddressRef.current !== undefined) {
+        setBalances([]);
+      }
+      prevAddressRef.current = address;
+      fetchBalances(address);
+    }
+  }, [isConnected, address, chains.length, fetchBalances]);
+
+  // Handle chain changes - refetch when chain changes
+  useEffect(() => {
+    if (!isConnected || !address || chains.length === 0) return;
+
+    if (prevChainIdRef.current !== chainId && prevChainIdRef.current !== undefined) {
+      console.log('Chain changed:', prevChainIdRef.current, '->', chainId);
+      fetchBalances(address);
+    }
+    prevChainIdRef.current = chainId;
+  }, [isConnected, address, chainId, chains.length, fetchBalances]);
+
+  // Refetch when selected chains filter changes
   useEffect(() => {
     if (isConnected && address && chains.length > 0) {
-      fetchBalances();
+      fetchBalances(address);
     }
-  }, [isConnected, address, chains.length, selectedChains]);
+  }, [selectedChains]);
 
   const totalValueUSD = balances.reduce((sum, b) => sum + parseFloat(b.balanceUSD), 0);
 
-  const mainChains = chains.filter(c => [1, 10, 137, 42161, 8453].includes(c.id));
+  // Get unique main chains (deduplicated)
+  const mainChains = chains.filter(c => MAIN_CHAIN_IDS.includes(c.id as typeof MAIN_CHAIN_IDS[number]));
+  const uniqueMainChains = mainChains.filter((chain, index, self) => 
+    index === self.findIndex(c => c.id === chain.id)
+  );
 
   if (!isConnected) {
     return (
@@ -87,7 +141,7 @@ export default function Portfolio() {
             <Wallet className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2">Connect Your Wallet</h2>
             <p className="text-muted-foreground">
-              Connect your wallet to view your portfolio across multiple chains.
+              Connect wallet to view portfolio
             </p>
           </div>
         </div>
@@ -107,12 +161,12 @@ export default function Portfolio() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold mb-2">Portfolio</h1>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground font-mono text-sm">
                 {address?.slice(0, 6)}...{address?.slice(-4)}
               </p>
             </div>
             <Button
-              onClick={fetchBalances}
+              onClick={() => address && fetchBalances(address)}
               disabled={loading}
               variant="outline"
               size="sm"
@@ -130,33 +184,36 @@ export default function Portfolio() {
             </div>
           </div>
 
-          {/* Chain filters */}
+          {/* Chain filters - deduplicated */}
           <div className="flex flex-wrap gap-2 mb-6">
-            {mainChains.map((chain) => (
-              <button
-                key={chain.id}
-                onClick={() => {
-                  setSelectedChains(prev =>
-                    prev.includes(chain.id)
-                      ? prev.filter(id => id !== chain.id)
-                      : [...prev, chain.id]
-                  );
-                }}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                  selectedChains.includes(chain.id)
-                    ? "bg-primary text-primary-foreground"
-                    : "glass hover:bg-muted/50"
-                )}
-              >
-                <img
-                  src={chain.logoURI}
-                  alt={chain.name}
-                  className="w-5 h-5 rounded-full"
-                />
-                {chain.name}
-              </button>
-            ))}
+            {uniqueMainChains.map((chain) => {
+              const isSelected = selectedChains.includes(chain.id);
+              return (
+                <button
+                  key={`chain-filter-${chain.id}`}
+                  onClick={() => {
+                    setSelectedChains(prev =>
+                      prev.includes(chain.id)
+                        ? prev.filter(id => id !== chain.id)
+                        : [...prev, chain.id]
+                    );
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all",
+                    isSelected
+                      ? "bg-primary text-primary-foreground ring-2 ring-primary/30"
+                      : "glass hover:bg-muted/50"
+                  )}
+                >
+                  <img
+                    src={chain.logoURI}
+                    alt={chain.name}
+                    className="w-5 h-5 rounded-full"
+                  />
+                  {chain.name}
+                </button>
+              );
+            })}
           </div>
 
           {/* Balances list */}
@@ -174,7 +231,7 @@ export default function Portfolio() {
             <div className="glass rounded-2xl divide-y divide-border overflow-hidden">
               {balances.map((item, idx) => (
                 <motion.div
-                  key={`${item.chain.id}-${item.token.address}`}
+                  key={`${item.chain.id}-${item.token.address}-${idx}`}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.05 }}
