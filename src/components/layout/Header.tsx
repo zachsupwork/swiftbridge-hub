@@ -27,7 +27,10 @@ export function Header() {
               alt="CryptoDeFiBridge Logo" 
               className="w-8 h-8 rounded-lg flex-shrink-0"
             />
-            <span className="text-xl font-bold text-gradient truncate max-w-[140px] sm:max-w-none">CryptoDeFiBridge</span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-base sm:text-xl font-bold text-gradient">CryptoDeFiBridge</span>
+              <span className="text-[10px] sm:text-xs text-muted-foreground/60 tracking-wide">cryptodefibridge</span>
+            </div>
           </Link>
 
           {/* Desktop Navigation */}
