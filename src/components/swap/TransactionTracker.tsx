@@ -75,12 +75,23 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
   };
 
   const getExplorerUrl = (chainId: number, hash: string) => {
+    // Import from wagmiConfig for consistency
     const explorers: Record<number, string> = {
       1: 'https://etherscan.io/tx/',
       10: 'https://optimistic.etherscan.io/tx/',
       137: 'https://polygonscan.com/tx/',
       42161: 'https://arbiscan.io/tx/',
       8453: 'https://basescan.org/tx/',
+      43114: 'https://snowtrace.io/tx/',
+      56: 'https://bscscan.com/tx/',
+      250: 'https://ftmscan.com/tx/',
+      100: 'https://gnosisscan.io/tx/',
+      42220: 'https://celoscan.io/tx/',
+      1284: 'https://moonscan.io/tx/',
+      324: 'https://era.zksync.network/tx/',
+      59144: 'https://lineascan.build/tx/',
+      534352: 'https://scrollscan.com/tx/',
+      5000: 'https://explorer.mantle.xyz/tx/',
       11155111: 'https://sepolia.etherscan.io/tx/',
     };
     return `${explorers[chainId] || 'https://etherscan.io/tx/'}${hash}`;
