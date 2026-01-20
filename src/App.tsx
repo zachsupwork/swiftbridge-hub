@@ -7,17 +7,45 @@ import { WagmiProvider } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 
+// Solana wallet imports
+import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from "@solana/wallet-adapter-react";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
+import "@solana/wallet-adapter-react-ui/styles.css";
+
+// Sui wallet imports
+import { createNetworkConfig, SuiClientProvider, WalletProvider as SuiWalletProvider } from "@mysten/dapp-kit";
+import { getFullnodeUrl } from "@mysten/sui/client";
+import "@mysten/dapp-kit/dist/index.css";
+
 import { config } from "@/lib/wagmiConfig";
+import { BitcoinWalletProvider, MultiWalletProvider } from "@/lib/wallets";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
 import NotFound from "./pages/NotFound";
+import { useMemo } from "react";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <ErrorBoundary>
+// Solana cluster endpoint
+const SOLANA_ENDPOINT = "https://api.mainnet-beta.solana.com";
+
+// Sui network config
+const { networkConfig } = createNetworkConfig({
+  mainnet: { url: getFullnodeUrl("mainnet") },
+  testnet: { url: getFullnodeUrl("testnet") },
+});
+
+function WalletProviders({ children }: { children: React.ReactNode }) {
+  // Solana wallets
+  const solanaWallets = useMemo(
+    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
+    []
+  );
+
+  return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
@@ -28,22 +56,44 @@ const App = () => (
             fontStack: 'system',
           })}
         >
-          <TooltipProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Navigate to="/swap" replace />} />
-                <Route path="/swap" element={<Index />} />
-                <Route path="/portfolio" element={<Portfolio />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </TooltipProvider>
+          <ConnectionProvider endpoint={SOLANA_ENDPOINT}>
+            <SolanaWalletProvider wallets={solanaWallets} autoConnect>
+              <WalletModalProvider>
+                <SuiClientProvider networks={networkConfig} defaultNetwork="mainnet">
+                  <SuiWalletProvider autoConnect>
+                    <BitcoinWalletProvider>
+                      <MultiWalletProvider>
+                        {children}
+                      </MultiWalletProvider>
+                    </BitcoinWalletProvider>
+                  </SuiWalletProvider>
+                </SuiClientProvider>
+              </WalletModalProvider>
+            </SolanaWalletProvider>
+          </ConnectionProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
+  );
+}
+
+const App = () => (
+  <ErrorBoundary>
+    <WalletProviders>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/swap" replace />} />
+            <Route path="/swap" element={<Index />} />
+            <Route path="/portfolio" element={<Portfolio />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </WalletProviders>
   </ErrorBoundary>
 );
 

@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, BarChart3, Menu, X, ArrowLeftRight, Copy, Check, Circle } from 'lucide-react';
+import { Wallet, BarChart3, Menu, X, ArrowLeftRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
 import logoImage from '@/assets/cdb-logo.png';
+import { MultiWalletButton } from '@/components/wallets/MultiWalletButton';
 
 const navItems = [
   { path: '/swap', label: 'Swap', icon: ArrowLeftRight },
@@ -16,18 +15,6 @@ const navItems = [
 export function Header() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const copyAddress = (address: string) => {
-    navigator.clipboard.writeText(address);
-    setCopied(true);
-    toast.success('Address copied to clipboard');
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const shortenAddress = (address: string) => {
-    return `${address.slice(0, 6)}…${address.slice(-4)}`;
-  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border">
@@ -80,93 +67,8 @@ export function Header() {
 
           {/* Right side */}
           <div className="flex items-center gap-3">
-            {/* Wallet Connect */}
-            <ConnectButton.Custom>
-              {({
-                account,
-                chain,
-                openAccountModal,
-                openChainModal,
-                openConnectModal,
-                mounted,
-              }) => {
-                const ready = mounted;
-                const connected = ready && account && chain;
-
-                return (
-                  <div
-                    {...(!ready && {
-                      'aria-hidden': true,
-                      style: {
-                        opacity: 0,
-                        pointerEvents: 'none',
-                        userSelect: 'none',
-                      },
-                    })}
-                  >
-                    {!connected ? (
-                      <button
-                        onClick={openConnectModal}
-                        className="px-4 py-2 rounded-lg gradient-primary text-primary-foreground font-medium text-sm hover:opacity-90 transition-opacity glow"
-                      >
-                        Connect Wallet
-                      </button>
-                    ) : chain.unsupported ? (
-                      <button
-                        onClick={openChainModal}
-                        className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground font-medium text-sm"
-                      >
-                        Wrong network
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        {/* Connection status indicator */}
-                        <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 border border-green-500/20">
-                          <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                          <span className="text-[10px] text-green-500 font-medium">Connected</span>
-                        </div>
-
-                        {/* Chain selector */}
-                        <button
-                          onClick={openChainModal}
-                          className="hidden sm:flex px-3 py-2 rounded-lg glass text-sm font-medium items-center gap-2 hover:bg-muted/50 transition-colors"
-                        >
-                          {chain.hasIcon && chain.iconUrl && (
-                            <img
-                              alt={chain.name ?? 'Chain icon'}
-                              src={chain.iconUrl}
-                              className="w-4 h-4 rounded-full"
-                            />
-                          )}
-                          <span className="hidden lg:inline">{chain.name}</span>
-                        </button>
-
-                        {/* Address with copy button */}
-                        <div className="flex items-center gap-1 px-3 py-2 rounded-lg glass">
-                          <button
-                            onClick={openAccountModal}
-                            className="text-sm font-medium hover:text-primary transition-colors"
-                          >
-                            {shortenAddress(account.address)}
-                          </button>
-                          <button
-                            onClick={() => copyAddress(account.address)}
-                            className="p-1 hover:bg-muted/50 rounded transition-colors"
-                            title="Copy address"
-                          >
-                            {copied ? (
-                              <Check className="w-3 h-3 text-green-500" />
-                            ) : (
-                              <Copy className="w-3 h-3 text-muted-foreground" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }}
-            </ConnectButton.Custom>
+            {/* Multi-Chain Wallet Connect */}
+            <MultiWalletButton />
 
             {/* Mobile menu button */}
             <button

@@ -8,6 +8,7 @@ import { ChainSelector } from './ChainSelector';
 import { FeeBreakdown } from './FeeBreakdown';
 import { TransactionTracker } from './TransactionTracker';
 import { SimulationSummary } from './SimulationSummary';
+import { IntegratorFeeTooltip, IntegratorDebugPanel } from './IntegratorDebug';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Token, Route, getRoutes, getIntegratorFee, getStepTransaction } from '@/lib/lifiClient';
@@ -21,6 +22,7 @@ import {
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
 import { isChainSupported, getChainName, getSupportedChainIds } from '@/lib/wagmiConfig';
+import { useMultiWallet } from '@/lib/wallets';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
@@ -422,12 +424,15 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Quote info helper text */}
-        <div className="flex items-start gap-2 px-1 text-xs text-muted-foreground/60">
-          <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-          <span>
-            Quotes are calculated after clicking Get Quote. Cross-chain prices may change based on route and liquidity.
-          </span>
+        {/* Quote info helper text with fee tooltip */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-start gap-2 text-xs text-muted-foreground/60">
+            <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+            <span>
+              Quotes are calculated after clicking Get Quote.
+            </span>
+          </div>
+          <IntegratorFeeTooltip />
         </div>
 
         {/* Error message */}
@@ -444,6 +449,15 @@ export function SwapCard() {
 
         {/* Fee breakdown */}
         {route && <FeeBreakdown route={route} />}
+
+        {/* Developer debug panel */}
+        {showDebug && (
+          <IntegratorDebugPanel 
+            route={route} 
+            fromChainId={fromChainId} 
+            toChainId={toChainId} 
+          />
+        )}
 
         {/* Debug: Simulation Summary */}
         {showDebug && txSimulation && (
