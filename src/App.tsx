@@ -24,6 +24,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
+import Earn from "./pages/Earn";
 import NotFound from "./pages/NotFound";
 import { useMemo } from "react";
 
@@ -87,6 +88,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Navigate to="/swap" replace />} />
             <Route path="/swap" element={<Index />} />
+            <Route path="/earn" element={<Earn />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="*" element={<NotFound />} />
