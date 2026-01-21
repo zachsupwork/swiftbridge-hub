@@ -1,39 +1,50 @@
 /**
  * Markets Table Component - Aave-style
  * Displays lending markets in a table (desktop) or cards (mobile)
+ * NO mock data display - shows proper error states
  */
 
 import { motion } from 'framer-motion';
-import { ArrowUpDown, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { ArrowUpDown, Loader2, RefreshCw, AlertCircle, WifiOff, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import type { LendingMarket } from '@/hooks/useLendingMarkets';
+import type { LendingMarket, MarketFetchError } from '@/hooks/useLendingMarkets';
+import { LENDING_CHAINS } from '@/hooks/useLendingMarkets';
+import { useSwitchChain } from 'wagmi';
 
 interface EarnMarketsTableProps {
   markets: LendingMarket[];
   loading: boolean;
-  error: string | null;
+  error: MarketFetchError | null;
+  errorMessage: string | null;
   onSupplyClick: (market: LendingMarket) => void;
   onRefresh: () => void;
   walletBalances?: Record<string, { balance: bigint; formatted: string }>;
   sortBy: 'apy' | 'tvl' | 'name';
   sortDirection: 'asc' | 'desc';
   onSortChange: (sortBy: 'apy' | 'tvl' | 'name') => void;
+  isRetrying?: boolean;
+  onChainChange?: (chainId: number | undefined) => void;
 }
 
 export function EarnMarketsTable({
   markets,
   loading,
   error,
+  errorMessage,
   onSupplyClick,
   onRefresh,
   walletBalances = {},
   sortBy,
   sortDirection,
   onSortChange,
+  isRetrying = false,
+  onChainChange,
 }: EarnMarketsTableProps) {
+  const { switchChain } = useSwitchChain();
+
   const formatAPY = (apy: number) => {
     if (apy < 0.01) return '<0.01%';
     if (apy > 100) return '>100%';
@@ -42,7 +53,6 @@ export function EarnMarketsTable({
 
   const formatTVL = (tvl: number | null, symbol: string) => {
     if (tvl === null) return '-';
-    // For stablecoins, show USD value directly
     const isStablecoin = ['USDC', 'USDT', 'DAI', 'FRAX', 'LUSD', 'GHO'].includes(symbol.toUpperCase());
     if (isStablecoin) {
       if (tvl >= 1_000_000_000) return `$${(tvl / 1_000_000_000).toFixed(2)}B`;
@@ -50,7 +60,6 @@ export function EarnMarketsTable({
       if (tvl >= 1_000) return `$${(tvl / 1_000).toFixed(1)}K`;
       return `$${tvl.toFixed(0)}`;
     }
-    // For other tokens, show token amount
     if (tvl >= 1_000_000) return `${(tvl / 1_000_000).toFixed(2)}M`;
     if (tvl >= 1_000) return `${(tvl / 1_000).toFixed(1)}K`;
     return tvl.toFixed(2);
@@ -103,22 +112,119 @@ export function EarnMarketsTable({
     );
   }
 
-  // Error state
+  // Error state - NEVER show mock data, always show clear error
   if (error && markets.length === 0) {
     return (
       <div className="glass rounded-xl p-8 text-center">
-        <AlertCircle className="w-12 h-12 text-warning mx-auto mb-3" />
-        <h3 className="text-lg font-semibold mb-2">Markets Unavailable</h3>
-        <p className="text-muted-foreground mb-4">{error}</p>
-        <Button onClick={onRefresh} variant="outline" className="gap-2">
-          <RefreshCw className="w-4 h-4" />
-          Retry
-        </Button>
+        <div className={cn(
+          "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4",
+          error.type === 'unsupported_chain' ? "bg-warning/10" : "bg-destructive/10"
+        )}>
+          {error.type === 'network_error' ? (
+            <WifiOff className="w-8 h-8 text-destructive" />
+          ) : (
+            <AlertCircle className={cn(
+              "w-8 h-8",
+              error.type === 'unsupported_chain' ? "text-warning" : "text-destructive"
+            )} />
+          )}
+        </div>
+        
+        <h3 className="text-xl font-semibold mb-2">
+          Unable to load Aave markets
+        </h3>
+        
+        <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+          {errorMessage || 'Failed to load market data. Please try again.'}
+        </p>
+
+        {/* Show reason based on error type */}
+        <div className="mb-6 p-3 rounded-lg bg-muted/30 text-sm text-muted-foreground max-w-sm mx-auto">
+          {error.type === 'unsupported_chain' && (
+            <div className="flex items-center gap-2 justify-center">
+              <span>Reason:</span>
+              <span className="font-medium text-foreground">Unsupported chain</span>
+            </div>
+          )}
+          {error.type === 'rpc_unavailable' && (
+            <div className="flex items-center gap-2 justify-center">
+              <span>Reason:</span>
+              <span className="font-medium text-foreground">RPC unavailable</span>
+            </div>
+          )}
+          {error.type === 'contract_error' && (
+            <div className="flex items-center gap-2 justify-center">
+              <span>Reason:</span>
+              <span className="font-medium text-foreground">Contract fetch error</span>
+            </div>
+          )}
+          {error.type === 'network_error' && (
+            <div className="flex items-center gap-2 justify-center">
+              <span>Reason:</span>
+              <span className="font-medium text-foreground">Network error</span>
+            </div>
+          )}
+          {error.type === 'no_markets' && (
+            <div className="flex items-center gap-2 justify-center">
+              <span>Reason:</span>
+              <span className="font-medium text-foreground">No markets found</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <Button 
+            onClick={onRefresh} 
+            variant="default" 
+            className="gap-2"
+            disabled={isRetrying}
+          >
+            {isRetrying ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {isRetrying ? 'Retrying...' : 'Retry'}
+          </Button>
+          
+          {error.type === 'unsupported_chain' && onChainChange && (
+            <Button 
+              onClick={() => onChainChange(1)} 
+              variant="outline" 
+              className="gap-2"
+            >
+              <ArrowRight className="w-4 h-4" />
+              Switch to Ethereum
+            </Button>
+          )}
+        </div>
+
+        {/* Supported chains list */}
+        <div className="mt-8 pt-6 border-t border-border/30">
+          <p className="text-xs text-muted-foreground mb-3">Supported chains:</p>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {LENDING_CHAINS.filter(c => c.supported).map(chain => (
+              <button
+                key={chain.id}
+                onClick={() => {
+                  if (onChainChange) {
+                    onChainChange(chain.id);
+                  }
+                  switchChain?.({ chainId: chain.id });
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-muted/50 hover:bg-muted transition-colors text-xs"
+              >
+                <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
+                <span>{chain.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Empty state
+  // Empty state (no search results)
   if (markets.length === 0) {
     return (
       <div className="glass rounded-xl p-8 text-center">
@@ -136,22 +242,10 @@ export function EarnMarketsTable({
   return (
     <div className="space-y-2">
       {/* Loading indicator for refresh */}
-      {loading && markets.length > 0 && (
+      {(loading || isRetrying) && markets.length > 0 && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-2">
           <Loader2 className="w-4 h-4 animate-spin" />
           Refreshing markets...
-        </div>
-      )}
-
-      {/* Warning banner if using mock data */}
-      {error && markets.length > 0 && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 text-sm">
-          <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
-          <span className="text-warning">{error}</span>
-          <Button onClick={onRefresh} variant="ghost" size="sm" className="ml-auto gap-1 h-7">
-            <RefreshCw className="w-3 h-3" />
-            Retry
-          </Button>
         </div>
       )}
 

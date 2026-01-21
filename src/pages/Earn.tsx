@@ -2,16 +2,17 @@
  * Earn Page - Aave-style lending interface
  * 
  * Features:
- * - Multi-chain market display
+ * - Multi-chain market display (mainnet only)
  * - Search and filter
  * - Supply drawer with mandatory fee
  * - Mobile-first responsive design
+ * - NO mock/sample data - real markets only
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock } from 'lucide-react';
-import { useAccount } from 'wagmi';
+import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check } from 'lucide-react';
+import { useAccount, useChainId } from 'wagmi';
 import { useReadContracts } from 'wagmi';
 import { erc20Abi } from 'viem';
 
@@ -22,30 +23,50 @@ import { Button } from '@/components/ui/button';
 import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
 import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
-import { useLendingMarkets, type LendingMarket } from '@/hooks/useLendingMarkets';
+import { useLendingMarkets, type LendingMarket, isChainSupported } from '@/hooks/useLendingMarkets';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
+  const walletChainId = useChainId();
   const { trackEarnView, trackFilterChange } = useEarnAnalytics();
 
   // State
-  const [selectedChainId, setSelectedChainId] = useState<number | 'all'>('all');
+  const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'apy' | 'tvl' | 'name'>('tvl');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [copiedAddress, setCopiedAddress] = useState(false);
 
   // Fetch markets
-  const { markets, loading, error, refresh, chains } = useLendingMarkets(
-    selectedChainId === 'all' ? undefined : selectedChainId
+  const { markets, loading, error, errorMessage, refresh, chains, lastFetched, isRetrying } = useLendingMarkets(
+    selectedChainId
   );
 
   // Track page view
   useEffect(() => {
     trackEarnView();
   }, [trackEarnView]);
+
+  // Format last fetched time
+  const lastFetchedDisplay = useMemo(() => {
+    if (!lastFetched) return null;
+    const seconds = Math.floor((Date.now() - lastFetched) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ago`;
+  }, [lastFetched]);
+
+  // Copy wallet address
+  const handleCopyAddress = useCallback(() => {
+    if (address) {
+      navigator.clipboard.writeText(address);
+      setCopiedAddress(true);
+      setTimeout(() => setCopiedAddress(false), 2000);
+    }
+  }, [address]);
 
   // Filter and sort markets
   const filteredMarkets = useMemo(() => {
@@ -94,12 +115,19 @@ export default function Earn() {
     }));
   }, [filteredMarkets, address, isConnected]);
 
-  const { data: balancesData } = useReadContracts({
+  const { data: balancesData, refetch: refetchBalances } = useReadContracts({
     contracts: balanceContracts,
     query: {
       enabled: balanceContracts.length > 0,
     },
   });
+
+  // Refetch balances when wallet or chain changes
+  useEffect(() => {
+    if (isConnected && address) {
+      refetchBalances();
+    }
+  }, [address, walletChainId, isConnected, refetchBalances]);
 
   // Convert balances to lookup map
   const walletBalances = useMemo(() => {
@@ -119,9 +147,9 @@ export default function Earn() {
   }, [balancesData, filteredMarkets]);
 
   // Handlers
-  const handleChainChange = (chainId: number | 'all') => {
+  const handleChainChange = (chainId: number | undefined) => {
     setSelectedChainId(chainId);
-    trackFilterChange({ chain: chainId.toString() });
+    trackFilterChange({ chain: chainId?.toString() || 'all' });
   };
 
   const handleSortChange = (column: 'apy' | 'tvl' | 'name') => {
@@ -137,6 +165,17 @@ export default function Earn() {
     setSelectedMarket(market);
     setIsDrawerOpen(true);
   };
+
+  const handleDrawerClose = useCallback(() => {
+    setIsDrawerOpen(false);
+    setSelectedMarket(null);
+    // Refresh balances after supply
+    refetchBalances();
+    refresh();
+  }, [refetchBalances, refresh]);
+
+  // Check if user's wallet is on unsupported chain
+  const walletOnUnsupportedChain = isConnected && !isChainSupported(walletChainId);
 
   return (
     <Layout>
@@ -158,19 +197,36 @@ export default function Earn() {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Connected wallet display */}
+              {isConnected && address && (
+                <button
+                  onClick={handleCopyAddress}
+                  className="hidden sm:flex items-center gap-2 px-3 h-10 rounded-lg bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors text-sm"
+                >
+                  <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                  <span className="font-mono">{address.slice(0, 6)}...{address.slice(-4)}</span>
+                  {copiedAddress ? (
+                    <Check className="w-3.5 h-3.5 text-success" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                  )}
+                </button>
+              )}
+              
               <EarnChainSelector
                 chains={chains}
                 selectedChainId={selectedChainId}
                 onChainChange={handleChainChange}
+                showAllChainsOption={true}
               />
               <Button
                 variant="outline"
                 size="icon"
                 onClick={refresh}
-                disabled={loading}
+                disabled={loading || isRetrying}
                 className="h-10 w-10"
               >
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${loading || isRetrying ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
@@ -178,11 +234,25 @@ export default function Earn() {
           {/* Disclaimer Banner */}
           <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
             <AlertTriangle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-foreground">
-              Earn uses third-party protocols (Aave V3). You are responsible for risks. 
-              This app is non-custodial and does not hold your funds.
-            </p>
+            <div>
+              <p className="text-xs text-foreground">
+                Funds are supplied directly to Aave V3. Crypto DeFi Bridge does not custody funds.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Supplying assets involves smart contract risk. APY is variable and not guaranteed.
+              </p>
+            </div>
           </div>
+
+          {/* Wallet on unsupported chain warning */}
+          {walletOnUnsupportedChain && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
+              <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-warning">
+                Earn is not available on your current network. Switch to a supported chain to supply assets.
+              </p>
+            </div>
+          )}
 
           {/* Tabs */}
           <Tabs defaultValue="lend" className="w-full">
@@ -209,16 +279,25 @@ export default function Earn() {
                 />
               </div>
 
-              {/* Results count */}
-              <div className="flex items-center justify-between">
+              {/* Results count and last updated */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <p className="text-sm text-muted-foreground">
                   {filteredMarkets.length} market{filteredMarkets.length !== 1 ? 's' : ''} found
                 </p>
-                {isConnected && (
-                  <p className="text-xs text-muted-foreground">
-                    Showing wallet balances
-                  </p>
-                )}
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  {isConnected && (
+                    <span className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                      Wallet connected
+                    </span>
+                  )}
+                  {lastFetchedDisplay && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      Last updated: {lastFetchedDisplay}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Markets Table */}
@@ -226,12 +305,15 @@ export default function Earn() {
                 markets={filteredMarkets}
                 loading={loading}
                 error={error}
+                errorMessage={errorMessage}
                 onSupplyClick={handleSupplyClick}
                 onRefresh={refresh}
                 walletBalances={walletBalances}
                 sortBy={sortBy}
                 sortDirection={sortDirection}
                 onSortChange={handleSortChange}
+                isRetrying={isRetrying}
+                onChainChange={handleChainChange}
               />
             </TabsContent>
 
@@ -245,6 +327,11 @@ export default function Earn() {
               </div>
             </TabsContent>
           </Tabs>
+
+          {/* Footer note */}
+          <div className="text-center text-xs text-muted-foreground pt-4 border-t border-border/30">
+            Powered by Aave V3 (external protocol). Platform fee (if enabled) is separate and disclosed.
+          </div>
         </motion.div>
       </div>
 
@@ -252,10 +339,7 @@ export default function Earn() {
       <EarnSupplyDrawer
         market={selectedMarket}
         isOpen={isDrawerOpen}
-        onClose={() => {
-          setIsDrawerOpen(false);
-          setSelectedMarket(null);
-        }}
+        onClose={handleDrawerClose}
       />
     </Layout>
   );
