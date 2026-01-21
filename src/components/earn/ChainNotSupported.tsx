@@ -21,36 +21,30 @@ export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
     <div className="glass rounded-2xl p-6 sm:p-8 text-center max-w-lg mx-auto">
       <AlertCircle className="w-12 h-12 text-warning mx-auto mb-4" />
       
-      <h3 className="text-xl font-semibold mb-2">Chain Not Supported</h3>
+      <h3 className="text-xl font-semibold mb-2">Network Not Supported</h3>
       
       <p className="text-muted-foreground mb-6">
-        Earn is not supported on this network yet. 
-        Switch to one of the supported chains below.
+        Aave v3 Earn is only available on Ethereum Mainnet and Sepolia Testnet.
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-        {EARN_SUPPORTED_CHAINS.map((chainId) => (
+      <div className="flex flex-col sm:flex-row gap-2 justify-center">
+        {EARN_SUPPORTED_CHAINS.map((cId) => (
           <Button
-            key={chainId}
+            key={cId}
             variant="outline"
-            size="sm"
-            className="h-10 gap-2"
-            onClick={() => switchChain?.({ chainId })}
-            disabled={isPending || chainId === currentChainId}
+            className="h-11 gap-2"
+            onClick={() => switchChain?.({ chainId: cId })}
+            disabled={isPending || cId === currentChainId}
           >
             <img 
-              src={EARN_CHAIN_LOGOS[chainId]} 
+              src={EARN_CHAIN_LOGOS[cId]} 
               alt="" 
-              className="w-4 h-4 rounded-full"
+              className="w-5 h-5 rounded-full"
             />
-            <span className="text-xs">{EARN_CHAIN_NAMES[chainId]}</span>
+            <span>{EARN_CHAIN_NAMES[cId]}</span>
           </Button>
         ))}
       </div>
-
-      <p className="text-xs text-muted-foreground">
-        More chains coming soon
-      </p>
     </div>
   );
 }

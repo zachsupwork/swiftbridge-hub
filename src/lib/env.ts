@@ -19,12 +19,12 @@ function getEnvVar(viteKey: string, nextKey: string, fallback: string = ''): str
   return fallback;
 }
 
-// Fee configuration
+// Fee configuration - MANDATORY platform fee
 export const FEE_WALLET = getEnvVar(
   'VITE_FEE_WALLET', 
   'NEXT_PUBLIC_FEE_WALLET', 
   '' // No default - must be set in env
-);
+) as `0x${string}`;
 
 export const FEE_BPS = parseInt(
   getEnvVar('VITE_FEE_BPS', 'NEXT_PUBLIC_FEE_BPS', '10'), 
@@ -40,10 +40,17 @@ export const EARN_LOG_ENDPOINT = getEnvVar(
 
 // Helper to check if platform fee is configured
 export function isPlatformFeeConfigured(): boolean {
-  return FEE_WALLET.length > 0 && FEE_WALLET.startsWith('0x');
+  return FEE_WALLET.length > 0 && FEE_WALLET.startsWith('0x') && FEE_WALLET.length === 42;
 }
 
 // Calculate fee percentage for display
 export function getFeePercentage(): string {
   return (FEE_BPS / 100).toFixed(2);
+}
+
+// Calculate fee and supply amounts
+export function calculateFeeAmounts(totalAmount: bigint): { feeAmount: bigint; supplyAmount: bigint } {
+  const feeAmount = (totalAmount * BigInt(FEE_BPS)) / 10000n;
+  const supplyAmount = totalAmount - feeAmount;
+  return { feeAmount, supplyAmount };
 }
