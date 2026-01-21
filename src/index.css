@@ -80,7 +80,32 @@
 }
 
 @layer utilities {
-  .glass {
+/* Solana wallet button override for consistent styling */
+.wallet-button-wrapper .wallet-adapter-button {
+  width: 100% !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  justify-content: center !important;
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  transition: background-color 0.2s !important;
+}
+
+.wallet-button-wrapper .wallet-adapter-button:hover {
+  background-color: hsl(var(--primary) / 0.9) !important;
+}
+
+.wallet-button-wrapper .wallet-adapter-button-trigger {
+  background-color: hsl(var(--primary)) !important;
+}
+
+.wallet-button-wrapper .wallet-adapter-button:not([disabled]):hover {
+  background-color: hsl(var(--primary) / 0.9) !important;
+}
+
+.glass {
     background: var(--glass-bg);
     backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
