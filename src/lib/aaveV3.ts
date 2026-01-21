@@ -1,27 +1,20 @@
 /**
  * Aave V3 Contract Addresses and ABIs
  * 
- * This module contains the necessary contract addresses for interacting
- * with Aave V3 across supported chains.
+ * OFFICIAL Aave V3 Pool addresses - DO NOT MODIFY
+ * Only Ethereum Mainnet and Sepolia are supported.
  */
 
-// Aave V3 Pool addresses per chain
-// Source: https://docs.aave.com/developers/deployed-contracts/v3-mainnet
+// Aave V3 Pool addresses per chain - OFFICIAL ADDRESSES
 export const AAVE_V3_POOL_ADDRESSES: Record<number, `0x${string}`> = {
   // Ethereum Mainnet
   1: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-  // Arbitrum One
-  42161: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Optimism
-  10: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Polygon
-  137: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Base
-  8453: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
+  // Sepolia Testnet
+  11155111: '0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951',
 };
 
-// Supported chain IDs for Earn/Lending
-export const EARN_SUPPORTED_CHAINS = [1, 42161, 10, 137, 8453] as const;
+// Supported chain IDs for Earn/Lending (only Mainnet + Sepolia)
+export const EARN_SUPPORTED_CHAINS = [1, 11155111] as const;
 export type EarnSupportedChainId = typeof EARN_SUPPORTED_CHAINS[number];
 
 // Check if a chain is supported for Earn
@@ -36,25 +29,25 @@ export function getAavePoolAddress(chainId: number): `0x${string}` | null {
 
 // Chain names for display
 export const EARN_CHAIN_NAMES: Record<number, string> = {
-  1: 'Ethereum',
-  42161: 'Arbitrum',
-  10: 'Optimism',
-  137: 'Polygon',
-  8453: 'Base',
+  1: 'Ethereum Mainnet',
+  11155111: 'Sepolia Testnet',
 };
 
 // Chain logos for UI
 export const EARN_CHAIN_LOGOS: Record<number, string> = {
   1: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/ethereum.svg',
-  42161: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/arbitrum.svg',
-  10: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/optimism.svg',
-  137: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/polygon.svg',
-  8453: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/base.svg',
+  11155111: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/ethereum.svg',
+};
+
+// Block explorer URLs
+export const EARN_CHAIN_EXPLORERS: Record<number, string> = {
+  1: 'https://etherscan.io/tx/',
+  11155111: 'https://sepolia.etherscan.io/tx/',
 };
 
 /**
  * Minimal Aave V3 Pool ABI
- * Only includes the functions we need for supply/withdraw operations
+ * Only includes the functions we need for supply operations
  */
 export const AAVE_V3_POOL_ABI = [
   {
@@ -68,17 +61,6 @@ export const AAVE_V3_POOL_ABI = [
       { name: 'referralCode', type: 'uint16' },
     ],
     outputs: [],
-  },
-  {
-    name: 'withdraw',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'asset', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-      { name: 'to', type: 'address' },
-    ],
-    outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
 
@@ -147,34 +129,5 @@ export const ERC20_ABI = [
   },
 ] as const;
 
-// Aave referral code - set to 0 by default
-// TODO: Register for official Aave referral code if available
+// Aave referral code - MUST be 0
 export const AAVE_REFERRAL_CODE = 0;
-
-/**
- * Aave deep link URL generator
- */
-export function getAaveDeepLink(chainId: number, assetAddress?: string): string {
-  const chainSlug = getAaveChainSlug(chainId);
-  
-  if (!chainSlug) {
-    return 'https://app.aave.com/';
-  }
-  
-  if (assetAddress) {
-    return `https://app.aave.com/reserve-overview/?underlyingAsset=${assetAddress.toLowerCase()}&marketName=proto_${chainSlug}_v3`;
-  }
-  
-  return `https://app.aave.com/?marketName=proto_${chainSlug}_v3`;
-}
-
-function getAaveChainSlug(chainId: number): string | null {
-  switch (chainId) {
-    case 1: return 'mainnet';
-    case 42161: return 'arbitrum';
-    case 10: return 'optimism';
-    case 137: return 'polygon';
-    case 8453: return 'base';
-    default: return null;
-  }
-}
