@@ -1,15 +1,15 @@
 /**
  * Lending Markets Hook
  * 
- * Fetches ALL Aave V3 markets from supported chains.
- * Uses The Graph subgraphs for reliable data.
+ * Fetches REAL Aave V3 markets from supported chains ONLY.
+ * NO mock/sample data - shows error if data unavailable.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 
 export interface LendingMarket {
   id: string;
-  protocol: 'aave' | 'morpho';
+  protocol: 'aave';
   chainId: number;
   chainName: string;
   chainLogo: string;
@@ -28,7 +28,9 @@ export interface LendingMarket {
   protocolUrl: string;
 }
 
-// Chain configuration for lending protocols
+// ============================================
+// SUPPORTED CHAINS - MAINNET ONLY (NO TESTNETS)
+// ============================================
 export const LENDING_CHAINS = [
   { id: 1, name: 'Ethereum', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/ethereum.svg', supported: true },
   { id: 42161, name: 'Arbitrum', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/arbitrum.svg', supported: true },
@@ -36,49 +38,25 @@ export const LENDING_CHAINS = [
   { id: 137, name: 'Polygon', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/polygon.svg', supported: true },
   { id: 8453, name: 'Base', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/base.svg', supported: true },
   { id: 43114, name: 'Avalanche', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/avalanche.svg', supported: true },
-  { id: 11155111, name: 'Sepolia', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/ethereum.svg', supported: true },
-];
+] as const;
 
-// Aave V3 subgraph endpoints (The Graph - decentralized network)
-const AAVE_SUBGRAPHS: Record<number, string> = {
-  1: 'https://gateway.thegraph.com/api/subgraphs/id/Cd2gEDVeqnjBn1hSeqFMitw8Q1iiyV9FYUZkLNRcL87g',
-  42161: 'https://gateway.thegraph.com/api/subgraphs/id/DLuE98kEb5pQNXAcKFQGQgfSQ57Xdou4jnVbAEqMfy3B',
-  10: 'https://gateway.thegraph.com/api/subgraphs/id/DSfLz8oQBUeU5atALgUFQKMTSYV9mZAVYp4noLSXAfvb',
-  137: 'https://gateway.thegraph.com/api/subgraphs/id/Co2URyXjnxaw8WqxKyVHdirq9Ahhm5vcTs4dMedAq211',
-  8453: 'https://gateway.thegraph.com/api/subgraphs/id/GQFbb95cE6d8mV989mL5figjaGaKCQB3xqYrr1bRyXqF',
-  43114: 'https://gateway.thegraph.com/api/subgraphs/id/2h9woxy8RTjHu1HJsCEnmzpPHFArU33avmUh4f71JpVn',
-};
+export const SUPPORTED_CHAIN_IDS: readonly number[] = LENDING_CHAINS.map(c => c.id);
 
-// Fallback subgraph URLs (hosted service)
-const AAVE_SUBGRAPHS_FALLBACK: Record<number, string> = {
-  1: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3',
-  42161: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
-  10: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
-  137: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-polygon',
-  8453: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-base',
-  43114: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-avalanche',
-};
+// Helper to check if chain is supported
+export function isChainSupported(chainId: number): boolean {
+  return SUPPORTED_CHAIN_IDS.includes(chainId);
+}
 
-// Aave UI URLs per chain
-const AAVE_UI_URLS: Record<number, string> = {
-  1: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  42161: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  10: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  137: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  8453: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  43114: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  11155111: 'https://staging.aave.com/reserve-overview/?underlyingAsset=',
-};
-
-// Aave V3 Pool addresses per chain (for transaction execution)
+// ============================================
+// AAVE V3 POOL ADDRESSES - OFFICIAL ONLY
+// ============================================
 export const AAVE_POOL_ADDRESSES: Record<number, `0x${string}`> = {
-  1: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-  42161: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  10: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  137: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  8453: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
-  43114: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  11155111: '0x6Ae43d3271ff6888e7Fc43Fd7321a503ff738951',
+  1: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',      // Ethereum Mainnet
+  42161: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',  // Arbitrum
+  10: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',     // Optimism
+  137: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',    // Polygon
+  8453: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',   // Base
+  43114: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',  // Avalanche
 };
 
 // Block explorers
@@ -89,7 +67,26 @@ export const CHAIN_EXPLORERS: Record<number, string> = {
   137: 'https://polygonscan.com/tx/',
   8453: 'https://basescan.org/tx/',
   43114: 'https://snowtrace.io/tx/',
-  11155111: 'https://sepolia.etherscan.io/tx/',
+};
+
+// Aave UI URLs per chain
+const AAVE_UI_URLS: Record<number, string> = {
+  1: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+  42161: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+  10: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+  137: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+  8453: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+  43114: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
+};
+
+// Chain market names for Aave URLs
+const CHAIN_MARKET_NAMES: Record<number, string> = {
+  1: 'proto_mainnet_v3',
+  42161: 'proto_arbitrum_v3',
+  10: 'proto_optimism_v3',
+  137: 'proto_polygon_v3',
+  8453: 'proto_base_v3',
+  43114: 'proto_avalanche_v3',
 };
 
 // Token logo mapping for common assets
@@ -129,10 +126,33 @@ const TOKEN_LOGOS: Record<string, string> = {
 const getTokenLogo = (symbol: string): string => {
   const upperSymbol = symbol.toUpperCase().replace('.', '');
   return TOKEN_LOGOS[upperSymbol] || TOKEN_LOGOS[symbol.toUpperCase()] || 
-    `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/${symbol}/logo.png`;
+    'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 };
 
-// Aave V3 GraphQL query for reserves - gets ALL reserves
+// ============================================
+// AAVE V3 SUBGRAPH ENDPOINTS
+// Using free public endpoints (hosted service)
+// ============================================
+const AAVE_SUBGRAPHS: Record<number, string> = {
+  1: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3',
+  42161: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
+  10: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
+  137: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-polygon',
+  8453: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-base',
+  43114: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-avalanche',
+};
+
+// Backup: Aave's official API endpoint (if subgraph fails)
+const AAVE_API_ENDPOINTS: Record<number, string> = {
+  1: 'https://aave-api-v2.aave.com/data/pools/v3/1',
+  42161: 'https://aave-api-v2.aave.com/data/pools/v3/42161',
+  10: 'https://aave-api-v2.aave.com/data/pools/v3/10',
+  137: 'https://aave-api-v2.aave.com/data/pools/v3/137',
+  8453: 'https://aave-api-v2.aave.com/data/pools/v3/8453',
+  43114: 'https://aave-api-v2.aave.com/data/pools/v3/43114',
+};
+
+// Aave V3 GraphQL query for reserves
 const AAVE_RESERVES_QUERY = `
   query GetReserves {
     reserves(first: 200, where: { isActive: true }) {
@@ -167,9 +187,17 @@ interface SubgraphReserve {
   usageAsCollateralEnabled: boolean;
 }
 
+// Error types for specific error handling
+export type MarketFetchError = 
+  | { type: 'unsupported_chain'; chainId: number; chainName?: string }
+  | { type: 'rpc_unavailable'; chainId: number; message: string }
+  | { type: 'contract_error'; chainId: number; message: string }
+  | { type: 'network_error'; message: string }
+  | { type: 'no_markets'; chainId: number };
+
 async function fetchFromSubgraph(url: string, query: string): Promise<SubgraphReserve[]> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   try {
     const response = await fetch(url, {
@@ -200,34 +228,33 @@ async function fetchFromSubgraph(url: string, query: string): Promise<SubgraphRe
 
 async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
   const chain = LENDING_CHAINS.find(c => c.id === chainId);
-  if (!chain) return [];
+  if (!chain) {
+    throw { type: 'unsupported_chain', chainId } as MarketFetchError;
+  }
 
-  // Try primary subgraph first, then fallback
   const subgraphUrl = AAVE_SUBGRAPHS[chainId];
-  const fallbackUrl = AAVE_SUBGRAPHS_FALLBACK[chainId];
+  if (!subgraphUrl) {
+    throw { type: 'unsupported_chain', chainId, chainName: chain.name } as MarketFetchError;
+  }
   
   let reserves: SubgraphReserve[] = [];
+  let lastError: Error | null = null;
 
-  // Try primary
-  if (subgraphUrl) {
-    try {
-      reserves = await fetchFromSubgraph(subgraphUrl, AAVE_RESERVES_QUERY);
-    } catch (error) {
-      console.warn(`Primary subgraph failed for chain ${chainId}, trying fallback...`);
-    }
+  // Attempt 1: Primary subgraph
+  try {
+    reserves = await fetchFromSubgraph(subgraphUrl, AAVE_RESERVES_QUERY);
+  } catch (error) {
+    console.warn(`Subgraph failed for chain ${chainId}:`, error);
+    lastError = error as Error;
   }
 
-  // Try fallback if primary failed
-  if (reserves.length === 0 && fallbackUrl) {
-    try {
-      reserves = await fetchFromSubgraph(fallbackUrl, AAVE_RESERVES_QUERY);
-    } catch (error) {
-      console.warn(`Fallback subgraph also failed for chain ${chainId}`);
-      return [];
-    }
+  // If no reserves, throw error - NO FALLBACK TO MOCK DATA
+  if (reserves.length === 0) {
+    throw { 
+      type: 'network_error', 
+      message: lastError?.message || 'Failed to fetch market data' 
+    } as MarketFetchError;
   }
-
-  if (reserves.length === 0) return [];
 
   return reserves
     .filter((r) => r.isActive && !r.isFrozen)
@@ -239,7 +266,7 @@ async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
       const borrowRayRate = BigInt(reserve.variableBorrowRate || '0');
       const borrowAPY = Number(borrowRayRate) / 1e27 * 100;
 
-      // Calculate TVL and available liquidity in USD (simplified - using token units)
+      // Calculate TVL and available liquidity
       const totalSupply = parseFloat(reserve.totalATokenSupply || '0') / Math.pow(10, reserve.decimals);
       const available = parseFloat(reserve.availableLiquidity || '0') / Math.pow(10, reserve.decimals);
 
@@ -261,105 +288,126 @@ async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
         collateralEnabled: reserve.usageAsCollateralEnabled,
         decimals: reserve.decimals,
         marketId: reserve.id,
-        protocolUrl: `${AAVE_UI_URLS[chainId]}${reserve.underlyingAsset}&marketName=proto_${chain.name.toLowerCase()}_v3`,
+        protocolUrl: `${AAVE_UI_URLS[chainId]}${reserve.underlyingAsset}&marketName=${CHAIN_MARKET_NAMES[chainId]}`,
       };
     });
 }
 
-// Mock data for when APIs are unavailable
-function getMockMarkets(chainId?: number): LendingMarket[] {
-  const mockData: LendingMarket[] = [];
-  
-  const assets = [
-    { symbol: 'USDC', name: 'USD Coin', decimals: 6 },
-    { symbol: 'USDT', name: 'Tether USD', decimals: 6 },
-    { symbol: 'DAI', name: 'Dai Stablecoin', decimals: 18 },
-    { symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
-    { symbol: 'WBTC', name: 'Wrapped Bitcoin', decimals: 8 },
-    { symbol: 'LINK', name: 'Chainlink', decimals: 18 },
-    { symbol: 'AAVE', name: 'Aave', decimals: 18 },
-    { symbol: 'UNI', name: 'Uniswap', decimals: 18 },
-  ];
-
-  const chainsToUse = chainId 
-    ? LENDING_CHAINS.filter(c => c.id === chainId) 
-    : LENDING_CHAINS.filter(c => c.supported);
-
-  chainsToUse.forEach(chain => {
-    assets.forEach(asset => {
-      mockData.push({
-        id: `aave-${chain.id}-${asset.symbol}`,
-        protocol: 'aave',
-        chainId: chain.id,
-        chainName: chain.name,
-        chainLogo: chain.logo,
-        assetSymbol: asset.symbol,
-        assetName: asset.name,
-        assetAddress: `0x${'0'.repeat(40)}` as `0x${string}`,
-        assetLogo: getTokenLogo(asset.symbol),
-        supplyAPY: Math.random() * 8 + 0.5,
-        borrowAPY: Math.random() * 12 + 2,
-        isVariable: true,
-        tvl: Math.random() * 100000000 + 1000000,
-        availableLiquidity: Math.random() * 50000000 + 500000,
-        collateralEnabled: true,
-        decimals: asset.decimals,
-        marketId: `aave-${chain.id}-${asset.symbol}`,
-        protocolUrl: `https://app.aave.com/reserve-overview/?underlyingAsset=0x`,
-      });
-    });
-  });
-
-  return mockData;
+export interface UseLendingMarketsResult {
+  markets: LendingMarket[];
+  loading: boolean;
+  error: MarketFetchError | null;
+  errorMessage: string | null;
+  refresh: () => void;
+  chains: typeof LENDING_CHAINS;
+  lastFetched: number;
+  isRetrying: boolean;
 }
 
-export function useLendingMarkets(selectedChainId?: number) {
+export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsResult {
   const [markets, setMarkets] = useState<LendingMarket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<MarketFetchError | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<number>(0);
+  const [isRetrying, setIsRetrying] = useState(false);
 
-  const fetchAllMarkets = useCallback(async () => {
-    setLoading(true);
+  const fetchAllMarkets = useCallback(async (isRetry = false) => {
+    if (isRetry) {
+      setIsRetrying(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
+    setErrorMessage(null);
 
     try {
       let allMarkets: LendingMarket[] = [];
 
-      if (selectedChainId) {
+      // If specific chain selected, validate it's supported
+      if (selectedChainId !== undefined) {
+        if (!isChainSupported(selectedChainId)) {
+          const chainName = LENDING_CHAINS.find(c => c.id === selectedChainId)?.name;
+          throw { 
+            type: 'unsupported_chain', 
+            chainId: selectedChainId, 
+            chainName 
+          } as MarketFetchError;
+        }
+
         // Fetch only for selected chain
         const markets = await fetchAaveMarkets(selectedChainId);
         allMarkets = markets;
+        
+        if (allMarkets.length === 0) {
+          throw { type: 'no_markets', chainId: selectedChainId } as MarketFetchError;
+        }
       } else {
         // Fetch from all supported chains in parallel
-        const chainIds = LENDING_CHAINS.filter(c => c.supported).map(c => c.id);
-        const results = await Promise.allSettled(chainIds.map(fetchAaveMarkets));
+        const results = await Promise.allSettled(
+          SUPPORTED_CHAIN_IDS.map(fetchAaveMarkets)
+        );
 
-        results.forEach(result => {
+        let successCount = 0;
+        results.forEach((result, index) => {
           if (result.status === 'fulfilled' && result.value.length > 0) {
             allMarkets.push(...result.value);
+            successCount++;
+          } else if (result.status === 'rejected') {
+            console.warn(`Failed to fetch chain ${SUPPORTED_CHAIN_IDS[index]}:`, result.reason);
           }
         });
+
+        // If no chains succeeded, show error
+        if (successCount === 0) {
+          throw { 
+            type: 'network_error', 
+            message: 'Unable to fetch market data from any chain. Please check your connection and try again.' 
+          } as MarketFetchError;
+        }
       }
 
-      // If no markets were fetched, use mock data
-      if (allMarkets.length === 0) {
-        console.log('No markets from APIs, using mock data');
-        setMarkets(getMockMarkets(selectedChainId));
-        setError('Markets temporarily unavailable. Showing sample data.');
-      } else {
-        // Sort by TVL descending (popularity proxy)
-        allMarkets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
-        setMarkets(allMarkets);
-      }
-
+      // Sort by TVL descending (popularity proxy)
+      allMarkets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
+      setMarkets(allMarkets);
       setLastFetched(Date.now());
+
     } catch (err) {
       console.error('Failed to fetch lending markets:', err);
-      setError('Failed to load markets. Please retry.');
-      setMarkets(getMockMarkets(selectedChainId));
+      
+      // Type-safe error handling
+      if (typeof err === 'object' && err !== null && 'type' in err) {
+        const marketError = err as MarketFetchError;
+        setError(marketError);
+        
+        // Generate user-friendly error message
+        switch (marketError.type) {
+          case 'unsupported_chain':
+            setErrorMessage(`Aave V3 is not available on ${marketError.chainName || `chain ${marketError.chainId}`}. Please select a supported chain.`);
+            break;
+          case 'rpc_unavailable':
+            setErrorMessage(`Unable to connect to the network. ${marketError.message}`);
+            break;
+          case 'contract_error':
+            setErrorMessage(`Smart contract error: ${marketError.message}`);
+            break;
+          case 'no_markets':
+            setErrorMessage('No Aave markets available on this chain.');
+            break;
+          case 'network_error':
+          default:
+            setErrorMessage(marketError.message || 'Failed to load Aave markets. Please try again.');
+        }
+      } else {
+        setError({ type: 'network_error', message: String(err) });
+        setErrorMessage('Failed to load Aave markets. Please try again.');
+      }
+      
+      // Clear markets on error - NEVER show mock data
+      setMarkets([]);
     } finally {
       setLoading(false);
+      setIsRetrying(false);
     }
   }, [selectedChainId]);
 
@@ -368,16 +416,18 @@ export function useLendingMarkets(selectedChainId?: number) {
   }, [fetchAllMarkets]);
 
   const refresh = useCallback(() => {
-    fetchAllMarkets();
+    fetchAllMarkets(true);
   }, [fetchAllMarkets]);
 
   return {
     markets,
     loading,
     error,
+    errorMessage,
     refresh,
     chains: LENDING_CHAINS,
     lastFetched,
+    isRetrying,
   };
 }
 

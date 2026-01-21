@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
-import { getPoolAddress, getExplorerUrl, AAVE_POOL_ADDRESSES } from '@/hooks/useLendingMarkets';
+import { getPoolAddress, getExplorerUrl, AAVE_POOL_ADDRESSES, CHAIN_EXPLORERS } from '@/hooks/useLendingMarkets';
 import { FEE_WALLET, FEE_BPS, getFeePercentage, isPlatformFeeConfigured, calculateFeeAmounts } from '@/lib/env';
 import { logEarnEvent } from '@/lib/earnLogger';
 import { ERC20_ABI, AAVE_V3_POOL_ABI, AAVE_REFERRAL_CODE } from '@/lib/aaveV3';
