@@ -273,11 +273,29 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[Earn] ${name} contract call failed:`, error);
     
+    // Categorize the error more specifically
+    let errorType: MarketFetchErrorType = 'contract_error';
+    let detailedMessage = errorMessage;
+
+    if (errorMessage.includes('execution reverted')) {
+      errorType = 'contract_error';
+      detailedMessage = `Contract call reverted: ${errorMessage}`;
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) {
+      errorType = 'rpc_unavailable';
+      detailedMessage = `RPC timeout on ${name}`;
+    } else if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+      errorType = 'rpc_unavailable';
+      detailedMessage = `RPC rate limited on ${name}`;
+    } else if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
+      errorType = 'network_error';
+      detailedMessage = `Network error connecting to ${name}: ${errorMessage}`;
+    }
+    
     throw {
-      type: 'contract_error',
+      type: errorType,
       chainId,
       chainName: name,
-      message: `Aave contracts not reachable on ${name}: ${errorMessage}`,
+      message: detailedMessage,
       failedAddress: aaveAddresses.UI_POOL_DATA_PROVIDER,
     } as MarketFetchError;
   }
