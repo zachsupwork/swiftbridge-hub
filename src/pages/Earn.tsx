@@ -27,8 +27,10 @@ import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
 import { RpcDebugPanel } from '@/components/earn/RpcDebugPanel';
 import { AaveDiagnosticsPanel } from '@/components/earn/AaveDiagnosticsPanel';
+import { BorrowTab } from '@/components/earn/BorrowTab';
 import { useLendingMarkets, type LendingMarket, isEarnChainSupported } from '@/hooks/useLendingMarkets';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
+import { useAaveBorrow } from '@/hooks/useAaveBorrow';
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
@@ -293,7 +295,7 @@ export default function Earn() {
                 <TrendingUp className="w-4 h-4" />
                 Lend
               </TabsTrigger>
-              <TabsTrigger value="borrow" disabled className="gap-2 opacity-50">
+              <TabsTrigger value="borrow" className="gap-2">
                 <Lock className="w-4 h-4" />
                 Borrow
               </TabsTrigger>
@@ -350,14 +352,21 @@ export default function Earn() {
               />
             </TabsContent>
 
-            <TabsContent value="borrow">
-              <div className="glass rounded-2xl p-12 text-center">
-                <Lock className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <h3 className="text-xl font-semibold mb-2">Borrowing Coming Soon</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Borrow functionality is under development. Stay tuned!
-                </p>
+            <TabsContent value="borrow" className="mt-6">
+              {/* Borrow Warning */}
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 mb-6">
+                <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs text-warning font-medium">
+                    Borrowing has liquidation risk. Monitor your Health Factor.
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    If your Health Factor drops below 1.0, your collateral may be liquidated.
+                  </p>
+                </div>
               </div>
+              
+              <BorrowTab />
             </TabsContent>
           </Tabs>
 
