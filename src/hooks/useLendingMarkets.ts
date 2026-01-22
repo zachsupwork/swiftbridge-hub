@@ -198,12 +198,13 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
 
   try {
     // Call UiPoolDataProviderV3.getReservesData
-    const result = await client.readContract({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (client.readContract as any)({
       address: aaveAddresses.UI_POOL_DATA_PROVIDER,
       abi: UI_POOL_DATA_PROVIDER_ABI,
       functionName: 'getReservesData',
       args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
-    } as const) as unknown as [AaveReserveData[], unknown];
+    }) as [AaveReserveData[], unknown];
 
     const [reserves] = result;
     
