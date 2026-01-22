@@ -197,8 +197,8 @@ export default function Earn() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* RPC Debug Panel - DEV ONLY */}
-          <RpcDebugPanel />
+          {/* RPC Configuration Status Panel - Always visible */}
+          <RpcDebugPanel className="mb-2" />
 
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
