@@ -6,13 +6,14 @@
  * - Search and filter
  * - Supply drawer with mandatory fee
  * - Mobile-first responsive design
- * - NO mock/sample data - real markets only
+ * - Preview mode with demo data for Lovable Preview
+ * - Production mode with real Aave V3 markets
  * - RPC debug panel (dev mode only)
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check } from 'lucide-react';
+import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check, Info, Rocket } from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
 import { useReadContracts } from 'wagmi';
 import { erc20Abi } from 'viem';
@@ -21,6 +22,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
 import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
@@ -42,7 +44,7 @@ export default function Earn() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
 
-  // Fetch markets
+  // Fetch markets (includes preview mode detection)
   const { 
     markets, 
     loading, 
@@ -53,6 +55,7 @@ export default function Earn() {
     lastFetched, 
     isRetrying,
     partialFailures,
+    isPreview,
   } = useLendingMarkets(selectedChainId);
 
   // Track page view
@@ -199,14 +202,48 @@ export default function Earn() {
           {/* RPC Debug Panel - DEV ONLY */}
           <RpcDebugPanel />
 
+          {/* Preview Mode Banner */}
+          {isPreview && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-info/10 border border-info/30">
+              <Info className="w-5 h-5 text-info flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-semibold text-info">Preview Mode</span>
+                  <Badge variant="outline" className="text-[10px] px-1.5 h-4 border-info/40 text-info bg-info/10">
+                    Demo Data
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Live Aave markets are disabled in preview. Deploy to Vercel with RPC env vars to test real supply &amp; APY data.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold">
-                <span className="text-gradient">Earn</span>
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl sm:text-3xl font-bold">
+                  <span className="text-gradient">Earn</span>
+                </h1>
+                {/* Environment badge */}
+                {isPreview ? (
+                  <Badge variant="outline" className="text-xs px-2 h-5 border-info/40 text-info bg-info/10">
+                    Preview
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs px-2 h-5 border-success/40 text-success bg-success/10">
+                    <Rocket className="w-3 h-3 mr-1" />
+                    Live
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Supply assets and earn yield via Aave V3
+                {isPreview 
+                  ? "Example markets shown below (deploy to see real data)"
+                  : "Supply assets and earn yield via Aave V3"
+                }
               </p>
             </div>
             
@@ -337,6 +374,7 @@ export default function Earn() {
                 isRetrying={isRetrying}
                 onChainChange={handleChainChange}
                 partialFailures={partialFailures}
+                isPreview={isPreview}
               />
             </TabsContent>
 
