@@ -1,20 +1,23 @@
 /**
  * Lending Markets Hook
  * 
- * Fetches REAL Aave V3 markets from supported chains ONLY.
+ * Fetches REAL Aave V3 markets from on-chain UiPoolDataProviderV3.
  * NO demo/preview mode - always fetches live on-chain data.
  * 
  * Uses Vite env vars (import.meta.env.VITE_*)
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPublicClient, http, type Chain } from 'viem';
+import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { 
-  SUPPORTED_CHAINS, 
-  SUPPORTED_CHAIN_IDS, 
-  getChainConfig, 
-  isEarnChainSupported,
-  type ChainConfig 
-} from '@/lib/chainConfig';
+  AAVE_V3_ADDRESSES, 
+  UI_POOL_DATA_PROVIDER_ABI,
+  getAaveAddresses,
+  isAaveSupported,
+  type AaveReserveData,
+} from '@/lib/aaveAddressBook';
+import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig } from '@/lib/chainConfig';
 
 export interface LendingMarket {
   id: string;
@@ -37,8 +40,19 @@ export interface LendingMarket {
   protocolUrl: string;
 }
 
+// Viem chain objects by chainId
+const VIEM_CHAINS: Record<number, Chain> = {
+  1: mainnet,
+  42161: arbitrum,
+  10: optimism,
+  137: polygon,
+  8453: base,
+  43114: avalanche,
+};
+
 // Re-export chain helpers
-export { SUPPORTED_CHAINS, SUPPORTED_CHAIN_IDS, isEarnChainSupported, getChainConfig };
+export { SUPPORTED_CHAINS, getChainConfig, isAaveSupported as isEarnChainSupported };
+export const SUPPORTED_CHAIN_IDS = SUPPORTED_CHAINS.map(c => c.chainId);
 
 // Formatted chain list for UI components
 export const LENDING_CHAINS = SUPPORTED_CHAINS.map(c => ({
@@ -88,47 +102,11 @@ const getTokenLogo = (symbol: string): string => {
     'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 };
 
-// Aave V3 GraphQL query for reserves
-const AAVE_RESERVES_QUERY = `
-  query GetReserves {
-    reserves(first: 200, where: { isActive: true }) {
-      id
-      symbol
-      name
-      underlyingAsset
-      liquidityRate
-      variableBorrowRate
-      totalATokenSupply
-      availableLiquidity
-      decimals
-      isActive
-      isFrozen
-      usageAsCollateralEnabled
-    }
-  }
-`;
-
-interface SubgraphReserve {
-  id: string;
-  symbol: string;
-  name: string;
-  underlyingAsset: string;
-  liquidityRate: string;
-  variableBorrowRate: string;
-  totalATokenSupply: string;
-  availableLiquidity: string;
-  decimals: number;
-  isActive: boolean;
-  isFrozen: boolean;
-  usageAsCollateralEnabled: boolean;
-}
-
 // Error types for specific error handling
 export type MarketFetchErrorType = 
   | 'unsupported_chain'
   | 'missing_rpc'
   | 'rpc_unavailable'
-  | 'subgraph_error'
   | 'contract_error'
   | 'network_error'
   | 'no_markets'
@@ -140,112 +118,168 @@ export interface MarketFetchError {
   chainName?: string;
   message: string;
   missingEnvKey?: string;
+  failedAddress?: string;
   failedChains?: { chainId: number; chainName: string; error: string }[];
 }
 
-async function fetchFromSubgraph(url: string, query: string): Promise<SubgraphReserve[]> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+// Aave market URL base
+const AAVE_MARKET_NAMES: Record<number, string> = {
+  1: 'proto_mainnet_v3',
+  42161: 'proto_arbitrum_v3',
+  10: 'proto_optimism_v3',
+  137: 'proto_polygon_v3',
+  8453: 'proto_base_v3',
+  43114: 'proto_avalanche_v3',
+};
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (data.errors) {
-      throw new Error(data.errors[0]?.message || 'GraphQL error');
-    }
-
-    return data?.data?.reserves || [];
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-}
-
-async function fetchAaveMarkets(chainConfig: ChainConfig): Promise<LendingMarket[]> {
-  const { chainId, name, aaveSubgraph, aaveMarketName } = chainConfig;
+/**
+ * Fetch Aave V3 reserves data using UiPoolDataProviderV3 on-chain call
+ */
+async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<LendingMarket[]> {
+  const { chainId, name, rpcUrl, logo } = chainConfig;
   
-  if (!aaveSubgraph) {
+  // Get Aave addresses from address book
+  const aaveAddresses = getAaveAddresses(chainId);
+  
+  if (!aaveAddresses) {
     throw {
       type: 'unsupported_chain',
       chainId,
       chainName: name,
-      message: `No Aave subgraph configured for ${name}`,
+      message: `Aave V3 not available on ${name}`,
     } as MarketFetchError;
   }
-  
-  let reserves: SubgraphReserve[] = [];
+
+  if (!rpcUrl) {
+    throw {
+      type: 'missing_rpc',
+      chainId,
+      chainName: name,
+      message: `Missing RPC for ${name}`,
+      missingEnvKey: chainConfig.rpcEnvKey,
+    } as MarketFetchError;
+  }
+
+  // Log addresses for debugging (temporary)
+  console.log(`[Earn] Fetching ${name} markets:`, {
+    chainId,
+    POOL_ADDRESSES_PROVIDER: aaveAddresses.POOL_ADDRESSES_PROVIDER,
+    UI_POOL_DATA_PROVIDER: aaveAddresses.UI_POOL_DATA_PROVIDER,
+    POOL: aaveAddresses.POOL,
+  });
+
+  // Validate addresses are defined
+  if (!aaveAddresses.POOL_ADDRESSES_PROVIDER || !aaveAddresses.UI_POOL_DATA_PROVIDER) {
+    console.error(`[Earn] Aave addresses undefined for ${name}:`, aaveAddresses);
+    throw {
+      type: 'contract_error',
+      chainId,
+      chainName: name,
+      message: `Aave addresses undefined for ${name}`,
+      failedAddress: 'POOL_ADDRESSES_PROVIDER or UI_POOL_DATA_PROVIDER',
+    } as MarketFetchError;
+  }
+
+  const viemChain = VIEM_CHAINS[chainId];
+  if (!viemChain) {
+    throw {
+      type: 'unsupported_chain',
+      chainId,
+      chainName: name,
+      message: `Chain ${name} not configured in viem`,
+    } as MarketFetchError;
+  }
+
+  // Create viem client with the RPC URL
+  const client = createPublicClient({
+    chain: viemChain,
+    transport: http(rpcUrl),
+  });
 
   try {
-    reserves = await fetchFromSubgraph(aaveSubgraph, AAVE_RESERVES_QUERY);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    throw {
-      type: 'subgraph_error',
-      chainId,
-      chainName: name,
-      message: `Failed to fetch ${name} markets: ${errorMessage}`,
-    } as MarketFetchError;
-  }
+    // Call UiPoolDataProviderV3.getReservesData
+    const result = await client.readContract({
+      address: aaveAddresses.UI_POOL_DATA_PROVIDER,
+      abi: UI_POOL_DATA_PROVIDER_ABI,
+      functionName: 'getReservesData',
+      args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+    } as const) as unknown as [AaveReserveData[], unknown];
 
-  if (reserves.length === 0) {
-    throw {
-      type: 'no_markets',
-      chainId,
-      chainName: name,
-      message: `No active markets found on ${name}`,
-    } as MarketFetchError;
-  }
-
-  const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
-
-  return reserves
-    .filter((r) => r.isActive && !r.isFrozen)
-    .map((reserve) => {
-      // liquidityRate is in RAY (1e27), convert to APY percentage
-      const rayRate = BigInt(reserve.liquidityRate || '0');
-      const supplyAPY = Number(rayRate) / 1e27 * 100;
-
-      const borrowRayRate = BigInt(reserve.variableBorrowRate || '0');
-      const borrowAPY = Number(borrowRayRate) / 1e27 * 100;
-
-      // Calculate TVL and available liquidity
-      const totalSupply = parseFloat(reserve.totalATokenSupply || '0') / Math.pow(10, reserve.decimals);
-      const available = parseFloat(reserve.availableLiquidity || '0') / Math.pow(10, reserve.decimals);
-
-      return {
-        id: `aave-${chainId}-${reserve.underlyingAsset}`,
-        protocol: 'aave' as const,
+    const [reserves] = result;
+    
+    if (!reserves || reserves.length === 0) {
+      throw {
+        type: 'no_markets',
         chainId,
         chainName: name,
-        chainLogo: chainConfig.logo,
-        assetSymbol: reserve.symbol,
-        assetName: reserve.name,
-        assetAddress: reserve.underlyingAsset as `0x${string}`,
-        assetLogo: getTokenLogo(reserve.symbol),
-        supplyAPY,
-        borrowAPY,
-        isVariable: true,
-        tvl: totalSupply > 0 ? totalSupply : null,
-        availableLiquidity: available > 0 ? available : null,
-        collateralEnabled: reserve.usageAsCollateralEnabled,
-        decimals: reserve.decimals,
-        marketId: reserve.id,
-        protocolUrl: `${aaveUiUrl}${reserve.underlyingAsset}&marketName=${aaveMarketName}`,
-      };
-    });
+        message: `No Aave V3 markets available on ${name}`,
+      } as MarketFetchError;
+    }
+
+    console.log(`[Earn] ${name}: Fetched ${reserves.length} reserves`);
+
+    const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
+    const marketName = AAVE_MARKET_NAMES[chainId] || '';
+
+    return reserves
+      .filter((r) => r.isActive && !r.isFrozen && !r.isPaused)
+      .map((reserve) => {
+        // liquidityRate is in RAY (1e27), convert to APY percentage
+        const liquidityRate = Number(reserve.liquidityRate);
+        const supplyAPY = (liquidityRate / 1e27) * 100;
+
+        const variableBorrowRate = Number(reserve.variableBorrowRate);
+        const borrowAPY = (variableBorrowRate / 1e27) * 100;
+
+        // Calculate TVL from available liquidity + borrowed
+        const decimals = Number(reserve.decimals);
+        const availableLiquidity = Number(reserve.availableLiquidity) / Math.pow(10, decimals);
+        
+        // Total variable debt scaled
+        const totalScaledVariableDebt = Number(reserve.totalScaledVariableDebt) / Math.pow(10, decimals);
+        const totalStableDebt = Number(reserve.totalPrincipalStableDebt) / Math.pow(10, decimals);
+        
+        // TVL = available + all borrowed
+        const tvl = availableLiquidity + totalScaledVariableDebt + totalStableDebt;
+
+        return {
+          id: `aave-${chainId}-${reserve.underlyingAsset}`,
+          protocol: 'aave' as const,
+          chainId,
+          chainName: name,
+          chainLogo: logo,
+          assetSymbol: reserve.symbol,
+          assetName: reserve.name,
+          assetAddress: reserve.underlyingAsset,
+          assetLogo: getTokenLogo(reserve.symbol),
+          supplyAPY,
+          borrowAPY,
+          isVariable: true,
+          tvl: tvl > 0 ? tvl : null,
+          availableLiquidity: availableLiquidity > 0 ? availableLiquidity : null,
+          collateralEnabled: reserve.usageAsCollateralEnabled,
+          decimals,
+          marketId: reserve.underlyingAsset,
+          protocolUrl: `${aaveUiUrl}${reserve.underlyingAsset}&marketName=${marketName}`,
+        };
+      });
+  } catch (error) {
+    // Check if it's already our error type
+    if (typeof error === 'object' && error !== null && 'type' in error) {
+      throw error;
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Earn] ${name} contract call failed:`, error);
+    
+    throw {
+      type: 'contract_error',
+      chainId,
+      chainName: name,
+      message: `Aave contracts not reachable on ${name}: ${errorMessage}`,
+      failedAddress: aaveAddresses.UI_POOL_DATA_PROVIDER,
+    } as MarketFetchError;
+  }
 }
 
 export interface ChainFetchResult {
@@ -280,10 +314,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
   const [partialFailures, setPartialFailures] = useState<{ chainId: number; chainName: string; error: string }[]>([]);
 
   const fetchAllMarkets = useCallback(async (isRetry = false) => {
-    // Always fetch real data - no preview/demo mode
-    if (import.meta.env.DEV) {
-      console.log('[Earn] Fetching LIVE Aave V3 markets from subgraphs...');
-    }
+    console.log('[Earn] Fetching LIVE Aave V3 markets from on-chain UiPoolDataProviderV3...');
 
     if (isRetry) {
       setIsRetrying(true);
@@ -312,7 +343,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
         }
 
         try {
-          const chainMarkets = await fetchAaveMarkets(chainConfig);
+          const chainMarkets = await fetchAaveMarketsOnChain(chainConfig);
           allMarkets = chainMarkets;
           results.push({
             chainId: selectedChainId,
@@ -332,10 +363,10 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
           throw fetchError;
         }
       } else {
-        // Fetch from ALL supported chains in parallel - skip failures
+        // Fetch from ALL supported chains in parallel
         const fetchPromises = SUPPORTED_CHAINS.map(async (chainConfig): Promise<ChainFetchResult> => {
           try {
-            const chainMarkets = await fetchAaveMarkets(chainConfig);
+            const chainMarkets = await fetchAaveMarketsOnChain(chainConfig);
             return {
               chainId: chainConfig.chainId,
               chainName: chainConfig.name,
@@ -369,9 +400,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
               chainName: result.chainName,
               error: result.error || 'Unknown error',
             });
-            if (import.meta.env.DEV) {
-              console.warn(`[Earn] ${result.chainName} failed:`, result.error);
-            }
+            console.warn(`[Earn] ${result.chainName} failed:`, result.error);
           }
         });
 
@@ -397,7 +426,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       setLastFetched(Date.now());
 
     } catch (err) {
-      console.error('Failed to fetch lending markets:', err);
+      console.error('[Earn] Failed to fetch lending markets:', err);
       
       // Type-safe error handling
       if (typeof err === 'object' && err !== null && 'type' in err) {
@@ -455,14 +484,11 @@ function getErrorMessage(error: MarketFetchError): string {
     case 'rpc_unavailable':
       return `Unable to connect to ${error.chainName || 'the network'}. The RPC endpoint is unavailable.`;
     
-    case 'subgraph_error':
-      return `Failed to fetch market data for ${error.chainName || 'the selected chain'}. ${error.message}`;
-    
     case 'contract_error':
-      return `Smart contract error on ${error.chainName || 'the network'}: ${error.message}`;
+      return `Aave contracts not reachable on ${error.chainName || 'the network'}. Failed address: ${error.failedAddress || 'unknown'}. ${error.message}`;
     
     case 'no_markets':
-      return `No active Aave markets found on ${error.chainName || 'this chain'}.`;
+      return `No Aave V3 markets available on ${error.chainName || 'this chain'}.`;
     
     case 'network_error':
     default:
@@ -472,7 +498,8 @@ function getErrorMessage(error: MarketFetchError): string {
 
 // Legacy exports for backward compatibility
 export function getPoolAddress(chainId: number): `0x${string}` | null {
-  return getChainConfig(chainId)?.aavePool || null;
+  const addresses = getAaveAddresses(chainId);
+  return addresses?.POOL || null;
 }
 
 export function getExplorerUrl(chainId: number, txHash: string): string {

@@ -1,24 +1,15 @@
 /**
  * Aave V3 Contract Addresses and ABIs
  * 
- * OFFICIAL Aave V3 Pool addresses for supported mainnets.
+ * Uses the address book from src/lib/aaveAddressBook.ts for official addresses.
  */
 
-// Aave V3 Pool addresses per chain - OFFICIAL ADDRESSES
-export const AAVE_V3_POOL_ADDRESSES: Record<number, `0x${string}`> = {
-  // Ethereum Mainnet
-  1: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-  // Arbitrum One
-  42161: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Optimism
-  10: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Polygon
-  137: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-  // Base
-  8453: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
-  // Avalanche
-  43114: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-};
+import { AAVE_V3_ADDRESSES, isAaveSupported, getPoolAddress as getPoolFromBook } from '@/lib/aaveAddressBook';
+
+// Re-export for backward compatibility
+export const AAVE_V3_POOL_ADDRESSES: Record<number, `0x${string}`> = Object.fromEntries(
+  Object.entries(AAVE_V3_ADDRESSES).map(([chainId, addrs]) => [chainId, addrs.POOL])
+) as Record<number, `0x${string}`>;
 
 // Supported chain IDs for Earn/Lending
 export const EARN_SUPPORTED_CHAINS = [1, 42161, 10, 137, 8453, 43114] as const;
@@ -26,12 +17,12 @@ export type EarnSupportedChainId = typeof EARN_SUPPORTED_CHAINS[number];
 
 // Check if a chain is supported for Earn
 export function isEarnChainSupported(chainId: number): boolean {
-  return chainId in AAVE_V3_POOL_ADDRESSES;
+  return isAaveSupported(chainId);
 }
 
 // Get the Aave V3 Pool address for a chain
 export function getAavePoolAddress(chainId: number): `0x${string}` | null {
-  return AAVE_V3_POOL_ADDRESSES[chainId] || null;
+  return getPoolFromBook(chainId);
 }
 
 // Chain names for display
