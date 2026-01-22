@@ -7,15 +7,14 @@
 
 import { useState, useCallback } from 'react';
 import { ChevronDown, ChevronUp, Play, Copy, Check, CheckCircle, XCircle, Loader2, AlertTriangle, Bug } from 'lucide-react';
-import { createPublicClient, http, type Chain, erc20Abi } from 'viem';
+import { createPublicClient, http, type Chain, erc20Abi, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { useAccount, useChainId } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig } from '@/lib/chainConfig';
+import { getChainConfig, SUPPORTED_CHAINS } from '@/lib/chainConfig';
 import { 
-  AAVE_V3_ADDRESSES, 
   UI_POOL_DATA_PROVIDER_ABI,
   getAaveAddresses,
 } from '@/lib/aaveAddressBook';
@@ -248,12 +247,31 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
     }
 
     // STEP 2: PoolAddressesProvider.getPool()
+    let checksummedProvider: `0x${string}`;
+    let checksummedUiProvider: `0x${string}`;
+    
+    try {
+      checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
+      checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
+    } catch (checksumError) {
+      updateStep('provider', { 
+        status: 'failed', 
+        error: `Address checksum failed: ${checksumError instanceof Error ? checksumError.message : 'unknown'}`,
+        details: { 
+          rawProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER,
+          rawUiProvider: aaveAddresses.UI_POOL_DATA_PROVIDER,
+        }
+      });
+      setIsRunning(false);
+      return;
+    }
+    
     try {
       updateStep('provider', { status: 'running' });
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const poolAddress = await (client.readContract as any)({
-        address: aaveAddresses.POOL_ADDRESSES_PROVIDER,
+        address: checksummedProvider,
         abi: POOL_ADDRESSES_PROVIDER_ABI,
         functionName: 'getPool',
       }) as `0x${string}`;
@@ -300,10 +318,10 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reservesList = await (client.readContract as any)({
-        address: aaveAddresses.UI_POOL_DATA_PROVIDER,
+        address: checksummedUiProvider,
         abi: UI_POOL_DATA_PROVIDER_EXTENDED_ABI,
         functionName: 'getReservesList',
-        args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+        args: [checksummedProvider],
       }) as `0x${string}`[];
 
       if (!reservesList || reservesList.length === 0) {
@@ -327,8 +345,8 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
         status: 'failed', 
         error: `UiPoolDataProvider.getReservesList() failed: ${errMsg}`,
         details: {
-          contract: aaveAddresses.UI_POOL_DATA_PROVIDER,
-          args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+          contract: checksummedUiProvider,
+          args: [checksummedProvider],
           chainId: walletChainId,
         }
       });
@@ -343,10 +361,10 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
       
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (client.readContract as any)({
-        address: aaveAddresses.UI_POOL_DATA_PROVIDER,
+        address: checksummedUiProvider,
         abi: UI_POOL_DATA_PROVIDER_ABI,
         functionName: 'getReservesData',
-        args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+        args: [checksummedProvider],
       }) as [unknown[], unknown];
 
       const [reserves] = result;
@@ -373,8 +391,8 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
         status: 'failed', 
         error: `UiPoolDataProvider.getReservesData() failed: ${errMsg}`,
         details: {
-          contract: aaveAddresses.UI_POOL_DATA_PROVIDER,
-          args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+          contract: checksummedUiProvider,
+          args: [checksummedProvider],
           chainId: walletChainId,
           fullError: String(error),
         }

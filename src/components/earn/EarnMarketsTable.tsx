@@ -244,13 +244,34 @@ export function EarnMarketsTable({
 
   return (
     <div className="space-y-2">
-      {/* Partial failures warning */}
+      {/* Partial failures warning - show individual chain badges */}
       {partialFailures.length > 0 && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span>
-            Some chains failed to load: {partialFailures.map(f => `${f.chainName} (${f.error})`).join(', ')}
-          </span>
+        <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+          <div className="flex items-center gap-2 text-sm text-warning mb-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>Some chains temporarily unavailable:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {partialFailures.map(f => (
+              <TooltipProvider key={f.chainId}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge 
+                      variant="outline" 
+                      className="bg-warning/10 text-warning border-warning/30 text-xs cursor-help"
+                    >
+                      {f.chainName}
+                      <Info className="w-3 h-3 ml-1" />
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs">
+                    <p className="text-xs font-medium">Chain: {f.chainName} (ID: {f.chainId})</p>
+                    <p className="text-xs text-muted-foreground mt-1">{f.error}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ))}
+          </div>
         </div>
       )}
 

@@ -22,11 +22,11 @@ export interface AaveV3Addresses {
  * Source: https://github.com/bgd-labs/aave-address-book
  */
 export const AAVE_V3_ADDRESSES: Record<number, AaveV3Addresses> = {
-  // Ethereum Mainnet
+  // Ethereum Mainnet (Official Aave V3 addresses)
   1: {
-    POOL_ADDRESSES_PROVIDER: '0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e',
+    POOL_ADDRESSES_PROVIDER: '0x2f39D218133AFaB8F2B819B1066c7E434Ad94E9e',
     POOL: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-    UI_POOL_DATA_PROVIDER: '0x91c0eA31b49B69Ea18607702c61cD4d37f0F4c15',
+    UI_POOL_DATA_PROVIDER: '0x56b7A1012765C285afAC8b8F25C69Bf10ccfE978',
   },
   // Arbitrum One
   42161: {
