@@ -7,6 +7,7 @@
  * - Supply drawer with mandatory fee
  * - Mobile-first responsive design
  * - NO mock/sample data - real markets only
+ * - RPC debug panel (dev mode only)
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
@@ -23,7 +24,8 @@ import { Button } from '@/components/ui/button';
 import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
 import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
-import { useLendingMarkets, type LendingMarket, isChainSupported } from '@/hooks/useLendingMarkets';
+import { RpcDebugPanel } from '@/components/earn/RpcDebugPanel';
+import { useLendingMarkets, type LendingMarket, isEarnChainSupported } from '@/hooks/useLendingMarkets';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
 
 export default function Earn() {
@@ -41,9 +43,17 @@ export default function Earn() {
   const [copiedAddress, setCopiedAddress] = useState(false);
 
   // Fetch markets
-  const { markets, loading, error, errorMessage, refresh, chains, lastFetched, isRetrying } = useLendingMarkets(
-    selectedChainId
-  );
+  const { 
+    markets, 
+    loading, 
+    error, 
+    errorMessage, 
+    refresh, 
+    chains, 
+    lastFetched, 
+    isRetrying,
+    partialFailures,
+  } = useLendingMarkets(selectedChainId);
 
   // Track page view
   useEffect(() => {
@@ -174,8 +184,9 @@ export default function Earn() {
     refresh();
   }, [refetchBalances, refresh]);
 
-  // Check if user's wallet is on unsupported chain
-  const walletOnUnsupportedChain = isConnected && !isChainSupported(walletChainId);
+  // Check if user's wallet is on unsupported chain (including Sepolia)
+  const walletOnUnsupportedChain = isConnected && !isEarnChainSupported(walletChainId);
+  const isOnSepolia = walletChainId === 11155111;
 
   return (
     <Layout>
@@ -185,6 +196,9 @@ export default function Earn() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
+          {/* RPC Debug Panel - DEV ONLY */}
+          <RpcDebugPanel />
+
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -248,9 +262,17 @@ export default function Earn() {
           {walletOnUnsupportedChain && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
               <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-warning">
-                Earn is not available on your current network. Switch to a supported chain to supply assets.
-              </p>
+              <div className="flex-1">
+                <p className="text-xs text-warning font-medium">
+                  {isOnSepolia 
+                    ? "Earn is not available on Sepolia testnet."
+                    : "Earn is not available on your current network."
+                  }
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Please switch to a supported chain: Ethereum, Arbitrum, Optimism, Polygon, Base, or Avalanche.
+                </p>
+              </div>
             </div>
           )}
 
@@ -314,6 +336,7 @@ export default function Earn() {
                 onSortChange={handleSortChange}
                 isRetrying={isRetrying}
                 onChainChange={handleChainChange}
+                partialFailures={partialFailures}
               />
             </TabsContent>
 

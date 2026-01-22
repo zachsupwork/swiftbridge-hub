@@ -22,7 +22,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
-import { getPoolAddress, getExplorerUrl, AAVE_POOL_ADDRESSES, CHAIN_EXPLORERS } from '@/hooks/useLendingMarkets';
+import { getPoolAddress, getExplorerUrl } from '@/hooks/useLendingMarkets';
+import { getAavePoolAddress, getExplorerTxUrl, SUPPORTED_CHAINS } from '@/lib/chainConfig';
 import { FEE_WALLET, FEE_BPS, getFeePercentage, isPlatformFeeConfigured, calculateFeeAmounts } from '@/lib/env';
 import { logEarnEvent } from '@/lib/earnLogger';
 import { ERC20_ABI, AAVE_V3_POOL_ABI, AAVE_REFERRAL_CODE } from '@/lib/aaveV3';
@@ -46,7 +47,7 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
   const [error, setError] = useState<string | null>(null);
   const [txHashes, setTxHashes] = useState<{ fee?: string; supply?: string }>({});
 
-  const poolAddress = market ? AAVE_POOL_ADDRESSES[market.chainId] : null;
+  const poolAddress = market ? getAavePoolAddress(market.chainId) : null;
   const isChainMatch = market ? chainId === market.chainId : false;
   const isFeeConfigured = isPlatformFeeConfigured();
 
