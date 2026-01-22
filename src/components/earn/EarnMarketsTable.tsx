@@ -29,7 +29,6 @@ interface EarnMarketsTableProps {
   isRetrying?: boolean;
   onChainChange?: (chainId: number | undefined) => void;
   partialFailures?: { chainId: number; chainName: string; error: string }[];
-  isPreview?: boolean;
 }
 
 export function EarnMarketsTable({
@@ -46,7 +45,6 @@ export function EarnMarketsTable({
   isRetrying = false,
   onChainChange,
   partialFailures = [],
-  isPreview = false,
 }: EarnMarketsTableProps) {
   const { switchChain } = useSwitchChain();
 
@@ -329,11 +327,6 @@ export function EarnMarketsTable({
                       <div className="font-semibold text-lg text-primary">
                         {formatAPY(market.supplyAPY)}
                       </div>
-                      {market.isDemo && (
-                        <Badge variant="outline" className="text-[9px] px-1 h-4 border-info/40 text-info">
-                          Example
-                        </Badge>
-                      )}
                     </div>
                     {market.isVariable && (
                       <div className="text-[10px] text-muted-foreground">Variable</div>
@@ -372,32 +365,16 @@ export function EarnMarketsTable({
 
                   {/* Action */}
                   <td className="p-4 text-right">
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span>
-                            <Button
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!isPreview) {
-                                  onSupplyClick(market);
-                                }
-                              }}
-                              disabled={isPreview}
-                              className="h-8 px-4"
-                            >
-                              Supply
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        {isPreview && (
-                          <TooltipContent>
-                            <p>Supply is enabled in production only</p>
-                          </TooltipContent>
-                        )}
-                      </Tooltip>
-                    </TooltipProvider>
+                    <Button
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSupplyClick(market);
+                      }}
+                      className="h-8 px-4"
+                    >
+                      Supply
+                    </Button>
                   </td>
                 </motion.tr>
               ))}
@@ -447,11 +424,6 @@ export function EarnMarketsTable({
                   <div className="font-semibold text-lg text-primary">
                     {formatAPY(market.supplyAPY)}
                   </div>
-                  {market.isDemo && (
-                    <Badge variant="outline" className="text-[9px] px-1 h-4 border-info/40 text-info">
-                      Ex
-                    </Badge>
-                  )}
                 </div>
                 <div className="text-[10px] text-muted-foreground">APY</div>
               </div>
@@ -463,32 +435,16 @@ export function EarnMarketsTable({
                 <span className="text-muted-foreground">Balance: </span>
                 <span>{parseFloat(getBalance(market)).toFixed(4)}</span>
               </div>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button 
-                        size="sm" 
-                        className="h-8 px-4"
-                        disabled={isPreview}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!isPreview) {
-                            onSupplyClick(market);
-                          }
-                        }}
-                      >
-                        Supply
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {isPreview && (
-                    <TooltipContent>
-                      <p>Supply is enabled in production only</p>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
+              <Button 
+                size="sm" 
+                className="h-8 px-4"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSupplyClick(market);
+                }}
+              >
+                Supply
+              </Button>
             </div>
           </motion.div>
         ))}
