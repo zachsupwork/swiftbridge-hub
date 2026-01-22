@@ -3,9 +3,18 @@
  * 
  * Fetches REAL Aave V3 markets from supported chains ONLY.
  * NO mock/sample data - shows error if data unavailable.
+ * 
+ * Uses Vite env vars (import.meta.env.VITE_*)
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { 
+  SUPPORTED_CHAINS, 
+  SUPPORTED_CHAIN_IDS, 
+  getChainConfig, 
+  isEarnChainSupported,
+  type ChainConfig 
+} from '@/lib/chainConfig';
 
 export interface LendingMarket {
   id: string;
@@ -28,66 +37,16 @@ export interface LendingMarket {
   protocolUrl: string;
 }
 
-// ============================================
-// SUPPORTED CHAINS - MAINNET ONLY (NO TESTNETS)
-// ============================================
-export const LENDING_CHAINS = [
-  { id: 1, name: 'Ethereum', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/ethereum.svg', supported: true },
-  { id: 42161, name: 'Arbitrum', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/arbitrum.svg', supported: true },
-  { id: 10, name: 'Optimism', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/optimism.svg', supported: true },
-  { id: 137, name: 'Polygon', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/polygon.svg', supported: true },
-  { id: 8453, name: 'Base', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/base.svg', supported: true },
-  { id: 43114, name: 'Avalanche', logo: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/chains/avalanche.svg', supported: true },
-] as const;
+// Re-export chain helpers
+export { SUPPORTED_CHAINS, SUPPORTED_CHAIN_IDS, isEarnChainSupported, getChainConfig };
 
-export const SUPPORTED_CHAIN_IDS: readonly number[] = LENDING_CHAINS.map(c => c.id);
-
-// Helper to check if chain is supported
-export function isChainSupported(chainId: number): boolean {
-  return SUPPORTED_CHAIN_IDS.includes(chainId);
-}
-
-// ============================================
-// AAVE V3 POOL ADDRESSES - OFFICIAL ONLY
-// ============================================
-export const AAVE_POOL_ADDRESSES: Record<number, `0x${string}`> = {
-  1: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',      // Ethereum Mainnet
-  42161: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',  // Arbitrum
-  10: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',     // Optimism
-  137: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',    // Polygon
-  8453: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',   // Base
-  43114: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',  // Avalanche
-};
-
-// Block explorers
-export const CHAIN_EXPLORERS: Record<number, string> = {
-  1: 'https://etherscan.io/tx/',
-  42161: 'https://arbiscan.io/tx/',
-  10: 'https://optimistic.etherscan.io/tx/',
-  137: 'https://polygonscan.com/tx/',
-  8453: 'https://basescan.org/tx/',
-  43114: 'https://snowtrace.io/tx/',
-};
-
-// Aave UI URLs per chain
-const AAVE_UI_URLS: Record<number, string> = {
-  1: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  42161: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  10: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  137: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  8453: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-  43114: 'https://app.aave.com/reserve-overview/?underlyingAsset=',
-};
-
-// Chain market names for Aave URLs
-const CHAIN_MARKET_NAMES: Record<number, string> = {
-  1: 'proto_mainnet_v3',
-  42161: 'proto_arbitrum_v3',
-  10: 'proto_optimism_v3',
-  137: 'proto_polygon_v3',
-  8453: 'proto_base_v3',
-  43114: 'proto_avalanche_v3',
-};
+// Formatted chain list for UI components
+export const LENDING_CHAINS = SUPPORTED_CHAINS.map(c => ({
+  id: c.chainId,
+  name: c.name,
+  logo: c.logo,
+  supported: true,
+}));
 
 // Token logo mapping for common assets
 const TOKEN_LOGOS: Record<string, string> = {
@@ -129,29 +88,6 @@ const getTokenLogo = (symbol: string): string => {
     'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 };
 
-// ============================================
-// AAVE V3 SUBGRAPH ENDPOINTS
-// Using free public endpoints (hosted service)
-// ============================================
-const AAVE_SUBGRAPHS: Record<number, string> = {
-  1: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3',
-  42161: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-arbitrum',
-  10: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-optimism',
-  137: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-polygon',
-  8453: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-base',
-  43114: 'https://api.thegraph.com/subgraphs/name/aave/protocol-v3-avalanche',
-};
-
-// Backup: Aave's official API endpoint (if subgraph fails)
-const AAVE_API_ENDPOINTS: Record<number, string> = {
-  1: 'https://aave-api-v2.aave.com/data/pools/v3/1',
-  42161: 'https://aave-api-v2.aave.com/data/pools/v3/42161',
-  10: 'https://aave-api-v2.aave.com/data/pools/v3/10',
-  137: 'https://aave-api-v2.aave.com/data/pools/v3/137',
-  8453: 'https://aave-api-v2.aave.com/data/pools/v3/8453',
-  43114: 'https://aave-api-v2.aave.com/data/pools/v3/43114',
-};
-
 // Aave V3 GraphQL query for reserves
 const AAVE_RESERVES_QUERY = `
   query GetReserves {
@@ -188,12 +124,24 @@ interface SubgraphReserve {
 }
 
 // Error types for specific error handling
-export type MarketFetchError = 
-  | { type: 'unsupported_chain'; chainId: number; chainName?: string }
-  | { type: 'rpc_unavailable'; chainId: number; message: string }
-  | { type: 'contract_error'; chainId: number; message: string }
-  | { type: 'network_error'; message: string }
-  | { type: 'no_markets'; chainId: number };
+export type MarketFetchErrorType = 
+  | 'unsupported_chain'
+  | 'missing_rpc'
+  | 'rpc_unavailable'
+  | 'subgraph_error'
+  | 'contract_error'
+  | 'network_error'
+  | 'no_markets'
+  | 'partial_failure';
+
+export interface MarketFetchError {
+  type: MarketFetchErrorType;
+  chainId?: number;
+  chainName?: string;
+  message: string;
+  missingEnvKey?: string;
+  failedChains?: { chainId: number; chainName: string; error: string }[];
+}
 
 async function fetchFromSubgraph(url: string, query: string): Promise<SubgraphReserve[]> {
   const controller = new AbortController();
@@ -226,35 +174,42 @@ async function fetchFromSubgraph(url: string, query: string): Promise<SubgraphRe
   }
 }
 
-async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
-  const chain = LENDING_CHAINS.find(c => c.id === chainId);
-  if (!chain) {
-    throw { type: 'unsupported_chain', chainId } as MarketFetchError;
-  }
-
-  const subgraphUrl = AAVE_SUBGRAPHS[chainId];
-  if (!subgraphUrl) {
-    throw { type: 'unsupported_chain', chainId, chainName: chain.name } as MarketFetchError;
+async function fetchAaveMarkets(chainConfig: ChainConfig): Promise<LendingMarket[]> {
+  const { chainId, name, aaveSubgraph, aaveMarketName } = chainConfig;
+  
+  if (!aaveSubgraph) {
+    throw {
+      type: 'unsupported_chain',
+      chainId,
+      chainName: name,
+      message: `No Aave subgraph configured for ${name}`,
+    } as MarketFetchError;
   }
   
   let reserves: SubgraphReserve[] = [];
-  let lastError: Error | null = null;
 
-  // Attempt 1: Primary subgraph
   try {
-    reserves = await fetchFromSubgraph(subgraphUrl, AAVE_RESERVES_QUERY);
+    reserves = await fetchFromSubgraph(aaveSubgraph, AAVE_RESERVES_QUERY);
   } catch (error) {
-    console.warn(`Subgraph failed for chain ${chainId}:`, error);
-    lastError = error as Error;
-  }
-
-  // If no reserves, throw error - NO FALLBACK TO MOCK DATA
-  if (reserves.length === 0) {
-    throw { 
-      type: 'network_error', 
-      message: lastError?.message || 'Failed to fetch market data' 
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw {
+      type: 'subgraph_error',
+      chainId,
+      chainName: name,
+      message: `Failed to fetch ${name} markets: ${errorMessage}`,
     } as MarketFetchError;
   }
+
+  if (reserves.length === 0) {
+    throw {
+      type: 'no_markets',
+      chainId,
+      chainName: name,
+      message: `No active markets found on ${name}`,
+    } as MarketFetchError;
+  }
+
+  const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
 
   return reserves
     .filter((r) => r.isActive && !r.isFrozen)
@@ -274,8 +229,8 @@ async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
         id: `aave-${chainId}-${reserve.underlyingAsset}`,
         protocol: 'aave' as const,
         chainId,
-        chainName: chain.name,
-        chainLogo: chain.logo,
+        chainName: name,
+        chainLogo: chainConfig.logo,
         assetSymbol: reserve.symbol,
         assetName: reserve.name,
         assetAddress: reserve.underlyingAsset as `0x${string}`,
@@ -288,9 +243,17 @@ async function fetchAaveMarkets(chainId: number): Promise<LendingMarket[]> {
         collateralEnabled: reserve.usageAsCollateralEnabled,
         decimals: reserve.decimals,
         marketId: reserve.id,
-        protocolUrl: `${AAVE_UI_URLS[chainId]}${reserve.underlyingAsset}&marketName=${CHAIN_MARKET_NAMES[chainId]}`,
+        protocolUrl: `${aaveUiUrl}${reserve.underlyingAsset}&marketName=${aaveMarketName}`,
       };
     });
+}
+
+export interface ChainFetchResult {
+  chainId: number;
+  chainName: string;
+  success: boolean;
+  markets: LendingMarket[];
+  error?: string;
 }
 
 export interface UseLendingMarketsResult {
@@ -302,6 +265,8 @@ export interface UseLendingMarketsResult {
   chains: typeof LENDING_CHAINS;
   lastFetched: number;
   isRetrying: boolean;
+  chainResults: ChainFetchResult[];
+  partialFailures: { chainId: number; chainName: string; error: string }[];
 }
 
 export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsResult {
@@ -311,6 +276,8 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<number>(0);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [chainResults, setChainResults] = useState<ChainFetchResult[]>([]);
+  const [partialFailures, setPartialFailures] = useState<{ chainId: number; chainName: string; error: string }[]>([]);
 
   const fetchAllMarkets = useCallback(async (isRetry = false) => {
     if (isRetry) {
@@ -320,56 +287,108 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     }
     setError(null);
     setErrorMessage(null);
+    setPartialFailures([]);
 
     try {
       let allMarkets: LendingMarket[] = [];
+      const results: ChainFetchResult[] = [];
+      const failures: { chainId: number; chainName: string; error: string }[] = [];
 
-      // If specific chain selected, validate it's supported
+      // If specific chain selected, validate and fetch
       if (selectedChainId !== undefined) {
-        if (!isChainSupported(selectedChainId)) {
-          const chainName = LENDING_CHAINS.find(c => c.id === selectedChainId)?.name;
-          throw { 
-            type: 'unsupported_chain', 
-            chainId: selectedChainId, 
-            chainName 
+        const chainConfig = getChainConfig(selectedChainId);
+        
+        if (!chainConfig) {
+          throw {
+            type: 'unsupported_chain',
+            chainId: selectedChainId,
+            message: `Chain ${selectedChainId} is not supported for Earn. Please select a supported chain.`,
           } as MarketFetchError;
         }
 
-        // Fetch only for selected chain
-        const markets = await fetchAaveMarkets(selectedChainId);
-        allMarkets = markets;
-        
-        if (allMarkets.length === 0) {
-          throw { type: 'no_markets', chainId: selectedChainId } as MarketFetchError;
+        try {
+          const chainMarkets = await fetchAaveMarkets(chainConfig);
+          allMarkets = chainMarkets;
+          results.push({
+            chainId: selectedChainId,
+            chainName: chainConfig.name,
+            success: true,
+            markets: chainMarkets,
+          });
+        } catch (err) {
+          const fetchError = err as MarketFetchError;
+          results.push({
+            chainId: selectedChainId,
+            chainName: chainConfig.name,
+            success: false,
+            markets: [],
+            error: fetchError.message,
+          });
+          throw fetchError;
         }
       } else {
-        // Fetch from all supported chains in parallel
-        const results = await Promise.allSettled(
-          SUPPORTED_CHAIN_IDS.map(fetchAaveMarkets)
-        );
-
-        let successCount = 0;
-        results.forEach((result, index) => {
-          if (result.status === 'fulfilled' && result.value.length > 0) {
-            allMarkets.push(...result.value);
-            successCount++;
-          } else if (result.status === 'rejected') {
-            console.warn(`Failed to fetch chain ${SUPPORTED_CHAIN_IDS[index]}:`, result.reason);
+        // Fetch from ALL supported chains in parallel - skip failures
+        const fetchPromises = SUPPORTED_CHAINS.map(async (chainConfig): Promise<ChainFetchResult> => {
+          try {
+            const chainMarkets = await fetchAaveMarkets(chainConfig);
+            return {
+              chainId: chainConfig.chainId,
+              chainName: chainConfig.name,
+              success: true,
+              markets: chainMarkets,
+            };
+          } catch (err) {
+            const errorMsg = err instanceof Error 
+              ? err.message 
+              : (err as MarketFetchError).message || 'Unknown error';
+            return {
+              chainId: chainConfig.chainId,
+              chainName: chainConfig.name,
+              success: false,
+              markets: [],
+              error: errorMsg,
+            };
           }
         });
 
-        // If no chains succeeded, show error
-        if (successCount === 0) {
-          throw { 
-            type: 'network_error', 
-            message: 'Unable to fetch market data from any chain. Please check your connection and try again.' 
+        const chainResultsArray = await Promise.all(fetchPromises);
+        
+        // Process results
+        chainResultsArray.forEach(result => {
+          results.push(result);
+          if (result.success) {
+            allMarkets.push(...result.markets);
+          } else {
+            failures.push({
+              chainId: result.chainId,
+              chainName: result.chainName,
+              error: result.error || 'Unknown error',
+            });
+            if (import.meta.env.DEV) {
+              console.warn(`[Earn] ${result.chainName} failed:`, result.error);
+            }
+          }
+        });
+
+        // If ALL chains failed, show error
+        if (allMarkets.length === 0 && failures.length > 0) {
+          throw {
+            type: 'network_error',
+            message: 'Unable to fetch market data from any chain. Please check your connection and try again.',
+            failedChains: failures,
           } as MarketFetchError;
+        }
+
+        // If some chains failed, set partial failures (non-blocking warning)
+        if (failures.length > 0 && allMarkets.length > 0) {
+          setPartialFailures(failures);
         }
       }
 
       // Sort by TVL descending (popularity proxy)
       allMarkets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
       setMarkets(allMarkets);
+      setChainResults(results);
       setLastFetched(Date.now());
 
     } catch (err) {
@@ -379,27 +398,13 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       if (typeof err === 'object' && err !== null && 'type' in err) {
         const marketError = err as MarketFetchError;
         setError(marketError);
-        
-        // Generate user-friendly error message
-        switch (marketError.type) {
-          case 'unsupported_chain':
-            setErrorMessage(`Aave V3 is not available on ${marketError.chainName || `chain ${marketError.chainId}`}. Please select a supported chain.`);
-            break;
-          case 'rpc_unavailable':
-            setErrorMessage(`Unable to connect to the network. ${marketError.message}`);
-            break;
-          case 'contract_error':
-            setErrorMessage(`Smart contract error: ${marketError.message}`);
-            break;
-          case 'no_markets':
-            setErrorMessage('No Aave markets available on this chain.');
-            break;
-          case 'network_error':
-          default:
-            setErrorMessage(marketError.message || 'Failed to load Aave markets. Please try again.');
-        }
+        setErrorMessage(getErrorMessage(marketError));
       } else {
-        setError({ type: 'network_error', message: String(err) });
+        const genericError: MarketFetchError = {
+          type: 'network_error',
+          message: String(err),
+        };
+        setError(genericError);
         setErrorMessage('Failed to load Aave markets. Please try again.');
       }
       
@@ -428,13 +433,44 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     chains: LENDING_CHAINS,
     lastFetched,
     isRetrying,
+    chainResults,
+    partialFailures,
   };
 }
 
+// Generate user-friendly error messages
+function getErrorMessage(error: MarketFetchError): string {
+  switch (error.type) {
+    case 'unsupported_chain':
+      return `Aave V3 is not available on ${error.chainName || `chain ${error.chainId}`}. Please select a supported chain.`;
+    
+    case 'missing_rpc':
+      return `Missing RPC configuration: ${error.missingEnvKey}. Please configure the RPC endpoint.`;
+    
+    case 'rpc_unavailable':
+      return `Unable to connect to ${error.chainName || 'the network'}. The RPC endpoint is unavailable.`;
+    
+    case 'subgraph_error':
+      return `Failed to fetch market data for ${error.chainName || 'the selected chain'}. ${error.message}`;
+    
+    case 'contract_error':
+      return `Smart contract error on ${error.chainName || 'the network'}: ${error.message}`;
+    
+    case 'no_markets':
+      return `No active Aave markets found on ${error.chainName || 'this chain'}.`;
+    
+    case 'network_error':
+    default:
+      return error.message || 'Failed to load Aave markets. Please try again.';
+  }
+}
+
+// Legacy exports for backward compatibility
 export function getPoolAddress(chainId: number): `0x${string}` | null {
-  return AAVE_POOL_ADDRESSES[chainId] || null;
+  return getChainConfig(chainId)?.aavePool || null;
 }
 
 export function getExplorerUrl(chainId: number, txHash: string): string {
-  return `${CHAIN_EXPLORERS[chainId] || 'https://etherscan.io/tx/'}${txHash}`;
+  const config = getChainConfig(chainId);
+  return config ? `${config.explorerUrl}${txHash}` : `https://etherscan.io/tx/${txHash}`;
 }
