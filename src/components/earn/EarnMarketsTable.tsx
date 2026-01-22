@@ -27,6 +27,7 @@ interface EarnMarketsTableProps {
   onSortChange: (sortBy: 'apy' | 'tvl' | 'name') => void;
   isRetrying?: boolean;
   onChainChange?: (chainId: number | undefined) => void;
+  partialFailures?: { chainId: number; chainName: string; error: string }[];
 }
 
 export function EarnMarketsTable({
@@ -42,6 +43,7 @@ export function EarnMarketsTable({
   onSortChange,
   isRetrying = false,
   onChainChange,
+  partialFailures = [],
 }: EarnMarketsTableProps) {
   const { switchChain } = useSwitchChain();
 
@@ -241,6 +243,16 @@ export function EarnMarketsTable({
 
   return (
     <div className="space-y-2">
+      {/* Partial failures warning */}
+      {partialFailures.length > 0 && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm text-warning">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>
+            Some chains failed to load: {partialFailures.map(f => `${f.chainName} (${f.error})`).join(', ')}
+          </span>
+        </div>
+      )}
+
       {/* Loading indicator for refresh */}
       {(loading || isRetrying) && markets.length > 0 && (
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-2">
