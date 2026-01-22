@@ -26,6 +26,7 @@ import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
 import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
 import { RpcDebugPanel } from '@/components/earn/RpcDebugPanel';
+import { AaveDiagnosticsPanel } from '@/components/earn/AaveDiagnosticsPanel';
 import { useLendingMarkets, type LendingMarket, isEarnChainSupported } from '@/hooks/useLendingMarkets';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
 
@@ -197,8 +198,9 @@ export default function Earn() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* RPC Configuration Status Panel - Always visible */}
+          {/* Debug Panels - Always visible */}
           <RpcDebugPanel className="mb-2" />
+          <AaveDiagnosticsPanel className="mb-2" />
 
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
