@@ -1,14 +1,15 @@
 /**
  * Markets Table Component - Aave-style
  * Displays lending markets in a table (desktop) or cards (mobile)
- * NO mock data display - shows proper error states
+ * Supports preview mode with disabled Supply buttons
  */
 
 import { motion } from 'framer-motion';
-import { ArrowUpDown, Loader2, RefreshCw, AlertCircle, WifiOff, ArrowRight } from 'lucide-react';
+import { ArrowUpDown, Loader2, RefreshCw, AlertCircle, WifiOff, ArrowRight, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { LendingMarket, MarketFetchError } from '@/hooks/useLendingMarkets';
 import { LENDING_CHAINS } from '@/hooks/useLendingMarkets';
@@ -28,6 +29,7 @@ interface EarnMarketsTableProps {
   isRetrying?: boolean;
   onChainChange?: (chainId: number | undefined) => void;
   partialFailures?: { chainId: number; chainName: string; error: string }[];
+  isPreview?: boolean;
 }
 
 export function EarnMarketsTable({
@@ -44,6 +46,7 @@ export function EarnMarketsTable({
   isRetrying = false,
   onChainChange,
   partialFailures = [],
+  isPreview = false,
 }: EarnMarketsTableProps) {
   const { switchChain } = useSwitchChain();
 
@@ -322,8 +325,15 @@ export function EarnMarketsTable({
 
                   {/* Supply APY */}
                   <td className="p-4 text-right">
-                    <div className="font-semibold text-lg text-primary">
-                      {formatAPY(market.supplyAPY)}
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="font-semibold text-lg text-primary">
+                        {formatAPY(market.supplyAPY)}
+                      </div>
+                      {market.isDemo && (
+                        <Badge variant="outline" className="text-[9px] px-1 h-4 border-info/40 text-info">
+                          Example
+                        </Badge>
+                      )}
                     </div>
                     {market.isVariable && (
                       <div className="text-[10px] text-muted-foreground">Variable</div>
@@ -362,16 +372,32 @@ export function EarnMarketsTable({
 
                   {/* Action */}
                   <td className="p-4 text-right">
-                    <Button
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSupplyClick(market);
-                      }}
-                      className="h-8 px-4"
-                    >
-                      Supply
-                    </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isPreview) {
+                                  onSupplyClick(market);
+                                }
+                              }}
+                              disabled={isPreview}
+                              className="h-8 px-4"
+                            >
+                              Supply
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        {isPreview && (
+                          <TooltipContent>
+                            <p>Supply is enabled in production only</p>
+                          </TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
                   </td>
                 </motion.tr>
               ))}
@@ -417,8 +443,15 @@ export function EarnMarketsTable({
 
               {/* APY */}
               <div className="text-right">
-                <div className="font-semibold text-lg text-primary">
-                  {formatAPY(market.supplyAPY)}
+                <div className="flex items-center justify-end gap-1">
+                  <div className="font-semibold text-lg text-primary">
+                    {formatAPY(market.supplyAPY)}
+                  </div>
+                  {market.isDemo && (
+                    <Badge variant="outline" className="text-[9px] px-1 h-4 border-info/40 text-info">
+                      Ex
+                    </Badge>
+                  )}
                 </div>
                 <div className="text-[10px] text-muted-foreground">APY</div>
               </div>
@@ -430,9 +463,32 @@ export function EarnMarketsTable({
                 <span className="text-muted-foreground">Balance: </span>
                 <span>{parseFloat(getBalance(market)).toFixed(4)}</span>
               </div>
-              <Button size="sm" className="h-8 px-4">
-                Supply
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button 
+                        size="sm" 
+                        className="h-8 px-4"
+                        disabled={isPreview}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isPreview) {
+                            onSupplyClick(market);
+                          }
+                        }}
+                      >
+                        Supply
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {isPreview && (
+                    <TooltipContent>
+                      <p>Supply is enabled in production only</p>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </motion.div>
         ))}
