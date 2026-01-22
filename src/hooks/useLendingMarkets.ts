@@ -8,10 +8,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { createPublicClient, http, type Chain } from 'viem';
+import { createPublicClient, http, type Chain, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { 
-  AAVE_V3_ADDRESSES, 
   UI_POOL_DATA_PROVIDER_ABI,
   getAaveAddresses,
   isAaveSupported,
@@ -160,16 +159,36 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     } as MarketFetchError;
   }
 
+  // Checksum addresses to prevent "checksum counterpart" errors
+  let checksummedProvider: `0x${string}`;
+  let checksummedUiProvider: `0x${string}`;
+  let checksummedPool: `0x${string}`;
+  
+  try {
+    checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
+    checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
+    checksummedPool = getAddress(aaveAddresses.POOL);
+  } catch (checksumError) {
+    console.error(`[Earn] Address checksum failed for ${name}:`, checksumError);
+    throw {
+      type: 'contract_error',
+      chainId,
+      chainName: name,
+      message: `Invalid address format for ${name}: ${checksumError instanceof Error ? checksumError.message : 'checksum failed'}`,
+      failedAddress: 'address checksum validation',
+    } as MarketFetchError;
+  }
+
   // Log addresses for debugging (temporary)
   console.log(`[Earn] Fetching ${name} markets:`, {
     chainId,
-    POOL_ADDRESSES_PROVIDER: aaveAddresses.POOL_ADDRESSES_PROVIDER,
-    UI_POOL_DATA_PROVIDER: aaveAddresses.UI_POOL_DATA_PROVIDER,
-    POOL: aaveAddresses.POOL,
+    POOL_ADDRESSES_PROVIDER: checksummedProvider,
+    UI_POOL_DATA_PROVIDER: checksummedUiProvider,
+    POOL: checksummedPool,
   });
 
   // Validate addresses are defined
-  if (!aaveAddresses.POOL_ADDRESSES_PROVIDER || !aaveAddresses.UI_POOL_DATA_PROVIDER) {
+  if (!checksummedProvider || !checksummedUiProvider) {
     console.error(`[Earn] Aave addresses undefined for ${name}:`, aaveAddresses);
     throw {
       type: 'contract_error',
@@ -197,13 +216,13 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   });
 
   try {
-    // Call UiPoolDataProviderV3.getReservesData
+    // Call UiPoolDataProviderV3.getReservesData with checksummed addresses
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (client.readContract as any)({
-      address: aaveAddresses.UI_POOL_DATA_PROVIDER,
+      address: checksummedUiProvider,
       abi: UI_POOL_DATA_PROVIDER_ABI,
       functionName: 'getReservesData',
-      args: [aaveAddresses.POOL_ADDRESSES_PROVIDER],
+      args: [checksummedProvider],
     }) as [AaveReserveData[], unknown];
 
     const [reserves] = result;
@@ -296,7 +315,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       chainId,
       chainName: name,
       message: detailedMessage,
-      failedAddress: aaveAddresses.UI_POOL_DATA_PROVIDER,
+      failedAddress: checksummedUiProvider,
     } as MarketFetchError;
   }
 }
