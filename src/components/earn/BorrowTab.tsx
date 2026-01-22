@@ -22,8 +22,8 @@ interface BorrowTabProps {
 }
 
 export function BorrowTab({ className }: BorrowTabProps) {
-  const { address, isConnected } = useAccount();
-  const walletChainId = useChainId();
+  const { isConnected } = useAccount();
+  useChainId(); // Keep for potential future use
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMarket, setSelectedMarket] = useState<BorrowMarket | null>(null);
@@ -151,10 +151,10 @@ export function BorrowTab({ className }: BorrowTabProps) {
 
       {/* Your Borrows */}
       {isConnected && userPositions.length > 0 && (
-      <YourBorrows
+        <YourBorrows
           positions={userPositions}
           isLoading={isLoadingAccount}
-          repayStep={repayStep === 'borrowing' ? 'idle' : repayStep}
+          repayStep={repayStep === 'borrowing' ? 'idle' : repayStep as 'idle' | 'approving' | 'repaying' | 'complete' | 'error'}
           repayError={repayError}
           onRepay={repay}
           onResetRepay={resetRepayState}
@@ -185,6 +185,8 @@ export function BorrowTab({ className }: BorrowTabProps) {
         markets={filteredMarkets}
         isLoading={isLoading}
         onBorrowClick={handleBorrowClick}
+        accountData={accountData}
+        chainStatuses={chainStatuses}
       />
 
       {/* Borrow Modal */}
