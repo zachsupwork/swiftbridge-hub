@@ -2,7 +2,7 @@
  * Lending Markets Hook
  * 
  * Fetches REAL Aave V3 markets from supported chains ONLY.
- * In Preview mode (no RPC env vars), shows demo markets clearly labeled.
+ * NO demo/preview mode - always fetches live on-chain data.
  * 
  * Uses Vite env vars (import.meta.env.VITE_*)
  */
@@ -15,7 +15,6 @@ import {
   isEarnChainSupported,
   type ChainConfig 
 } from '@/lib/chainConfig';
-import { isPreviewMode, DEMO_MARKETS, type DemoMarket } from '@/lib/previewMode';
 
 export interface LendingMarket {
   id: string;
@@ -36,7 +35,6 @@ export interface LendingMarket {
   decimals: number;
   marketId: string;
   protocolUrl: string;
-  isDemo?: boolean; // True for demo markets in preview mode
 }
 
 // Re-export chain helpers
@@ -134,8 +132,7 @@ export type MarketFetchErrorType =
   | 'contract_error'
   | 'network_error'
   | 'no_markets'
-  | 'partial_failure'
-  | 'preview_mode';
+  | 'partial_failure';
 
 export interface MarketFetchError {
   type: MarketFetchErrorType;
@@ -247,7 +244,6 @@ async function fetchAaveMarkets(chainConfig: ChainConfig): Promise<LendingMarket
         decimals: reserve.decimals,
         marketId: reserve.id,
         protocolUrl: `${aaveUiUrl}${reserve.underlyingAsset}&marketName=${aaveMarketName}`,
-        isDemo: false,
       };
     });
 }
@@ -271,7 +267,6 @@ export interface UseLendingMarketsResult {
   isRetrying: boolean;
   chainResults: ChainFetchResult[];
   partialFailures: { chainId: number; chainName: string; error: string }[];
-  isPreview: boolean;
 }
 
 export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsResult {
@@ -284,21 +279,10 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
   const [chainResults, setChainResults] = useState<ChainFetchResult[]>([]);
   const [partialFailures, setPartialFailures] = useState<{ chainId: number; chainName: string; error: string }[]>([]);
 
-  // Check preview mode once
-  const isPreview = isPreviewMode();
-
   const fetchAllMarkets = useCallback(async (isRetry = false) => {
-    // In preview mode, show demo markets immediately
-    if (isPreview) {
-      setMarkets(DEMO_MARKETS as LendingMarket[]);
-      setLoading(false);
-      setError(null);
-      setErrorMessage(null);
-      setLastFetched(Date.now());
-      if (import.meta.env.DEV) {
-        console.log('[Earn] Preview mode: showing demo markets');
-      }
-      return;
+    // Always fetch real data - no preview/demo mode
+    if (import.meta.env.DEV) {
+      console.log('[Earn] Fetching LIVE Aave V3 markets from subgraphs...');
     }
 
     if (isRetry) {
@@ -435,7 +419,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       setLoading(false);
       setIsRetrying(false);
     }
-  }, [selectedChainId, isPreview]);
+  }, [selectedChainId]);
 
   useEffect(() => {
     fetchAllMarkets();
@@ -456,7 +440,6 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     isRetrying,
     chainResults,
     partialFailures,
-    isPreview,
   };
 }
 
