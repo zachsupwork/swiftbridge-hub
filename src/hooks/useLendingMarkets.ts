@@ -9,10 +9,11 @@
  * - Concurrency limiting (max 2 chains at once)
  * - Partial success handling (some chains can fail)
  * - Retry with exponential backoff
+ * - Safe bigint conversions using formatUnits (no overflow)
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPublicClient, http, type Chain, getAddress } from 'viem';
+import { createPublicClient, http, formatUnits, type Chain, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { 
   UI_POOL_DATA_PROVIDER_ABI,
@@ -222,19 +223,61 @@ async function fetchWithConcurrencyLimit<T>(
 async function fetchWithRetry<T>(
   fn: () => Promise<T>,
   retries = 1,
-  delayMs = 1000
+  delayMs = 1000,
+  context?: string
 ): Promise<T> {
   try {
     return await fn();
-  } catch (error) {
+  } catch (error: any) {
+    // Log the actual error for debugging
+    console.error(`[fetchWithRetry] Error (retries=${retries}):`, {
+      context,
+      message: error?.message?.substring(0, 500),
+      shortMessage: error?.shortMessage?.substring(0, 200),
+      name: error?.name,
+    });
+    
     if (retries > 0) {
       // Add jitter: 800-1200ms
       const jitter = Math.random() * 400 + 800;
       await new Promise(resolve => setTimeout(resolve, delayMs + jitter - 1000));
-      return fetchWithRetry(fn, retries - 1, delayMs);
+      return fetchWithRetry(fn, retries - 1, delayMs, context);
     }
     throw error;
   }
+}
+
+// ============================================
+// SAFE BIGINT CONVERSION HELPERS
+// ============================================
+
+/**
+ * Safely convert bigint to number using formatUnits to avoid overflow.
+ * RAY = 1e27 for Aave interest rates
+ */
+function rayToPercent(rayValue: bigint): number {
+  // formatUnits with 27 decimals converts RAY to a decimal string
+  const decimalString = formatUnits(rayValue, 27);
+  const percent = parseFloat(decimalString) * 100;
+  return Number.isFinite(percent) ? percent : 0;
+}
+
+/**
+ * Safely convert token amount bigint to number
+ */
+function toTokenAmount(value: bigint, decimals: number): number {
+  const decimalString = formatUnits(value, decimals);
+  const amount = parseFloat(decimalString);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+/**
+ * Safely get decimals as a number (should always be small)
+ */
+function getDecimals(value: bigint): number {
+  // Decimals should be small (0-18 typically), safe to use Number()
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 && num <= 255 ? num : 18;
 }
 
 // ============================================
@@ -259,12 +302,14 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   const aaveAddresses = getAaveAddresses(chainId);
   
   if (!aaveAddresses) {
-    throw {
-      type: 'unsupported_chain',
+    const error = {
+      type: 'unsupported_chain' as const,
       chainId,
       chainName: name,
       message: `Aave V3 not available on ${name}`,
-    } as MarketFetchError;
+    };
+    console.error('[AAVE FETCH FAIL]', chainId, name, error);
+    throw error;
   }
 
   // Build list of RPCs to try: primary first, then fallbacks
@@ -278,13 +323,15 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   rpcsToTry.push(...fallbacks.slice(0, 2)); // Max 2 fallbacks
   
   if (rpcsToTry.length === 0) {
-    throw {
-      type: 'missing_rpc',
+    const error = {
+      type: 'missing_rpc' as const,
       chainId,
       chainName: name,
       message: `No RPC available for ${name}`,
       missingEnvKey: chainConfig.rpcEnvKey,
-    } as MarketFetchError;
+    };
+    console.error('[AAVE FETCH FAIL]', chainId, name, error);
+    throw error;
   }
 
   // Use already checksummed addresses from chainConfig
@@ -292,21 +339,25 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   const checksummedUiProvider = chainConfig.aaveUiPoolDataProvider;
 
   // Log what we're about to try
-  console.log(`[Earn] ${name}: Fetching markets`, {
+  console.log(`[Earn] ${name} (${chainId}): Starting market fetch`, {
+    step: '1-init',
     rpcSource: chainConfig.rpcSource,
     primaryRpc: maskRpcUrl(rpcsToTry[0]),
     fallbackCount: rpcsToTry.length - 1,
     UI_POOL_DATA_PROVIDER: checksummedUiProvider,
+    POOL_ADDRESSES_PROVIDER: checksummedProvider,
   });
 
   const viemChain = VIEM_CHAINS[chainId];
   if (!viemChain) {
-    throw {
-      type: 'unsupported_chain',
+    const error = {
+      type: 'unsupported_chain' as const,
       chainId,
       chainName: name,
       message: `Chain ${name} not configured in viem`,
-    } as MarketFetchError;
+    };
+    console.error('[AAVE FETCH FAIL]', chainId, name, error);
+    throw error;
   }
 
   // Try each RPC in order until one succeeds
@@ -326,7 +377,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       // Create viem client with the current RPC URL
       const client = createPublicClient({
         chain: viemChain,
-        transport: http(currentRpc, { timeout: 12000 }), // 12s timeout
+        transport: http(currentRpc, { timeout: 15000 }), // 15s timeout
       });
       
       const markets = await fetchMarketsWithClient(client, chainConfig, checksummedProvider, checksummedUiProvider);
@@ -336,24 +387,33 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       }
       
       return markets;
-    } catch (error) {
+    } catch (error: any) {
       lastError = error;
-      // Detailed error logging
-      let errorMsg: string;
-      if (error instanceof Error) {
-        errorMsg = error.message;
-      } else if (typeof error === 'object' && error !== null) {
-        errorMsg = JSON.stringify(error);
-      } else {
-        errorMsg = String(error);
+      
+      // Detailed error logging - very verbose for debugging
+      const errorDetails = {
+        rpcIndex: i + 1,
+        rpcTotal: rpcsToTry.length,
+        rpcHost: maskRpcUrl(currentRpc),
+        message: error?.message?.substring(0, 500),
+        name: error?.name,
+        cause: error?.cause ? String(error.cause).substring(0, 200) : undefined,
+        type: error?.type,
+        shortMessage: error?.shortMessage?.substring(0, 200),
+        details: error?.details?.substring(0, 200),
+      };
+      console.error(`[AAVE FETCH FAIL] ${chainId} ${name}:`, errorDetails);
+      
+      // Also log the raw error for debugging
+      if (error?.message?.includes('Bytes') || error?.message?.includes('boolean') || error?.message?.includes('decode')) {
+        console.error('[AAVE ABI DECODE ERROR]', name, error?.message?.substring(0, 1000));
       }
-      console.log(`[Earn] ${name}: RPC ${i + 1}/${rpcsToTry.length} failed:`, errorMsg.substring(0, 300));
     }
   }
   
   // All RPCs failed - throw the last error
+  console.error(`[AAVE] All RPCs failed for ${name}:`, lastError?.message?.substring(0, 300));
   throw lastError;
-
 }
 
 /**
@@ -367,6 +427,12 @@ async function fetchMarketsWithClient(
 ): Promise<LendingMarket[]> {
   const { chainId, name, logo } = chainConfig;
   
+  console.log(`[Earn] ${name} (${chainId}): Calling getReservesData`, {
+    step: '2-getReservesData',
+    contract: checksummedUiProvider,
+    provider: checksummedProvider,
+  });
+  
   try {
     // Call UiPoolDataProviderV3.getReservesData with checksummed addresses
     const result = await fetchWithRetry(async () => {
@@ -376,52 +442,43 @@ async function fetchMarketsWithClient(
         functionName: 'getReservesData',
         args: [checksummedProvider],
       }) as [AaveReserveData[], unknown];
-    });
+    }, 1, 1000, `getReservesData-${name}`);
 
     const [reserves] = result;
     
     if (!reserves || reserves.length === 0) {
-      throw {
-        type: 'no_markets',
+      const error = {
+        type: 'no_markets' as const,
         chainId,
         chainName: name,
         message: `No Aave V3 markets available on ${name}`,
-      } as MarketFetchError;
+      };
+      console.error('[AAVE FETCH FAIL]', chainId, name, error);
+      throw error;
     }
 
-    console.log(`[Earn] ${name}: ✓ Fetched ${reserves.length} reserves`);
+    console.log(`[Earn] ${name} (${chainId}): ✓ getReservesData returned ${reserves.length} reserves`, {
+      step: '3-parse',
+    });
 
     const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
     const marketName = AAVE_MARKET_NAMES[chainId] || '';
 
-    // Helper to safely convert bigint to number (handles large values)
-    const safeNumber = (val: bigint): number => {
-      try {
-        // For very large numbers, convert via string to avoid overflow
-        const str = val.toString();
-        return parseFloat(str);
-      } catch {
-        return 0;
-      }
-    };
-
+    // Map reserves to LendingMarket format with safe bigint conversions
     const markets = reserves
       .filter((r) => r.isActive && !r.isFrozen && !r.isPaused)
       .map((reserve) => {
-        // liquidityRate is in RAY (1e27), convert to APY percentage
-        const liquidityRate = safeNumber(reserve.liquidityRate);
-        const supplyAPY = (liquidityRate / 1e27) * 100;
+        // Get decimals safely first
+        const decimals = getDecimals(reserve.decimals);
 
-        const variableBorrowRate = safeNumber(reserve.variableBorrowRate);
-        const borrowAPY = (variableBorrowRate / 1e27) * 100;
+        // Convert RAY rates to APY percentage using formatUnits (no overflow)
+        const supplyAPY = rayToPercent(reserve.liquidityRate);
+        const borrowAPY = rayToPercent(reserve.variableBorrowRate);
 
-        // Calculate TVL from available liquidity + borrowed
-        const decimals = safeNumber(reserve.decimals);
-        const availableLiquidity = safeNumber(reserve.availableLiquidity) / Math.pow(10, decimals);
-        
-        // Total variable debt scaled
-        const totalScaledVariableDebt = safeNumber(reserve.totalScaledVariableDebt) / Math.pow(10, decimals);
-        const totalStableDebt = safeNumber(reserve.totalPrincipalStableDebt) / Math.pow(10, decimals);
+        // Calculate liquidity and debt using safe conversion
+        const availableLiquidity = toTokenAmount(reserve.availableLiquidity, decimals);
+        const totalScaledVariableDebt = toTokenAmount(reserve.totalScaledVariableDebt, decimals);
+        const totalStableDebt = toTokenAmount(reserve.totalPrincipalStableDebt, decimals);
         
         // TVL = available + all borrowed
         const tvl = availableLiquidity + totalScaledVariableDebt + totalStableDebt;
@@ -448,19 +505,33 @@ async function fetchMarketsWithClient(
         };
       });
 
+    console.log(`[Earn] ${name} (${chainId}): ✓ Mapped ${markets.length} active markets`, {
+      step: '4-complete',
+      sample: markets.length > 0 ? {
+        symbol: markets[0].assetSymbol,
+        supplyAPY: markets[0].supplyAPY.toFixed(2) + '%',
+        borrowAPY: markets[0].borrowAPY.toFixed(2) + '%',
+      } : null,
+    });
+
     // Cache the results
     setCachedMarkets(chainId, markets);
     
     return markets;
-  } catch (error) {
+  } catch (error: any) {
     // Check if it's already our error type
     if (typeof error === 'object' && error !== null && 'type' in error) {
       throw error;
     }
     
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : String(error);
     
-    console.error(`[Earn] ${name}: ✗ Failed:`, errorMessage.substring(0, 100));
+    console.error(`[AAVE FETCH FAIL]`, chainId, name, {
+      step: 'getReservesData',
+      contract: checksummedUiProvider,
+      message: errorMessage,
+      stack: error?.stack?.substring(0, 500),
+    });
     
     // Categorize the error more specifically
     let errorType: MarketFetchErrorType = 'contract_error';
@@ -477,6 +548,9 @@ async function fetchMarketsWithClient(
     } else if (errorMessage.includes('execution reverted')) {
       errorType = 'contract_error';
       detailedMessage = `Contract call reverted on ${name}`;
+    } else if (errorMessage.includes('Bytes value') && errorMessage.includes('boolean')) {
+      errorType = 'contract_error';
+      detailedMessage = `ABI decode error on ${name} - struct field mismatch`;
     } else if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
       errorType = 'network_error';
       detailedMessage = `Network error on ${name}`;
@@ -560,7 +634,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     fetchInProgress.current = true;
 
     // Always log for debugging (helps diagnose production issues)
-    console.log('[Earn] Fetching Aave V3 markets...', {
+    console.log('[Earn] Starting market fetch...', {
       selectedChainId: selectedChainId ?? 'all',
       specificChainId,
       isRetry,
@@ -625,6 +699,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
           
           if (chainResult.success) {
             allMarkets.push(...chainResult.markets);
+            console.log(`[Earn] ✓ ${chainResult.chainName}: ${chainResult.markets.length} markets loaded`);
           } else {
             failures.push({
               chainId: chainResult.chainId,
@@ -633,10 +708,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
               errorType: chainResult.errorType || 'network_error',
               httpStatus: chainResult.httpStatus,
             });
-            
-            if (import.meta.env.DEV) {
-              console.warn(`[Earn] ${chainResult.chainName}: ✗ ${chainResult.error}`);
-            }
+            console.warn(`[Earn] ✗ ${chainResult.chainName}: ${chainResult.error}`);
           }
         }
       }
@@ -659,10 +731,10 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       setChainResults(results);
       setLastFetched(Date.now());
 
+      console.log(`[Earn] Fetch complete: ${allMarkets.length} total markets from ${results.filter(r => r.success).length}/${results.length} chains`);
+
     } catch (err) {
-      if (import.meta.env.DEV) {
-        console.error('[Earn] Failed to fetch lending markets:', err);
-      }
+      console.error('[Earn] Failed to fetch lending markets:', err);
       
       if (typeof err === 'object' && err !== null && 'type' in err) {
         const marketError = err as MarketFetchError;
