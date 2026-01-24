@@ -7,12 +7,12 @@
  * - Supply drawer with mandatory fee
  * - Mobile-first responsive design
  * - LIVE Aave V3 data only - no demo/preview mode
- * - RPC debug panel (dev mode only)
+ * - Debug panels in collapsible accordion (not visible by default)
  */
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check, Rocket } from 'lucide-react';
+import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check, Rocket, ChevronDown } from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
 import { useReadContracts } from 'wagmi';
 import { erc20Abi } from 'viem';
@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
 import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
 import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
@@ -30,7 +31,7 @@ import { AaveDiagnosticsPanel } from '@/components/earn/AaveDiagnosticsPanel';
 import { BorrowTab } from '@/components/earn/BorrowTab';
 import { useLendingMarkets, type LendingMarket, isEarnChainSupported } from '@/hooks/useLendingMarkets';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
-import { useAaveBorrow } from '@/hooks/useAaveBorrow';
+import { cn } from '@/lib/utils';
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
@@ -45,6 +46,7 @@ export default function Earn() {
   const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Fetch markets - ALWAYS live data
   const { 
@@ -200,9 +202,26 @@ export default function Earn() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* Debug Panels - Always visible */}
-          <RpcDebugPanel className="mb-2" />
-          <AaveDiagnosticsPanel className="mb-2" />
+          {/* Diagnostics Accordion - Collapsed by default */}
+          <Collapsible open={showDiagnostics} onOpenChange={setShowDiagnostics}>
+            <CollapsibleTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full justify-between text-xs text-muted-foreground hover:text-foreground"
+              >
+                <span>🔧 Diagnostics & Debug Tools</span>
+                <ChevronDown className={cn(
+                  "w-4 h-4 transition-transform",
+                  showDiagnostics && "rotate-180"
+                )} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-2 mt-2">
+              <RpcDebugPanel className="mb-2" />
+              <AaveDiagnosticsPanel className="mb-2" />
+            </CollapsibleContent>
+          </Collapsible>
 
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -288,7 +307,7 @@ export default function Earn() {
             </div>
           )}
 
-          {/* Tabs */}
+          {/* Tabs - Both ALWAYS clickable */}
           <Tabs defaultValue="lend" className="w-full">
             <TabsList className="grid w-full grid-cols-2 max-w-xs">
               <TabsTrigger value="lend" className="gap-2">

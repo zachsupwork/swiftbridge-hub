@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@bgd-labs/aave-address-book": "^4.41.5",
     "@hookform/resolvers": "^3.10.0",
     "@mysten/dapp-kit": "^0.14.53",
     "@mysten/sui": "^1.45.2",

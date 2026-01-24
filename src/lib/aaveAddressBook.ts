@@ -1,11 +1,21 @@
 /**
  * Aave V3 Address Book - Official Contract Addresses
  * 
- * IMPORTANT: These addresses are sourced from the official Aave address-book:
+ * IMPORTANT: These addresses are sourced from the official @bgd-labs/aave-address-book package.
  * https://github.com/bgd-labs/aave-address-book
  * 
  * DO NOT hardcode addresses elsewhere - always import from this file.
  */
+
+import { getAddress } from 'viem';
+import {
+  AaveV3Ethereum,
+  AaveV3Arbitrum,
+  AaveV3Optimism,
+  AaveV3Polygon,
+  AaveV3Base,
+  AaveV3Avalanche,
+} from '@bgd-labs/aave-address-book';
 
 // ============================================
 // AAVE V3 CONTRACT ADDRESSES BY CHAIN
@@ -15,50 +25,105 @@ export interface AaveV3Addresses {
   POOL_ADDRESSES_PROVIDER: `0x${string}`;
   POOL: `0x${string}`;
   UI_POOL_DATA_PROVIDER: `0x${string}`;
+  ORACLE: `0x${string}`;
+}
+
+export interface AaveV3Market {
+  chainId: number;
+  label: string;
+  addresses: AaveV3Addresses;
 }
 
 /**
- * Official Aave V3 addresses from aave-address-book
- * Source: https://github.com/bgd-labs/aave-address-book
+ * Build the Aave V3 markets map from official address book
+ * All addresses are already checksummed by the package
  */
-export const AAVE_V3_ADDRESSES: Record<number, AaveV3Addresses> = {
-  // Ethereum Mainnet (Official Aave V3 addresses)
-  1: {
-    POOL_ADDRESSES_PROVIDER: '0x2f39D218133AFaB8F2B819B1066c7E434Ad94E9e',
-    POOL: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-    UI_POOL_DATA_PROVIDER: '0x56b7A1012765C285afAC8b8F25C69Bf10ccfE978',
-  },
+function buildAaveV3Markets(): Map<number, AaveV3Market> {
+  const markets = new Map<number, AaveV3Market>();
+
+  // Ethereum Mainnet
+  markets.set(1, {
+    chainId: 1,
+    label: 'Ethereum',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Ethereum.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Ethereum.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Ethereum.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Ethereum.ORACLE) as `0x${string}`,
+    },
+  });
+
   // Arbitrum One
-  42161: {
-    POOL_ADDRESSES_PROVIDER: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-    POOL: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    UI_POOL_DATA_PROVIDER: '0x145dE30c929a065582da84Cf96F88460dB9745A7',
-  },
+  markets.set(42161, {
+    chainId: 42161,
+    label: 'Arbitrum',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Arbitrum.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Arbitrum.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Arbitrum.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Arbitrum.ORACLE) as `0x${string}`,
+    },
+  });
+
   // Optimism
-  10: {
-    POOL_ADDRESSES_PROVIDER: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-    POOL: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    UI_POOL_DATA_PROVIDER: '0xbd83DdBE37fc91923d59C8c1E0bDe0CccCa332d5',
-  },
+  markets.set(10, {
+    chainId: 10,
+    label: 'Optimism',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Optimism.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Optimism.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Optimism.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Optimism.ORACLE) as `0x${string}`,
+    },
+  });
+
   // Polygon
-  137: {
-    POOL_ADDRESSES_PROVIDER: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-    POOL: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    UI_POOL_DATA_PROVIDER: '0xC69728f11E9E6127733751c8410432913123acf1',
-  },
+  markets.set(137, {
+    chainId: 137,
+    label: 'Polygon',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Polygon.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Polygon.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Polygon.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Polygon.ORACLE) as `0x${string}`,
+    },
+  });
+
   // Base
-  8453: {
-    POOL_ADDRESSES_PROVIDER: '0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D',
-    POOL: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
-    UI_POOL_DATA_PROVIDER: '0x174446a6741300cD2E7C1b1A636Fee99c8F83502',
-  },
+  markets.set(8453, {
+    chainId: 8453,
+    label: 'Base',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Base.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Base.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Base.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Base.ORACLE) as `0x${string}`,
+    },
+  });
+
   // Avalanche
-  43114: {
-    POOL_ADDRESSES_PROVIDER: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-    POOL: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    UI_POOL_DATA_PROVIDER: '0xdBbFaFC45983B4659E368a3025b81f69Ab6E5093',
-  },
-};
+  markets.set(43114, {
+    chainId: 43114,
+    label: 'Avalanche',
+    addresses: {
+      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Avalanche.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+      POOL: getAddress(AaveV3Avalanche.POOL) as `0x${string}`,
+      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Avalanche.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+      ORACLE: getAddress(AaveV3Avalanche.ORACLE) as `0x${string}`,
+    },
+  });
+
+  return markets;
+}
+
+// Build markets once at module load
+export const AAVE_V3_MARKETS = buildAaveV3Markets();
+
+// Legacy compatibility - map to old structure
+export const AAVE_V3_ADDRESSES: Record<number, AaveV3Addresses> = {};
+AAVE_V3_MARKETS.forEach((market, chainId) => {
+  AAVE_V3_ADDRESSES[chainId] = market.addresses;
+});
 
 // ============================================
 // HELPER FUNCTIONS
@@ -78,6 +143,22 @@ export function getSupportedChainIds(): number[] {
 
 export function getPoolAddress(chainId: number): `0x${string}` | null {
   return AAVE_V3_ADDRESSES[chainId]?.POOL || null;
+}
+
+export function getAaveMarket(chainId: number): AaveV3Market | undefined {
+  return AAVE_V3_MARKETS.get(chainId);
+}
+
+// Log addresses for verification in dev mode
+if (import.meta.env.DEV) {
+  console.log('[Aave Address Book] Loaded official addresses:');
+  AAVE_V3_MARKETS.forEach((market, chainId) => {
+    console.log(`  ${market.label} (${chainId}):`, {
+      POOL: market.addresses.POOL,
+      POOL_ADDRESSES_PROVIDER: market.addresses.POOL_ADDRESSES_PROVIDER,
+      UI_POOL_DATA_PROVIDER: market.addresses.UI_POOL_DATA_PROVIDER,
+    });
+  });
 }
 
 // ============================================

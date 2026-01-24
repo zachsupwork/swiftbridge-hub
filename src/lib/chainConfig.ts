@@ -1,9 +1,11 @@
 /**
  * Earn Chain Configuration - STRICT mapping with RPC + Aave addresses
  * 
- * Uses ONLY Vite env vars (import.meta.env.VITE_*)
- * A chain is only supported if both RPC and Aave addresses are present.
+ * Uses ONLY Vite env vars (import.meta.env.VITE_*) with fallback public RPCs.
+ * A chain is only supported if Aave addresses are present in the address book.
  */
+
+import { getAaveAddresses, type AaveV3Addresses } from './aaveAddressBook';
 
 // ============================================
 // CHAIN CONFIGURATION
@@ -23,48 +25,38 @@ export interface ChainConfig {
   aaveMarketName: string;
 }
 
-// Aave V3 official addresses per chain
-const AAVE_ADDRESSES: Record<number, {
-  pool: `0x${string}`;
-  uiPoolDataProvider: `0x${string}`;
-  addressesProvider: `0x${string}`;
-}> = {
-  // Ethereum Mainnet
-  1: {
-    pool: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2',
-    uiPoolDataProvider: '0x91c0eA31b49B69Ea18607702c61cD4d37f0F4c15',
-    addressesProvider: '0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e',
-  },
-  // Arbitrum One
-  42161: {
-    pool: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    uiPoolDataProvider: '0x145dE30c929a065582da84Cf96F88460dB9745A7',
-    addressesProvider: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-  },
-  // Optimism
-  10: {
-    pool: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    uiPoolDataProvider: '0xbd83DdBE37fc91923d59C8c1E0bDe0CccCa332d5',
-    addressesProvider: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-  },
-  // Polygon
-  137: {
-    pool: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    uiPoolDataProvider: '0xC69728f11E9E6127733751c8410432913123acf1',
-    addressesProvider: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-  },
-  // Base
-  8453: {
-    pool: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5',
-    uiPoolDataProvider: '0x174446a6741300cD2E7C1b1A636Fee99c8F83502',
-    addressesProvider: '0xe20fCBdBfFC4Dd138cE8b2E6FBb6CB49777ad64D',
-  },
-  // Avalanche
-  43114: {
-    pool: '0x794a61358D6845594F94dc1DB02A252b5b4814aD',
-    uiPoolDataProvider: '0xdBbFaFC45983B4659E368a3025b81f69Ab6E5093',
-    addressesProvider: '0xa97684ead0e402dC232d5A977953DF7ECBaB3CDb',
-  },
+// Fallback public RPCs (when env var not set)
+const PUBLIC_RPC_FALLBACKS: Record<number, string[]> = {
+  1: [
+    'https://ethereum-rpc.publicnode.com',
+    'https://eth.drpc.org',
+    'https://rpc.ankr.com/eth',
+  ],
+  42161: [
+    'https://arb1.arbitrum.io/rpc',
+    'https://arbitrum-one-rpc.publicnode.com',
+    'https://arbitrum.drpc.org',
+  ],
+  10: [
+    'https://mainnet.optimism.io',
+    'https://optimism-rpc.publicnode.com',
+    'https://optimism.drpc.org',
+  ],
+  137: [
+    'https://polygon-rpc.com',
+    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon.drpc.org',
+  ],
+  8453: [
+    'https://mainnet.base.org',
+    'https://base-rpc.publicnode.com',
+    'https://base.drpc.org',
+  ],
+  43114: [
+    'https://api.avax.network/ext/bc/C/rpc',
+    'https://avalanche-c-chain-rpc.publicnode.com',
+    'https://avax.meowrpc.com',
+  ],
 };
 
 // Subgraph endpoints
@@ -127,11 +119,21 @@ const RPC_ENV_KEYS: Record<number, string> = {
   43114: 'VITE_RPC_AVALANCHE',
 };
 
-// Get RPC URL from Vite env
-function getRpcUrl(envKey: string): string | undefined {
-  // Vite env vars are only available via import.meta.env
+// Get RPC URL from Vite env with fallback to public RPC
+function getRpcUrl(envKey: string, chainId: number): string | undefined {
+  // First try env var
   const envValue = import.meta.env[envKey];
-  return envValue && typeof envValue === 'string' && envValue.length > 0 ? envValue : undefined;
+  if (envValue && typeof envValue === 'string' && envValue.length > 0) {
+    return envValue;
+  }
+  
+  // Fallback to public RPC
+  const fallbacks = PUBLIC_RPC_FALLBACKS[chainId];
+  if (fallbacks && fallbacks.length > 0) {
+    return fallbacks[0];
+  }
+  
+  return undefined;
 }
 
 // ============================================
@@ -144,19 +146,19 @@ export function buildChainConfigs(): ChainConfig[] {
   const configs: ChainConfig[] = [];
 
   for (const chainId of ALL_CHAIN_IDS) {
-    const aaveAddresses = AAVE_ADDRESSES[chainId];
+    // Get addresses from official address book
+    const aaveAddresses = getAaveAddresses(chainId);
     const rpcEnvKey = RPC_ENV_KEYS[chainId];
-    const rpcUrl = getRpcUrl(rpcEnvKey);
+    const rpcUrl = getRpcUrl(rpcEnvKey, chainId);
 
-    // Skip chains without Aave addresses
+    // Skip chains without Aave addresses (should not happen with official book)
     if (!aaveAddresses) {
       if (import.meta.env.DEV) {
-        console.log(`[Earn] Chain ${chainId} skipped: No Aave addresses configured`);
+        console.log(`[Earn] Chain ${chainId} skipped: No Aave addresses in address book`);
       }
       continue;
     }
 
-    // Include chain but mark RPC as missing (can still try subgraph)
     configs.push({
       chainId,
       name: CHAIN_NAMES[chainId] || `Chain ${chainId}`,
@@ -164,9 +166,9 @@ export function buildChainConfigs(): ChainConfig[] {
       rpcEnvKey,
       rpcUrl,
       explorerUrl: EXPLORER_URLS[chainId] || '',
-      aavePool: aaveAddresses.pool,
-      aaveUiPoolDataProvider: aaveAddresses.uiPoolDataProvider,
-      aaveAddressesProvider: aaveAddresses.addressesProvider,
+      aavePool: aaveAddresses.POOL,
+      aaveUiPoolDataProvider: aaveAddresses.UI_POOL_DATA_PROVIDER,
+      aaveAddressesProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER,
       aaveSubgraph: AAVE_SUBGRAPHS[chainId] || '',
       aaveMarketName: AAVE_MARKET_NAMES[chainId] || '',
     });
@@ -183,9 +185,11 @@ export const SUPPORTED_CHAIN_IDS = SUPPORTED_CHAINS.map(c => c.chainId);
 if (import.meta.env.DEV) {
   console.log('[Earn] Chain Configuration:');
   SUPPORTED_CHAINS.forEach(chain => {
-    const rpcStatus = chain.rpcUrl ? 'defined' : 'MISSING';
-    const rpcPreview = chain.rpcUrl ? chain.rpcUrl.substring(0, 25) + '...' : 'N/A';
-    console.log(`  ${chain.name}: RPC ${rpcStatus} (${rpcPreview})`);
+    const envValue = import.meta.env[chain.rpcEnvKey];
+    const hasEnvVar = envValue && typeof envValue === 'string' && envValue.length > 0;
+    const rpcSource = hasEnvVar ? 'env' : 'fallback';
+    const rpcPreview = chain.rpcUrl ? chain.rpcUrl.substring(0, 30) + '...' : 'N/A';
+    console.log(`  ${chain.name}: RPC (${rpcSource}) ${rpcPreview}`);
   });
 }
 
@@ -224,6 +228,7 @@ export interface RpcTestResult {
   rpcEnvKey: string;
   rpcDefined: boolean;
   rpcPrefix: string;
+  rpcSource: 'env' | 'fallback' | 'none';
   testSuccess: boolean | null;
   testResult: string | null;
   testError: string | null;
@@ -239,11 +244,15 @@ export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
       rpcEnvKey: RPC_ENV_KEYS[chainId] || 'UNKNOWN',
       rpcDefined: false,
       rpcPrefix: 'N/A',
+      rpcSource: 'none',
       testSuccess: null,
       testResult: null,
       testError: 'Chain not configured',
     };
   }
+
+  const envValue = import.meta.env[config.rpcEnvKey];
+  const hasEnvVar = envValue && typeof envValue === 'string' && envValue.length > 0;
 
   const result: RpcTestResult = {
     chainId,
@@ -251,13 +260,14 @@ export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
     rpcEnvKey: config.rpcEnvKey,
     rpcDefined: !!config.rpcUrl,
     rpcPrefix: config.rpcUrl ? config.rpcUrl.substring(0, 25) + '...' : 'N/A',
+    rpcSource: hasEnvVar ? 'env' : (config.rpcUrl ? 'fallback' : 'none'),
     testSuccess: null,
     testResult: null,
     testError: null,
   };
 
   if (!config.rpcUrl) {
-    result.testError = `Missing env var: ${config.rpcEnvKey}`;
+    result.testError = `Missing RPC for ${config.name}`;
     return result;
   }
 
