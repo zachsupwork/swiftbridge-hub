@@ -13,15 +13,25 @@ import { getAaveAddresses, type AaveV3Addresses } from './aaveAddressBook';
 // ============================================
 // DIRECT RPC ACCESS - MUST BE STATIC!
 // Vite replaces these at build time. Dynamic access fails in production.
+// Each env var MUST be accessed directly - no dynamic key lookup!
 // ============================================
 
+// Direct static access - Vite will replace these at build time
+const VITE_RPC_ETHEREUM = import.meta.env.VITE_RPC_ETHEREUM;
+const VITE_RPC_ARBITRUM = import.meta.env.VITE_RPC_ARBITRUM;
+const VITE_RPC_OPTIMISM = import.meta.env.VITE_RPC_OPTIMISM;
+const VITE_RPC_POLYGON = import.meta.env.VITE_RPC_POLYGON;
+const VITE_RPC_BASE = import.meta.env.VITE_RPC_BASE;
+const VITE_RPC_AVALANCHE = import.meta.env.VITE_RPC_AVALANCHE;
+
+// Map chain IDs to their direct env var values
 const DIRECT_RPC_URLS: Record<number, string | undefined> = {
-  1: import.meta.env.VITE_RPC_ETHEREUM,
-  42161: import.meta.env.VITE_RPC_ARBITRUM,
-  10: import.meta.env.VITE_RPC_OPTIMISM,
-  137: import.meta.env.VITE_RPC_POLYGON,
-  8453: import.meta.env.VITE_RPC_BASE,
-  43114: import.meta.env.VITE_RPC_AVALANCHE,
+  1: VITE_RPC_ETHEREUM,
+  42161: VITE_RPC_ARBITRUM,
+  10: VITE_RPC_OPTIMISM,
+  137: VITE_RPC_POLYGON,
+  8453: VITE_RPC_BASE,
+  43114: VITE_RPC_AVALANCHE,
 };
 
 // Validate each is a non-empty string
@@ -31,6 +41,11 @@ function getEnvRpc(chainId: number): string | undefined {
     return value.trim();
   }
   return undefined;
+}
+
+// Get all fallback RPCs for a chain (used for retry logic)
+export function getFallbackRpcs(chainId: number): string[] {
+  return PUBLIC_RPC_FALLBACKS[chainId] || [];
 }
 
 // ============================================
@@ -226,14 +241,19 @@ export function buildChainConfigs(): ChainConfig[] {
 export const SUPPORTED_CHAINS = buildChainConfigs();
 export const SUPPORTED_CHAIN_IDS = SUPPORTED_CHAINS.map(c => c.chainId);
 
-// Dev mode logging
-if (import.meta.env.DEV) {
-  console.log('[Earn] Chain Configuration (DIRECT ENV ACCESS):');
-  SUPPORTED_CHAINS.forEach(chain => {
-    const rpcPreview = chain.rpcUrl ? chain.rpcUrl.substring(0, 30) + '...' : 'N/A';
-    console.log(`  ${chain.name}: RPC (${chain.rpcSource}) ${rpcPreview}`);
-  });
-}
+// Runtime diagnostics - logs on module load
+// This runs in both dev and production to help debug env var issues
+console.log('[Earn] Chain Config - RPC Status:');
+SUPPORTED_CHAINS.forEach(chain => {
+  const envExists = !!getEnvRpc(chain.chainId);
+  const rpcHost = chain.rpcUrl ? new URL(chain.rpcUrl).hostname : 'NOT SET';
+  console.log(`  ${chain.chainId} ${chain.name}: ENV=${envExists}, Source=${chain.rpcSource.toUpperCase()}, Host=${rpcHost}`);
+});
+
+// Log a summary
+const envCount = SUPPORTED_CHAINS.filter(c => c.rpcSource === 'env').length;
+const fallbackCount = SUPPORTED_CHAINS.filter(c => c.rpcSource === 'fallback').length;
+console.log(`[Earn] Summary: ${envCount}/6 ENV, ${fallbackCount}/6 FALLBACK`);
 
 // ============================================
 // HELPER FUNCTIONS

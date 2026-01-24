@@ -20,7 +20,7 @@ import {
   isAaveSupported,
   type AaveReserveData,
 } from '@/lib/aaveAddressBook';
-import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig, testRpcHealth } from '@/lib/chainConfig';
+import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig, testRpcHealth, getFallbackRpcs, maskRpcUrl } from '@/lib/chainConfig';
 
 export interface LendingMarket {
   id: string;
@@ -243,6 +243,7 @@ async function fetchWithRetry<T>(
 
 /**
  * Fetch Aave V3 reserves data using UiPoolDataProviderV3 on-chain call
+ * Includes fallback RPC logic: tries primary RPC, then falls back to public RPCs
  */
 async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<LendingMarket[]> {
   const { chainId, name, rpcUrl, logo } = chainConfig;
@@ -250,9 +251,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   // Check cache first
   const cached = getCachedMarkets(chainId);
   if (cached) {
-    if (import.meta.env.DEV) {
-      console.log(`[Earn] ${name}: Using cached markets (${cached.length} reserves)`);
-    }
+    console.log(`[Earn] ${name}: Using cached markets (${cached.length} reserves)`);
     return cached;
   }
   
@@ -268,12 +267,22 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     } as MarketFetchError;
   }
 
-  if (!rpcUrl) {
+  // Build list of RPCs to try: primary first, then fallbacks
+  const rpcsToTry: string[] = [];
+  if (rpcUrl) {
+    rpcsToTry.push(rpcUrl);
+  }
+  
+  // Add fallback RPCs
+  const fallbacks = getFallbackRpcs(chainId);
+  rpcsToTry.push(...fallbacks.slice(0, 2)); // Max 2 fallbacks
+  
+  if (rpcsToTry.length === 0) {
     throw {
       type: 'missing_rpc',
       chainId,
       chainName: name,
-      message: `Missing RPC for ${name}`,
+      message: `No RPC available for ${name}`,
       missingEnvKey: chainConfig.rpcEnvKey,
     } as MarketFetchError;
   }
@@ -282,15 +291,13 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
   const checksummedProvider = chainConfig.aaveAddressesProvider;
   const checksummedUiProvider = chainConfig.aaveUiPoolDataProvider;
 
-  // Log addresses for debugging (DEV only)
-  if (import.meta.env.DEV) {
-    console.log(`[Earn] ${name}: Fetching markets`, {
-      rpcSource: chainConfig.rpcSource,
-      rpcPrefix: rpcUrl.substring(0, 25) + '...',
-      UI_POOL_DATA_PROVIDER: checksummedUiProvider,
-      POOL_ADDRESSES_PROVIDER: checksummedProvider,
-    });
-  }
+  // Log what we're about to try
+  console.log(`[Earn] ${name}: Fetching markets`, {
+    rpcSource: chainConfig.rpcSource,
+    primaryRpc: maskRpcUrl(rpcsToTry[0]),
+    fallbackCount: rpcsToTry.length - 1,
+    UI_POOL_DATA_PROVIDER: checksummedUiProvider,
+  });
 
   const viemChain = VIEM_CHAINS[chainId];
   if (!viemChain) {
@@ -302,12 +309,56 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     } as MarketFetchError;
   }
 
-  // Create viem client with the RPC URL and timeout
-  const client = createPublicClient({
-    chain: viemChain,
-    transport: http(rpcUrl, { timeout: 10000 }), // 10s timeout
-  });
+  // Try each RPC in order until one succeeds
+  let lastError: any = null;
+  
+  for (let i = 0; i < rpcsToTry.length; i++) {
+    const currentRpc = rpcsToTry[i];
+    const isRetry = i > 0;
+    
+    if (isRetry) {
+      console.log(`[Earn] ${name}: Retrying with fallback RPC ${i}/${rpcsToTry.length - 1}`);
+      // Small delay before retry
+      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+    }
+    
+    try {
+      // Create viem client with the current RPC URL
+      const client = createPublicClient({
+        chain: viemChain,
+        transport: http(currentRpc, { timeout: 12000 }), // 12s timeout
+      });
+      
+      const markets = await fetchMarketsWithClient(client, chainConfig, checksummedProvider, checksummedUiProvider);
+      
+      if (isRetry) {
+        console.log(`[Earn] ${name}: ✓ Fallback RPC succeeded`);
+      }
+      
+      return markets;
+    } catch (error) {
+      lastError = error;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[Earn] ${name}: RPC ${i + 1}/${rpcsToTry.length} failed:`, errorMsg.substring(0, 100));
+    }
+  }
+  
+  // All RPCs failed - throw the last error
+  throw lastError;
 
+}
+
+/**
+ * Fetch markets using a specific viem client
+ */
+async function fetchMarketsWithClient(
+  client: ReturnType<typeof createPublicClient>,
+  chainConfig: ChainConfig,
+  checksummedProvider: `0x${string}`,
+  checksummedUiProvider: `0x${string}`
+): Promise<LendingMarket[]> {
+  const { chainId, name, logo } = chainConfig;
+  
   try {
     // Call UiPoolDataProviderV3.getReservesData with checksummed addresses
     const result = await fetchWithRetry(async () => {
@@ -330,9 +381,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       } as MarketFetchError;
     }
 
-    if (import.meta.env.DEV) {
-      console.log(`[Earn] ${name}: ✓ Fetched ${reserves.length} reserves`);
-    }
+    console.log(`[Earn] ${name}: ✓ Fetched ${reserves.length} reserves`);
 
     const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
     const marketName = AAVE_MARKET_NAMES[chainId] || '';
@@ -392,9 +441,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
-    if (import.meta.env.DEV) {
-      console.error(`[Earn] ${name}: ✗ Failed:`, errorMessage);
-    }
+    console.error(`[Earn] ${name}: ✗ Failed:`, errorMessage.substring(0, 100));
     
     // Categorize the error more specifically
     let errorType: MarketFetchErrorType = 'contract_error';
@@ -493,13 +540,13 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     }
     fetchInProgress.current = true;
 
-    if (import.meta.env.DEV) {
-      console.log('[Earn] Fetching Aave V3 markets...', {
-        selectedChainId,
-        specificChainId,
-        isRetry,
-      });
-    }
+    // Always log for debugging (helps diagnose production issues)
+    console.log('[Earn] Fetching Aave V3 markets...', {
+      selectedChainId: selectedChainId ?? 'all',
+      specificChainId,
+      isRetry,
+      supportedChains: SUPPORTED_CHAINS.map(c => `${c.chainId}:${c.name}:${c.rpcSource}`).join(', '),
+    });
 
     if (isRetry) {
       setIsRetrying(true);
