@@ -54,7 +54,8 @@ export default function Earn() {
     loading, 
     error, 
     errorMessage, 
-    refresh, 
+    refresh,
+    refreshChain,
     chains, 
     lastFetched, 
     isRetrying,
@@ -218,7 +219,12 @@ export default function Earn() {
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="space-y-2 mt-2">
-              <RpcDebugPanel className="mb-2" />
+              <RpcDebugPanel 
+                className="mb-2" 
+                partialFailures={partialFailures}
+                onRetryChain={refreshChain}
+                onRetryAll={refresh}
+              />
               <AaveDiagnosticsPanel className="mb-2" />
             </CollapsibleContent>
           </Collapsible>
