@@ -166,7 +166,14 @@ if (import.meta.env.DEV) {
 // ============================================
 
 /**
- * UiPoolDataProviderV3 ABI - Only getReservesData function
+ * UiPoolDataProviderV3 ABI - getReservesData function
+ * 
+ * IMPORTANT: This ABI matches the Aave V3.1 periphery contracts deployed on
+ * Optimism, Base, Arbitrum, Polygon, Ethereum, and Avalanche.
+ * 
+ * The struct includes v3.1 fields (virtualAccActive, virtualUnderlyingBalance)
+ * which are present on most L2 deployments.
+ * 
  * Source: https://github.com/aave/aave-v3-periphery/blob/master/contracts/misc/UiPoolDataProviderV3.sol
  */
 export const UI_POOL_DATA_PROVIDER_ABI = [
@@ -232,6 +239,9 @@ export const UI_POOL_DATA_PROVIDER_ABI = [
           { internalType: 'address', name: 'eModePriceSource', type: 'address' },
           { internalType: 'string', name: 'eModeLabel', type: 'string' },
           { internalType: 'bool', name: 'borrowableInIsolation', type: 'bool' },
+          // V3.1 fields - required for L2 deployments (Optimism, Base, Arbitrum, etc.)
+          { internalType: 'bool', name: 'virtualAccActive', type: 'bool' },
+          { internalType: 'uint128', name: 'virtualUnderlyingBalance', type: 'uint128' },
         ],
         internalType: 'struct IUiPoolDataProviderV3.AggregatedReserveData[]',
         name: '',
@@ -252,12 +262,27 @@ export const UI_POOL_DATA_PROVIDER_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [
+      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' }
+    ],
+    name: 'getReservesList',
+    outputs: [
+      { internalType: 'address[]', name: '', type: 'address[]' }
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const;
 
 // ============================================
 // RESERVE DATA TYPE
 // ============================================
 
+/**
+ * AaveReserveData interface - matches the ABI struct exactly
+ * Includes V3.1 fields for L2 compatibility
+ */
 export interface AaveReserveData {
   underlyingAsset: `0x${string}`;
   name: string;
@@ -313,6 +338,9 @@ export interface AaveReserveData {
   eModePriceSource: `0x${string}`;
   eModeLabel: string;
   borrowableInIsolation: boolean;
+  // V3.1 fields
+  virtualAccActive?: boolean;
+  virtualUnderlyingBalance?: bigint;
 }
 
 export interface AaveBaseCurrencyInfo {
