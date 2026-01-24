@@ -162,19 +162,19 @@ if (import.meta.env.DEV) {
 }
 
 // ============================================
-// UI POOL DATA PROVIDER ABI (minimal)
+// UI POOL DATA PROVIDER ABI
 // ============================================
 
 /**
- * UiPoolDataProviderV3 ABI - getReservesData function
+ * UiPoolDataProviderV3 ABI - Official Aave V3.1 interface
  * 
- * IMPORTANT: This ABI matches the Aave V3.1 periphery contracts deployed on
- * Optimism, Base, Arbitrum, Polygon, Ethereum, and Avalanche.
+ * Source: https://github.com/aave/aave-v3-periphery/blob/master/src/contracts/misc/interfaces/IUiPoolDataProviderV3.sol
  * 
- * The struct includes v3.1 fields (virtualAccActive, virtualUnderlyingBalance)
- * which are present on most L2 deployments.
+ * CRITICAL: The AggregatedReserveData struct fields MUST be in exact order as defined in the Solidity interface.
+ * Any mismatch causes viem decoding errors ("Bytes value is not a valid boolean").
  * 
- * Source: https://github.com/aave/aave-v3-periphery/blob/master/contracts/misc/UiPoolDataProviderV3.sol
+ * This ABI is compatible with all Aave V3.1 deployments:
+ * - Ethereum, Arbitrum, Optimism, Polygon, Base, Avalanche
  */
 export const UI_POOL_DATA_PROVIDER_ABI = [
   {
@@ -185,36 +185,69 @@ export const UI_POOL_DATA_PROVIDER_ABI = [
     outputs: [
       {
         components: [
+          // === Core asset info ===
           { internalType: 'address', name: 'underlyingAsset', type: 'address' },
+          // === eMode fields (grouped at start in V3.1) ===
+          { internalType: 'uint8', name: 'eModeCategoryId', type: 'uint8' },
+          { internalType: 'uint16', name: 'reserveLiquidationThreshold', type: 'uint16' },
+          { internalType: 'uint16', name: 'reserveLiquidationBonus', type: 'uint16' },
+          { internalType: 'uint16', name: 'eModeLtv', type: 'uint16' },
+          { internalType: 'uint16', name: 'eModeLiquidationThreshold', type: 'uint16' },
+          { internalType: 'uint16', name: 'eModeLiquidationBonus', type: 'uint16' },
+          { internalType: 'address', name: 'eModePriceSource', type: 'address' },
+          { internalType: 'string', name: 'eModeLabel', type: 'string' },
+          // === Caps and isolation mode ===
+          { internalType: 'uint256', name: 'borrowCap', type: 'uint256' },
+          { internalType: 'uint256', name: 'supplyCap', type: 'uint256' },
+          { internalType: 'uint256', name: 'debtCeiling', type: 'uint256' },
+          { internalType: 'uint256', name: 'debtCeilingDecimals', type: 'uint256' },
+          { internalType: 'uint256', name: 'isolationModeTotalDebt', type: 'uint256' },
+          // === Feature flags ===
+          { internalType: 'bool', name: 'flashLoanEnabled', type: 'bool' },
+          { internalType: 'bool', name: 'isSiloedBorrowing', type: 'bool' },
+          // === Unbacked and treasury ===
+          { internalType: 'uint256', name: 'unbacked', type: 'uint256' },
+          { internalType: 'uint256', name: 'accruedToTreasury', type: 'uint256' },
+          // === Isolation borrowable flag ===
+          { internalType: 'bool', name: 'borrowableInIsolation', type: 'bool' },
+          // === V3.1 virtual accounting fields ===
+          { internalType: 'bool', name: 'virtualAccActive', type: 'bool' },
+          { internalType: 'uint128', name: 'virtualUnderlyingBalance', type: 'uint128' },
+          // === Token metadata ===
           { internalType: 'string', name: 'name', type: 'string' },
           { internalType: 'string', name: 'symbol', type: 'string' },
           { internalType: 'uint256', name: 'decimals', type: 'uint256' },
+          // === Collateral configuration ===
           { internalType: 'uint256', name: 'baseLTVasCollateral', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationThreshold', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationBonus', type: 'uint256' },
           { internalType: 'uint256', name: 'reserveFactor', type: 'uint256' },
+          // === Borrowing flags ===
           { internalType: 'bool', name: 'usageAsCollateralEnabled', type: 'bool' },
           { internalType: 'bool', name: 'borrowingEnabled', type: 'bool' },
           { internalType: 'bool', name: 'stableBorrowRateEnabled', type: 'bool' },
           { internalType: 'bool', name: 'isActive', type: 'bool' },
           { internalType: 'bool', name: 'isFrozen', type: 'bool' },
-          { internalType: 'uint128', name: 'liquidityIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'liquidityRate', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowRate', type: 'uint128' },
-          { internalType: 'uint128', name: 'stableBorrowRate', type: 'uint128' },
-          { internalType: 'uint40', name: 'lastUpdateTimestamp', type: 'uint40' },
+          // === Indices and rates ===
+          { internalType: 'uint256', name: 'liquidityIndex', type: 'uint256' },
+          { internalType: 'uint256', name: 'variableBorrowIndex', type: 'uint256' },
+          { internalType: 'uint256', name: 'liquidityRate', type: 'uint256' },
+          { internalType: 'uint256', name: 'variableBorrowRate', type: 'uint256' },
+          { internalType: 'uint256', name: 'stableBorrowRate', type: 'uint256' },
+          { internalType: 'uint256', name: 'lastUpdateTimestamp', type: 'uint256' },
+          // === Token addresses ===
           { internalType: 'address', name: 'aTokenAddress', type: 'address' },
           { internalType: 'address', name: 'stableDebtTokenAddress', type: 'address' },
           { internalType: 'address', name: 'variableDebtTokenAddress', type: 'address' },
           { internalType: 'address', name: 'interestRateStrategyAddress', type: 'address' },
+          // === Liquidity and debt ===
           { internalType: 'uint256', name: 'availableLiquidity', type: 'uint256' },
           { internalType: 'uint256', name: 'totalPrincipalStableDebt', type: 'uint256' },
           { internalType: 'uint256', name: 'averageStableRate', type: 'uint256' },
           { internalType: 'uint256', name: 'stableDebtLastUpdateTimestamp', type: 'uint256' },
           { internalType: 'uint256', name: 'totalScaledVariableDebt', type: 'uint256' },
+          // === Price data ===
           { internalType: 'uint256', name: 'priceInMarketReferenceCurrency', type: 'uint256' },
           { internalType: 'address', name: 'priceOracle', type: 'address' },
+          // === Interest rate strategy params ===
           { internalType: 'uint256', name: 'variableRateSlope1', type: 'uint256' },
           { internalType: 'uint256', name: 'variableRateSlope2', type: 'uint256' },
           { internalType: 'uint256', name: 'stableRateSlope1', type: 'uint256' },
@@ -222,26 +255,8 @@ export const UI_POOL_DATA_PROVIDER_ABI = [
           { internalType: 'uint256', name: 'baseStableBorrowRate', type: 'uint256' },
           { internalType: 'uint256', name: 'baseVariableBorrowRate', type: 'uint256' },
           { internalType: 'uint256', name: 'optimalUsageRatio', type: 'uint256' },
+          // === Pause flag (last) ===
           { internalType: 'bool', name: 'isPaused', type: 'bool' },
-          { internalType: 'bool', name: 'isSiloedBorrowing', type: 'bool' },
-          { internalType: 'uint128', name: 'accruedToTreasury', type: 'uint128' },
-          { internalType: 'uint128', name: 'unbacked', type: 'uint128' },
-          { internalType: 'uint128', name: 'isolationModeTotalDebt', type: 'uint128' },
-          { internalType: 'bool', name: 'flashLoanEnabled', type: 'bool' },
-          { internalType: 'uint256', name: 'debtCeiling', type: 'uint256' },
-          { internalType: 'uint256', name: 'debtCeilingDecimals', type: 'uint256' },
-          { internalType: 'uint8', name: 'eModeCategoryId', type: 'uint8' },
-          { internalType: 'uint256', name: 'borrowCap', type: 'uint256' },
-          { internalType: 'uint256', name: 'supplyCap', type: 'uint256' },
-          { internalType: 'uint16', name: 'eModeLtv', type: 'uint16' },
-          { internalType: 'uint16', name: 'eModeLiquidationThreshold', type: 'uint16' },
-          { internalType: 'uint16', name: 'eModeLiquidationBonus', type: 'uint16' },
-          { internalType: 'address', name: 'eModePriceSource', type: 'address' },
-          { internalType: 'string', name: 'eModeLabel', type: 'string' },
-          { internalType: 'bool', name: 'borrowableInIsolation', type: 'bool' },
-          // V3.1 fields - required for L2 deployments (Optimism, Base, Arbitrum, etc.)
-          { internalType: 'bool', name: 'virtualAccActive', type: 'bool' },
-          { internalType: 'uint128', name: 'virtualUnderlyingBalance', type: 'uint128' },
         ],
         internalType: 'struct IUiPoolDataProviderV3.AggregatedReserveData[]',
         name: '',
@@ -280,40 +295,74 @@ export const UI_POOL_DATA_PROVIDER_ABI = [
 // ============================================
 
 /**
- * AaveReserveData interface - matches the ABI struct exactly
- * Includes V3.1 fields for L2 compatibility
+ * AaveReserveData interface - matches the ABI struct exactly in field order
+ * 
+ * CRITICAL: Field order must match the Solidity struct for correct decoding
  */
 export interface AaveReserveData {
+  // Core asset info
   underlyingAsset: `0x${string}`;
+  // eMode fields (grouped at start in V3.1)
+  eModeCategoryId: number;
+  reserveLiquidationThreshold: number;
+  reserveLiquidationBonus: number;
+  eModeLtv: number;
+  eModeLiquidationThreshold: number;
+  eModeLiquidationBonus: number;
+  eModePriceSource: `0x${string}`;
+  eModeLabel: string;
+  // Caps and isolation mode
+  borrowCap: bigint;
+  supplyCap: bigint;
+  debtCeiling: bigint;
+  debtCeilingDecimals: bigint;
+  isolationModeTotalDebt: bigint;
+  // Feature flags
+  flashLoanEnabled: boolean;
+  isSiloedBorrowing: boolean;
+  // Unbacked and treasury
+  unbacked: bigint;
+  accruedToTreasury: bigint;
+  // Isolation borrowable flag
+  borrowableInIsolation: boolean;
+  // V3.1 virtual accounting fields
+  virtualAccActive: boolean;
+  virtualUnderlyingBalance: bigint;
+  // Token metadata
   name: string;
   symbol: string;
   decimals: bigint;
+  // Collateral configuration
   baseLTVasCollateral: bigint;
-  reserveLiquidationThreshold: bigint;
-  reserveLiquidationBonus: bigint;
   reserveFactor: bigint;
+  // Borrowing flags
   usageAsCollateralEnabled: boolean;
   borrowingEnabled: boolean;
   stableBorrowRateEnabled: boolean;
   isActive: boolean;
   isFrozen: boolean;
+  // Indices and rates
   liquidityIndex: bigint;
   variableBorrowIndex: bigint;
   liquidityRate: bigint;
   variableBorrowRate: bigint;
   stableBorrowRate: bigint;
-  lastUpdateTimestamp: number;
+  lastUpdateTimestamp: bigint;
+  // Token addresses
   aTokenAddress: `0x${string}`;
   stableDebtTokenAddress: `0x${string}`;
   variableDebtTokenAddress: `0x${string}`;
   interestRateStrategyAddress: `0x${string}`;
+  // Liquidity and debt
   availableLiquidity: bigint;
   totalPrincipalStableDebt: bigint;
   averageStableRate: bigint;
   stableDebtLastUpdateTimestamp: bigint;
   totalScaledVariableDebt: bigint;
+  // Price data
   priceInMarketReferenceCurrency: bigint;
   priceOracle: `0x${string}`;
+  // Interest rate strategy params
   variableRateSlope1: bigint;
   variableRateSlope2: bigint;
   stableRateSlope1: bigint;
@@ -321,26 +370,8 @@ export interface AaveReserveData {
   baseStableBorrowRate: bigint;
   baseVariableBorrowRate: bigint;
   optimalUsageRatio: bigint;
+  // Pause flag (last)
   isPaused: boolean;
-  isSiloedBorrowing: boolean;
-  accruedToTreasury: bigint;
-  unbacked: bigint;
-  isolationModeTotalDebt: bigint;
-  flashLoanEnabled: boolean;
-  debtCeiling: bigint;
-  debtCeilingDecimals: bigint;
-  eModeCategoryId: number;
-  borrowCap: bigint;
-  supplyCap: bigint;
-  eModeLtv: number;
-  eModeLiquidationThreshold: number;
-  eModeLiquidationBonus: number;
-  eModePriceSource: `0x${string}`;
-  eModeLabel: string;
-  borrowableInIsolation: boolean;
-  // V3.1 fields
-  virtualAccActive?: boolean;
-  virtualUnderlyingBalance?: bigint;
 }
 
 export interface AaveBaseCurrencyInfo {
