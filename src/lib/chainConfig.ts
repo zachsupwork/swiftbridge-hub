@@ -1,31 +1,42 @@
 /**
  * Earn Chain Configuration - STRICT mapping with RPC + Aave addresses
  * 
- * Uses ONLY Vite env vars (import.meta.env.VITE_*) with fallback public RPCs.
- * A chain is only supported if Aave addresses are present in the address book.
+ * CRITICAL FIX: Uses DIRECT static access to import.meta.env.VITE_* variables
+ * Dynamic access like import.meta.env[key] DOES NOT WORK in Vite production builds!
+ * 
+ * Each chain is only supported if Aave addresses are present in the address book.
  */
 
+import { getAddress } from 'viem';
 import { getAaveAddresses, type AaveV3Addresses } from './aaveAddressBook';
 
 // ============================================
-// CHAIN CONFIGURATION
+// DIRECT RPC ACCESS - MUST BE STATIC!
+// Vite replaces these at build time. Dynamic access fails in production.
 // ============================================
 
-export interface ChainConfig {
-  chainId: number;
-  name: string;
-  logo: string;
-  rpcEnvKey: string;
-  rpcUrl: string | undefined;
-  explorerUrl: string;
-  aavePool: `0x${string}`;
-  aaveUiPoolDataProvider: `0x${string}`;
-  aaveAddressesProvider: `0x${string}`;
-  aaveSubgraph: string;
-  aaveMarketName: string;
+const DIRECT_RPC_URLS: Record<number, string | undefined> = {
+  1: import.meta.env.VITE_RPC_ETHEREUM,
+  42161: import.meta.env.VITE_RPC_ARBITRUM,
+  10: import.meta.env.VITE_RPC_OPTIMISM,
+  137: import.meta.env.VITE_RPC_POLYGON,
+  8453: import.meta.env.VITE_RPC_BASE,
+  43114: import.meta.env.VITE_RPC_AVALANCHE,
+};
+
+// Validate each is a non-empty string
+function getEnvRpc(chainId: number): string | undefined {
+  const value = DIRECT_RPC_URLS[chainId];
+  if (value && typeof value === 'string' && value.trim().length > 0) {
+    return value.trim();
+  }
+  return undefined;
 }
 
-// Fallback public RPCs (when env var not set)
+// ============================================
+// PUBLIC RPC FALLBACKS (only if env missing)
+// ============================================
+
 const PUBLIC_RPC_FALLBACKS: Record<number, string[]> = {
   1: [
     'https://ethereum-rpc.publicnode.com',
@@ -58,6 +69,25 @@ const PUBLIC_RPC_FALLBACKS: Record<number, string[]> = {
     'https://avax.meowrpc.com',
   ],
 };
+
+// ============================================
+// CHAIN CONFIGURATION
+// ============================================
+
+export interface ChainConfig {
+  chainId: number;
+  name: string;
+  logo: string;
+  rpcEnvKey: string;
+  rpcUrl: string | undefined;
+  rpcSource: 'env' | 'fallback' | 'none';
+  explorerUrl: string;
+  aavePool: `0x${string}`;
+  aaveUiPoolDataProvider: `0x${string}`;
+  aaveAddressesProvider: `0x${string}`;
+  aaveSubgraph: string;
+  aaveMarketName: string;
+}
 
 // Subgraph endpoints
 const AAVE_SUBGRAPHS: Record<number, string> = {
@@ -109,7 +139,7 @@ const CHAIN_NAMES: Record<number, string> = {
   43114: 'Avalanche',
 };
 
-// RPC env key mapping
+// RPC env key mapping (for display purposes)
 const RPC_ENV_KEYS: Record<number, string> = {
   1: 'VITE_RPC_ETHEREUM',
   42161: 'VITE_RPC_ARBITRUM',
@@ -119,21 +149,21 @@ const RPC_ENV_KEYS: Record<number, string> = {
   43114: 'VITE_RPC_AVALANCHE',
 };
 
-// Get RPC URL from Vite env with fallback to public RPC
-function getRpcUrl(envKey: string, chainId: number): string | undefined {
-  // First try env var
-  const envValue = import.meta.env[envKey];
-  if (envValue && typeof envValue === 'string' && envValue.length > 0) {
-    return envValue;
+// Get RPC URL: prefer env var, fallback to public RPC
+function getRpcUrl(chainId: number): { url: string | undefined; source: 'env' | 'fallback' | 'none' } {
+  // First try direct env var
+  const envValue = getEnvRpc(chainId);
+  if (envValue) {
+    return { url: envValue, source: 'env' };
   }
   
   // Fallback to public RPC
   const fallbacks = PUBLIC_RPC_FALLBACKS[chainId];
   if (fallbacks && fallbacks.length > 0) {
-    return fallbacks[0];
+    return { url: fallbacks[0], source: 'fallback' };
   }
   
-  return undefined;
+  return { url: undefined, source: 'none' };
 }
 
 // ============================================
@@ -149,7 +179,7 @@ export function buildChainConfigs(): ChainConfig[] {
     // Get addresses from official address book
     const aaveAddresses = getAaveAddresses(chainId);
     const rpcEnvKey = RPC_ENV_KEYS[chainId];
-    const rpcUrl = getRpcUrl(rpcEnvKey, chainId);
+    const { url: rpcUrl, source: rpcSource } = getRpcUrl(chainId);
 
     // Skip chains without Aave addresses (should not happen with official book)
     if (!aaveAddresses) {
@@ -159,16 +189,31 @@ export function buildChainConfigs(): ChainConfig[] {
       continue;
     }
 
+    // Checksum all addresses using viem
+    let checksummedPool: `0x${string}`;
+    let checksummedUiProvider: `0x${string}`;
+    let checksummedAddressesProvider: `0x${string}`;
+
+    try {
+      checksummedPool = getAddress(aaveAddresses.POOL) as `0x${string}`;
+      checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER) as `0x${string}`;
+      checksummedAddressesProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER) as `0x${string}`;
+    } catch (e) {
+      console.error(`[Earn] Failed to checksum addresses for chain ${chainId}:`, e);
+      continue;
+    }
+
     configs.push({
       chainId,
       name: CHAIN_NAMES[chainId] || `Chain ${chainId}`,
       logo: CHAIN_LOGOS[chainId] || '',
       rpcEnvKey,
       rpcUrl,
+      rpcSource,
       explorerUrl: EXPLORER_URLS[chainId] || '',
-      aavePool: aaveAddresses.POOL,
-      aaveUiPoolDataProvider: aaveAddresses.UI_POOL_DATA_PROVIDER,
-      aaveAddressesProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER,
+      aavePool: checksummedPool,
+      aaveUiPoolDataProvider: checksummedUiProvider,
+      aaveAddressesProvider: checksummedAddressesProvider,
       aaveSubgraph: AAVE_SUBGRAPHS[chainId] || '',
       aaveMarketName: AAVE_MARKET_NAMES[chainId] || '',
     });
@@ -183,13 +228,10 @@ export const SUPPORTED_CHAIN_IDS = SUPPORTED_CHAINS.map(c => c.chainId);
 
 // Dev mode logging
 if (import.meta.env.DEV) {
-  console.log('[Earn] Chain Configuration:');
+  console.log('[Earn] Chain Configuration (DIRECT ENV ACCESS):');
   SUPPORTED_CHAINS.forEach(chain => {
-    const envValue = import.meta.env[chain.rpcEnvKey];
-    const hasEnvVar = envValue && typeof envValue === 'string' && envValue.length > 0;
-    const rpcSource = hasEnvVar ? 'env' : 'fallback';
     const rpcPreview = chain.rpcUrl ? chain.rpcUrl.substring(0, 30) + '...' : 'N/A';
-    console.log(`  ${chain.name}: RPC (${rpcSource}) ${rpcPreview}`);
+    console.log(`  ${chain.name}: RPC (${chain.rpcSource}) ${rpcPreview}`);
   });
 }
 
@@ -219,10 +261,10 @@ export function getExplorerTxUrl(chainId: number, txHash: string): string {
 }
 
 // ============================================
-// RPC TESTING
+// RPC HEALTH CHECK
 // ============================================
 
-export interface RpcTestResult {
+export interface RpcHealthResult {
   chainId: number;
   chainName: string;
   rpcEnvKey: string;
@@ -232,44 +274,81 @@ export interface RpcTestResult {
   testSuccess: boolean | null;
   testResult: string | null;
   testError: string | null;
+  httpStatus: number | null;
+  latencyMs: number | null;
+  errorType: 'none' | 'http' | 'cors' | 'network' | 'timeout' | 'rate_limit' | 'chain_mismatch' | 'unknown';
 }
 
-export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
+// Mask RPC URL for security (show provider, hide API key)
+export function maskRpcUrl(url: string | undefined): string {
+  if (!url) return 'NOT SET';
+  if (url.length < 25) return url;
+  
+  // For Alchemy URLs, show the base URL pattern
+  if (url.includes('alchemy.com')) {
+    const match = url.match(/https:\/\/([^.]+)\.g\.alchemy\.com\/v2\//);
+    if (match) {
+      return `https://${match[1]}.g.alchemy.com/v2/***`;
+    }
+  }
+  
+  // For Infura URLs
+  if (url.includes('infura.io')) {
+    return url.replace(/\/v3\/[a-f0-9]+$/, '/v3/***');
+  }
+  
+  // Generic masking
+  const first = url.substring(0, 20);
+  return `${first}...***`;
+}
+
+export async function testRpcHealth(chainId: number): Promise<RpcHealthResult> {
   const config = getChainConfig(chainId);
+  const chainName = CHAIN_NAMES[chainId] || `Chain ${chainId}`;
+  const rpcEnvKey = RPC_ENV_KEYS[chainId] || 'UNKNOWN';
   
   if (!config) {
     return {
       chainId,
-      chainName: CHAIN_NAMES[chainId] || `Chain ${chainId}`,
-      rpcEnvKey: RPC_ENV_KEYS[chainId] || 'UNKNOWN',
+      chainName,
+      rpcEnvKey,
       rpcDefined: false,
       rpcPrefix: 'N/A',
       rpcSource: 'none',
-      testSuccess: null,
+      testSuccess: false,
       testResult: null,
       testError: 'Chain not configured',
+      httpStatus: null,
+      latencyMs: null,
+      errorType: 'unknown',
     };
   }
 
-  const envValue = import.meta.env[config.rpcEnvKey];
-  const hasEnvVar = envValue && typeof envValue === 'string' && envValue.length > 0;
-
-  const result: RpcTestResult = {
+  const result: RpcHealthResult = {
     chainId,
     chainName: config.name,
     rpcEnvKey: config.rpcEnvKey,
     rpcDefined: !!config.rpcUrl,
-    rpcPrefix: config.rpcUrl ? config.rpcUrl.substring(0, 25) + '...' : 'N/A',
-    rpcSource: hasEnvVar ? 'env' : (config.rpcUrl ? 'fallback' : 'none'),
+    rpcPrefix: maskRpcUrl(config.rpcUrl),
+    rpcSource: config.rpcSource,
     testSuccess: null,
     testResult: null,
     testError: null,
+    httpStatus: null,
+    latencyMs: null,
+    errorType: 'none',
   };
 
   if (!config.rpcUrl) {
-    result.testError = `Missing RPC for ${config.name}`;
+    result.testSuccess = false;
+    result.testError = `Missing: ${config.rpcEnvKey}`;
+    result.errorType = 'network';
     return result;
   }
+
+  const startTime = performance.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
   try {
     const response = await fetch(config.rpcUrl, {
@@ -281,11 +360,26 @@ export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
         method: 'eth_chainId',
         params: [],
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
+    result.latencyMs = Math.round(performance.now() - startTime);
+    result.httpStatus = response.status;
 
     if (!response.ok) {
       result.testSuccess = false;
-      result.testError = `HTTP ${response.status}: ${response.statusText}`;
+      
+      if (response.status === 429) {
+        result.testError = `Rate limited (HTTP 429)`;
+        result.errorType = 'rate_limit';
+      } else if (response.status === 403) {
+        result.testError = `Access denied (HTTP 403)`;
+        result.errorType = 'http';
+      } else {
+        result.testError = `HTTP ${response.status}: ${response.statusText}`;
+        result.errorType = 'http';
+      }
       return result;
     }
 
@@ -294,6 +388,7 @@ export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
     if (data.error) {
       result.testSuccess = false;
       result.testError = data.error.message || 'RPC error';
+      result.errorType = 'unknown';
       return result;
     }
 
@@ -301,19 +396,50 @@ export async function testRpcEndpoint(chainId: number): Promise<RpcTestResult> {
     if (returnedChainId !== chainId) {
       result.testSuccess = false;
       result.testError = `Chain ID mismatch: expected ${chainId}, got ${returnedChainId}`;
+      result.errorType = 'chain_mismatch';
       return result;
     }
 
     result.testSuccess = true;
-    result.testResult = `Chain ID: ${returnedChainId} ✓`;
+    result.testResult = `Chain ID: ${returnedChainId} (${result.latencyMs}ms)`;
     return result;
   } catch (error) {
+    clearTimeout(timeoutId);
+    result.latencyMs = Math.round(performance.now() - startTime);
     result.testSuccess = false;
-    result.testError = error instanceof Error ? error.message : 'Unknown error';
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    if (errorMessage.includes('abort') || errorMessage.includes('timeout')) {
+      result.testError = 'Timeout (10s)';
+      result.errorType = 'timeout';
+    } else if (errorMessage.includes('CORS') || errorMessage.includes('cross-origin')) {
+      result.testError = 'CORS error - blocked by browser';
+      result.errorType = 'cors';
+    } else if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+      result.testError = 'Network error - RPC unreachable';
+      result.errorType = 'network';
+    } else {
+      result.testError = errorMessage;
+      result.errorType = 'unknown';
+    }
+    
     return result;
   }
 }
 
-export async function testAllRpcEndpoints(): Promise<RpcTestResult[]> {
-  return Promise.all(SUPPORTED_CHAINS.map(c => testRpcEndpoint(c.chainId)));
+export async function testAllRpcHealth(): Promise<RpcHealthResult[]> {
+  // Test sequentially to avoid rate limits
+  const results: RpcHealthResult[] = [];
+  for (const chain of SUPPORTED_CHAINS) {
+    const result = await testRpcHealth(chain.chainId);
+    results.push(result);
+    // Small delay between tests
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return results;
 }
+
+// Legacy export for backward compatibility
+export type RpcTestResult = RpcHealthResult;
+export const testRpcEndpoint = testRpcHealth;

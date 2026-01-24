@@ -2,12 +2,16 @@
  * Lending Markets Hook
  * 
  * Fetches REAL Aave V3 markets from on-chain UiPoolDataProviderV3.
- * NO demo/preview mode - always fetches live on-chain data.
  * 
- * Uses Vite env vars (import.meta.env.VITE_*)
+ * FEATURES:
+ * - Direct static env var access (Vite production build compatible)
+ * - Per-chain caching (30s TTL)
+ * - Concurrency limiting (max 2 chains at once)
+ * - Partial success handling (some chains can fail)
+ * - Retry with exponential backoff
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPublicClient, http, type Chain, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { 
@@ -16,7 +20,7 @@ import {
   isAaveSupported,
   type AaveReserveData,
 } from '@/lib/aaveAddressBook';
-import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig } from '@/lib/chainConfig';
+import { getChainConfig, SUPPORTED_CHAINS, type ChainConfig, testRpcHealth } from '@/lib/chainConfig';
 
 export interface LendingMarket {
   id: string;
@@ -109,7 +113,9 @@ export type MarketFetchErrorType =
   | 'contract_error'
   | 'network_error'
   | 'no_markets'
-  | 'partial_failure';
+  | 'partial_failure'
+  | 'rate_limited'
+  | 'timeout';
 
 export interface MarketFetchError {
   type: MarketFetchErrorType;
@@ -118,7 +124,16 @@ export interface MarketFetchError {
   message: string;
   missingEnvKey?: string;
   failedAddress?: string;
-  failedChains?: { chainId: number; chainName: string; error: string }[];
+  failedChains?: ChainFailure[];
+  httpStatus?: number;
+}
+
+export interface ChainFailure {
+  chainId: number;
+  chainName: string;
+  error: string;
+  errorType: MarketFetchErrorType;
+  httpStatus?: number;
 }
 
 // Aave market URL base
@@ -131,11 +146,115 @@ const AAVE_MARKET_NAMES: Record<number, string> = {
   43114: 'proto_avalanche_v3',
 };
 
+// ============================================
+// CACHING
+// ============================================
+
+interface CacheEntry {
+  markets: LendingMarket[];
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 30000; // 30 seconds
+const marketCache = new Map<number, CacheEntry>();
+
+function getCachedMarkets(chainId: number): LendingMarket[] | null {
+  const entry = marketCache.get(chainId);
+  if (!entry) return null;
+  
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    marketCache.delete(chainId);
+    return null;
+  }
+  
+  return entry.markets;
+}
+
+function setCachedMarkets(chainId: number, markets: LendingMarket[]): void {
+  marketCache.set(chainId, { markets, timestamp: Date.now() });
+}
+
+// ============================================
+// CONCURRENCY LIMITING
+// ============================================
+
+const MAX_CONCURRENT = 2;
+
+async function fetchWithConcurrencyLimit<T>(
+  items: ChainConfig[],
+  fetchFn: (config: ChainConfig) => Promise<T>
+): Promise<T[]> {
+  const results: T[] = [];
+  const queue = [...items];
+  const inProgress: Promise<void>[] = [];
+
+  while (queue.length > 0 || inProgress.length > 0) {
+    // Start new fetches up to limit
+    while (inProgress.length < MAX_CONCURRENT && queue.length > 0) {
+      const item = queue.shift()!;
+      const promise = fetchFn(item)
+        .then(result => {
+          results.push(result);
+        })
+        .catch(error => {
+          results.push(error as T);
+        })
+        .finally(() => {
+          const index = inProgress.indexOf(promise);
+          if (index > -1) inProgress.splice(index, 1);
+        });
+      inProgress.push(promise);
+    }
+
+    // Wait for at least one to complete
+    if (inProgress.length > 0) {
+      await Promise.race(inProgress);
+    }
+  }
+
+  return results;
+}
+
+// ============================================
+// FETCH WITH RETRY
+// ============================================
+
+async function fetchWithRetry<T>(
+  fn: () => Promise<T>,
+  retries = 1,
+  delayMs = 1000
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries > 0) {
+      // Add jitter: 800-1200ms
+      const jitter = Math.random() * 400 + 800;
+      await new Promise(resolve => setTimeout(resolve, delayMs + jitter - 1000));
+      return fetchWithRetry(fn, retries - 1, delayMs);
+    }
+    throw error;
+  }
+}
+
+// ============================================
+// MARKET FETCHING
+// ============================================
+
 /**
  * Fetch Aave V3 reserves data using UiPoolDataProviderV3 on-chain call
  */
 async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<LendingMarket[]> {
   const { chainId, name, rpcUrl, logo } = chainConfig;
+  
+  // Check cache first
+  const cached = getCachedMarkets(chainId);
+  if (cached) {
+    if (import.meta.env.DEV) {
+      console.log(`[Earn] ${name}: Using cached markets (${cached.length} reserves)`);
+    }
+    return cached;
+  }
   
   // Get Aave addresses from address book
   const aaveAddresses = getAaveAddresses(chainId);
@@ -159,44 +278,18 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     } as MarketFetchError;
   }
 
-  // Checksum addresses to prevent "checksum counterpart" errors
-  let checksummedProvider: `0x${string}`;
-  let checksummedUiProvider: `0x${string}`;
-  let checksummedPool: `0x${string}`;
-  
-  try {
-    checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
-    checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
-    checksummedPool = getAddress(aaveAddresses.POOL);
-  } catch (checksumError) {
-    console.error(`[Earn] Address checksum failed for ${name}:`, checksumError);
-    throw {
-      type: 'contract_error',
-      chainId,
-      chainName: name,
-      message: `Invalid address format for ${name}: ${checksumError instanceof Error ? checksumError.message : 'checksum failed'}`,
-      failedAddress: 'address checksum validation',
-    } as MarketFetchError;
-  }
+  // Use already checksummed addresses from chainConfig
+  const checksummedProvider = chainConfig.aaveAddressesProvider;
+  const checksummedUiProvider = chainConfig.aaveUiPoolDataProvider;
 
-  // Log addresses for debugging (temporary)
-  console.log(`[Earn] Fetching ${name} markets:`, {
-    chainId,
-    POOL_ADDRESSES_PROVIDER: checksummedProvider,
-    UI_POOL_DATA_PROVIDER: checksummedUiProvider,
-    POOL: checksummedPool,
-  });
-
-  // Validate addresses are defined
-  if (!checksummedProvider || !checksummedUiProvider) {
-    console.error(`[Earn] Aave addresses undefined for ${name}:`, aaveAddresses);
-    throw {
-      type: 'contract_error',
-      chainId,
-      chainName: name,
-      message: `Aave addresses undefined for ${name}`,
-      failedAddress: 'POOL_ADDRESSES_PROVIDER or UI_POOL_DATA_PROVIDER',
-    } as MarketFetchError;
+  // Log addresses for debugging (DEV only)
+  if (import.meta.env.DEV) {
+    console.log(`[Earn] ${name}: Fetching markets`, {
+      rpcSource: chainConfig.rpcSource,
+      rpcPrefix: rpcUrl.substring(0, 25) + '...',
+      UI_POOL_DATA_PROVIDER: checksummedUiProvider,
+      POOL_ADDRESSES_PROVIDER: checksummedProvider,
+    });
   }
 
   const viemChain = VIEM_CHAINS[chainId];
@@ -209,21 +302,22 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     } as MarketFetchError;
   }
 
-  // Create viem client with the RPC URL
+  // Create viem client with the RPC URL and timeout
   const client = createPublicClient({
     chain: viemChain,
-    transport: http(rpcUrl),
+    transport: http(rpcUrl, { timeout: 10000 }), // 10s timeout
   });
 
   try {
     // Call UiPoolDataProviderV3.getReservesData with checksummed addresses
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await (client.readContract as any)({
-      address: checksummedUiProvider,
-      abi: UI_POOL_DATA_PROVIDER_ABI,
-      functionName: 'getReservesData',
-      args: [checksummedProvider],
-    }) as [AaveReserveData[], unknown];
+    const result = await fetchWithRetry(async () => {
+      return await (client.readContract as any)({
+        address: checksummedUiProvider,
+        abi: UI_POOL_DATA_PROVIDER_ABI,
+        functionName: 'getReservesData',
+        args: [checksummedProvider],
+      }) as [AaveReserveData[], unknown];
+    });
 
     const [reserves] = result;
     
@@ -236,12 +330,14 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       } as MarketFetchError;
     }
 
-    console.log(`[Earn] ${name}: Fetched ${reserves.length} reserves`);
+    if (import.meta.env.DEV) {
+      console.log(`[Earn] ${name}: ✓ Fetched ${reserves.length} reserves`);
+    }
 
     const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
     const marketName = AAVE_MARKET_NAMES[chainId] || '';
 
-    return reserves
+    const markets = reserves
       .filter((r) => r.isActive && !r.isFrozen && !r.isPaused)
       .map((reserve) => {
         // liquidityRate is in RAY (1e27), convert to APY percentage
@@ -283,6 +379,11 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
           protocolUrl: `${aaveUiUrl}${reserve.underlyingAsset}&marketName=${marketName}`,
         };
       });
+
+    // Cache the results
+    setCachedMarkets(chainId, markets);
+    
+    return markets;
   } catch (error) {
     // Check if it's already our error type
     if (typeof error === 'object' && error !== null && 'type' in error) {
@@ -290,24 +391,29 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
     }
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[Earn] ${name} contract call failed:`, error);
+    
+    if (import.meta.env.DEV) {
+      console.error(`[Earn] ${name}: ✗ Failed:`, errorMessage);
+    }
     
     // Categorize the error more specifically
     let errorType: MarketFetchErrorType = 'contract_error';
     let detailedMessage = errorMessage;
+    let httpStatus: number | undefined;
 
-    if (errorMessage.includes('execution reverted')) {
+    if (errorMessage.includes('429')) {
+      errorType = 'rate_limited';
+      detailedMessage = `Rate limited on ${name}`;
+      httpStatus = 429;
+    } else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT') || errorMessage.includes('abort')) {
+      errorType = 'timeout';
+      detailedMessage = `Timeout fetching ${name} markets`;
+    } else if (errorMessage.includes('execution reverted')) {
       errorType = 'contract_error';
-      detailedMessage = `Contract call reverted: ${errorMessage}`;
-    } else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) {
-      errorType = 'rpc_unavailable';
-      detailedMessage = `RPC timeout on ${name}`;
-    } else if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-      errorType = 'rpc_unavailable';
-      detailedMessage = `RPC rate limited on ${name}`;
+      detailedMessage = `Contract call reverted on ${name}`;
     } else if (errorMessage.includes('fetch') || errorMessage.includes('network') || errorMessage.includes('ECONNREFUSED')) {
       errorType = 'network_error';
-      detailedMessage = `Network error connecting to ${name}: ${errorMessage}`;
+      detailedMessage = `Network error on ${name}`;
     }
     
     throw {
@@ -316,6 +422,7 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       chainName: name,
       message: detailedMessage,
       failedAddress: checksummedUiProvider,
+      httpStatus,
     } as MarketFetchError;
   }
 }
@@ -326,6 +433,8 @@ export interface ChainFetchResult {
   success: boolean;
   markets: LendingMarket[];
   error?: string;
+  errorType?: MarketFetchErrorType;
+  httpStatus?: number;
 }
 
 export interface UseLendingMarketsResult {
@@ -334,11 +443,12 @@ export interface UseLendingMarketsResult {
   error: MarketFetchError | null;
   errorMessage: string | null;
   refresh: () => void;
+  refreshChain: (chainId: number) => void;
   chains: typeof LENDING_CHAINS;
   lastFetched: number;
   isRetrying: boolean;
   chainResults: ChainFetchResult[];
-  partialFailures: { chainId: number; chainName: string; error: string }[];
+  partialFailures: ChainFailure[];
 }
 
 export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsResult {
@@ -349,10 +459,47 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
   const [lastFetched, setLastFetched] = useState<number>(0);
   const [isRetrying, setIsRetrying] = useState(false);
   const [chainResults, setChainResults] = useState<ChainFetchResult[]>([]);
-  const [partialFailures, setPartialFailures] = useState<{ chainId: number; chainName: string; error: string }[]>([]);
+  const [partialFailures, setPartialFailures] = useState<ChainFailure[]>([]);
+  
+  const fetchInProgress = useRef(false);
 
-  const fetchAllMarkets = useCallback(async (isRetry = false) => {
-    console.log('[Earn] Fetching LIVE Aave V3 markets from on-chain UiPoolDataProviderV3...');
+  const fetchSingleChain = useCallback(async (chainConfig: ChainConfig): Promise<ChainFetchResult> => {
+    try {
+      const chainMarkets = await fetchAaveMarketsOnChain(chainConfig);
+      return {
+        chainId: chainConfig.chainId,
+        chainName: chainConfig.name,
+        success: true,
+        markets: chainMarkets,
+      };
+    } catch (err) {
+      const fetchError = err as MarketFetchError;
+      return {
+        chainId: chainConfig.chainId,
+        chainName: chainConfig.name,
+        success: false,
+        markets: [],
+        error: fetchError.message || 'Unknown error',
+        errorType: fetchError.type,
+        httpStatus: fetchError.httpStatus,
+      };
+    }
+  }, []);
+
+  const fetchAllMarkets = useCallback(async (isRetry = false, specificChainId?: number) => {
+    // Prevent concurrent fetches
+    if (fetchInProgress.current && !isRetry) {
+      return;
+    }
+    fetchInProgress.current = true;
+
+    if (import.meta.env.DEV) {
+      console.log('[Earn] Fetching Aave V3 markets...', {
+        selectedChainId,
+        specificChainId,
+        isRetry,
+      });
+    }
 
     if (isRetry) {
       setIsRetrying(true);
@@ -361,101 +508,84 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     }
     setError(null);
     setErrorMessage(null);
-    setPartialFailures([]);
 
     try {
       let allMarkets: LendingMarket[] = [];
       const results: ChainFetchResult[] = [];
-      const failures: { chainId: number; chainName: string; error: string }[] = [];
+      const failures: ChainFailure[] = [];
 
-      // If specific chain selected, validate and fetch
-      if (selectedChainId !== undefined) {
-        const chainConfig = getChainConfig(selectedChainId);
+      // Determine which chains to fetch
+      let chainsToFetch: ChainConfig[];
+      
+      if (specificChainId !== undefined) {
+        // Retry specific chain
+        const chainConfig = getChainConfig(specificChainId);
+        if (!chainConfig) {
+          throw {
+            type: 'unsupported_chain',
+            chainId: specificChainId,
+            message: `Chain ${specificChainId} is not supported.`,
+          } as MarketFetchError;
+        }
+        chainsToFetch = [chainConfig];
         
+        // Keep existing markets from other chains
+        allMarkets = [...markets.filter(m => m.chainId !== specificChainId)];
+        results.push(...chainResults.filter(r => r.chainId !== specificChainId));
+      } else if (selectedChainId !== undefined) {
+        // Single chain selected
+        const chainConfig = getChainConfig(selectedChainId);
         if (!chainConfig) {
           throw {
             type: 'unsupported_chain',
             chainId: selectedChainId,
-            message: `Chain ${selectedChainId} is not supported for Earn. Please select a supported chain.`,
+            message: `Chain ${selectedChainId} is not supported for Earn.`,
           } as MarketFetchError;
         }
-
-        try {
-          const chainMarkets = await fetchAaveMarketsOnChain(chainConfig);
-          allMarkets = chainMarkets;
-          results.push({
-            chainId: selectedChainId,
-            chainName: chainConfig.name,
-            success: true,
-            markets: chainMarkets,
-          });
-        } catch (err) {
-          const fetchError = err as MarketFetchError;
-          results.push({
-            chainId: selectedChainId,
-            chainName: chainConfig.name,
-            success: false,
-            markets: [],
-            error: fetchError.message,
-          });
-          throw fetchError;
-        }
+        chainsToFetch = [chainConfig];
       } else {
-        // Fetch from ALL supported chains in parallel
-        const fetchPromises = SUPPORTED_CHAINS.map(async (chainConfig): Promise<ChainFetchResult> => {
-          try {
-            const chainMarkets = await fetchAaveMarketsOnChain(chainConfig);
-            return {
-              chainId: chainConfig.chainId,
-              chainName: chainConfig.name,
-              success: true,
-              markets: chainMarkets,
-            };
-          } catch (err) {
-            const errorMsg = err instanceof Error 
-              ? err.message 
-              : (err as MarketFetchError).message || 'Unknown error';
-            return {
-              chainId: chainConfig.chainId,
-              chainName: chainConfig.name,
-              success: false,
-              markets: [],
-              error: errorMsg,
-            };
-          }
-        });
+        // All chains
+        chainsToFetch = [...SUPPORTED_CHAINS];
+      }
 
-        const chainResultsArray = await Promise.all(fetchPromises);
-        
-        // Process results
-        chainResultsArray.forEach(result => {
-          results.push(result);
-          if (result.success) {
-            allMarkets.push(...result.markets);
+      // Fetch with concurrency limiting
+      const fetchResults = await fetchWithConcurrencyLimit(chainsToFetch, fetchSingleChain);
+
+      // Process results
+      for (const result of fetchResults) {
+        if (result && typeof result === 'object' && 'chainId' in result) {
+          const chainResult = result as ChainFetchResult;
+          results.push(chainResult);
+          
+          if (chainResult.success) {
+            allMarkets.push(...chainResult.markets);
           } else {
             failures.push({
-              chainId: result.chainId,
-              chainName: result.chainName,
-              error: result.error || 'Unknown error',
+              chainId: chainResult.chainId,
+              chainName: chainResult.chainName,
+              error: chainResult.error || 'Unknown error',
+              errorType: chainResult.errorType || 'network_error',
+              httpStatus: chainResult.httpStatus,
             });
-            console.warn(`[Earn] ${result.chainName} failed:`, result.error);
+            
+            if (import.meta.env.DEV) {
+              console.warn(`[Earn] ${chainResult.chainName}: ✗ ${chainResult.error}`);
+            }
           }
-        });
-
-        // If ALL chains failed, show error
-        if (allMarkets.length === 0 && failures.length > 0) {
-          throw {
-            type: 'network_error',
-            message: 'Unable to fetch market data from any chain. Please check your connection and try again.',
-            failedChains: failures,
-          } as MarketFetchError;
-        }
-
-        // If some chains failed, set partial failures (non-blocking warning)
-        if (failures.length > 0 && allMarkets.length > 0) {
-          setPartialFailures(failures);
         }
       }
+
+      // If ALL chains failed, show error
+      if (allMarkets.length === 0 && failures.length > 0) {
+        throw {
+          type: 'network_error',
+          message: 'Unable to fetch market data from any chain. Please check your connection and try again.',
+          failedChains: failures,
+        } as MarketFetchError;
+      }
+
+      // Set partial failures (non-blocking warning)
+      setPartialFailures(failures);
 
       // Sort by TVL descending (popularity proxy)
       allMarkets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
@@ -464,9 +594,10 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       setLastFetched(Date.now());
 
     } catch (err) {
-      console.error('[Earn] Failed to fetch lending markets:', err);
+      if (import.meta.env.DEV) {
+        console.error('[Earn] Failed to fetch lending markets:', err);
+      }
       
-      // Type-safe error handling
       if (typeof err === 'object' && err !== null && 'type' in err) {
         const marketError = err as MarketFetchError;
         setError(marketError);
@@ -480,20 +611,31 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
         setErrorMessage('Failed to load Aave markets. Please try again.');
       }
       
-      // Clear markets on error - NEVER show mock data
-      setMarkets([]);
+      // Keep existing markets on retry failure
+      if (!isRetry) {
+        setMarkets([]);
+      }
     } finally {
       setLoading(false);
       setIsRetrying(false);
+      fetchInProgress.current = false;
     }
-  }, [selectedChainId]);
+  }, [selectedChainId, markets, chainResults, fetchSingleChain]);
 
   useEffect(() => {
     fetchAllMarkets();
-  }, [fetchAllMarkets]);
+  }, [selectedChainId]); // Only refetch when selectedChainId changes
 
   const refresh = useCallback(() => {
+    // Clear cache
+    marketCache.clear();
     fetchAllMarkets(true);
+  }, [fetchAllMarkets]);
+
+  const refreshChain = useCallback((chainId: number) => {
+    // Clear cache for this chain
+    marketCache.delete(chainId);
+    fetchAllMarkets(true, chainId);
   }, [fetchAllMarkets]);
 
   return {
@@ -502,6 +644,7 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     error,
     errorMessage,
     refresh,
+    refreshChain,
     chains: LENDING_CHAINS,
     lastFetched,
     isRetrying,
@@ -522,8 +665,14 @@ function getErrorMessage(error: MarketFetchError): string {
     case 'rpc_unavailable':
       return `Unable to connect to ${error.chainName || 'the network'}. The RPC endpoint is unavailable.`;
     
+    case 'rate_limited':
+      return `Rate limited on ${error.chainName || 'the network'}. Please wait a moment and try again.`;
+    
+    case 'timeout':
+      return `Request timed out for ${error.chainName || 'the network'}. The RPC may be overloaded.`;
+    
     case 'contract_error':
-      return `Aave contracts not reachable on ${error.chainName || 'the network'}. Failed address: ${error.failedAddress || 'unknown'}. ${error.message}`;
+      return `Aave contracts not reachable on ${error.chainName || 'the network'}. ${error.message}`;
     
     case 'no_markets':
       return `No Aave V3 markets available on ${error.chainName || 'this chain'}.`;
