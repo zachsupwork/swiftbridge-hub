@@ -338,8 +338,16 @@ async function fetchAaveMarketsOnChain(chainConfig: ChainConfig): Promise<Lendin
       return markets;
     } catch (error) {
       lastError = error;
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.warn(`[Earn] ${name}: RPC ${i + 1}/${rpcsToTry.length} failed:`, errorMsg.substring(0, 100));
+      // Detailed error logging
+      let errorMsg: string;
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        errorMsg = JSON.stringify(error);
+      } else {
+        errorMsg = String(error);
+      }
+      console.log(`[Earn] ${name}: RPC ${i + 1}/${rpcsToTry.length} failed:`, errorMsg.substring(0, 300));
     }
   }
   
@@ -386,23 +394,34 @@ async function fetchMarketsWithClient(
     const aaveUiUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=`;
     const marketName = AAVE_MARKET_NAMES[chainId] || '';
 
+    // Helper to safely convert bigint to number (handles large values)
+    const safeNumber = (val: bigint): number => {
+      try {
+        // For very large numbers, convert via string to avoid overflow
+        const str = val.toString();
+        return parseFloat(str);
+      } catch {
+        return 0;
+      }
+    };
+
     const markets = reserves
       .filter((r) => r.isActive && !r.isFrozen && !r.isPaused)
       .map((reserve) => {
         // liquidityRate is in RAY (1e27), convert to APY percentage
-        const liquidityRate = Number(reserve.liquidityRate);
+        const liquidityRate = safeNumber(reserve.liquidityRate);
         const supplyAPY = (liquidityRate / 1e27) * 100;
 
-        const variableBorrowRate = Number(reserve.variableBorrowRate);
+        const variableBorrowRate = safeNumber(reserve.variableBorrowRate);
         const borrowAPY = (variableBorrowRate / 1e27) * 100;
 
         // Calculate TVL from available liquidity + borrowed
-        const decimals = Number(reserve.decimals);
-        const availableLiquidity = Number(reserve.availableLiquidity) / Math.pow(10, decimals);
+        const decimals = safeNumber(reserve.decimals);
+        const availableLiquidity = safeNumber(reserve.availableLiquidity) / Math.pow(10, decimals);
         
         // Total variable debt scaled
-        const totalScaledVariableDebt = Number(reserve.totalScaledVariableDebt) / Math.pow(10, decimals);
-        const totalStableDebt = Number(reserve.totalPrincipalStableDebt) / Math.pow(10, decimals);
+        const totalScaledVariableDebt = safeNumber(reserve.totalScaledVariableDebt) / Math.pow(10, decimals);
+        const totalStableDebt = safeNumber(reserve.totalPrincipalStableDebt) / Math.pow(10, decimals);
         
         // TVL = available + all borrowed
         const tvl = availableLiquidity + totalScaledVariableDebt + totalStableDebt;
