@@ -49,12 +49,18 @@ export function RpcDebugPanel({ className }: RpcDebugPanelProps) {
   useEffect(() => {
     const initial = new Map<number, RpcTestResult>();
     SUPPORTED_CHAINS.forEach(chain => {
+      // Check if RPC is from env var or fallback
+      const envValue = import.meta.env[chain.rpcEnvKey];
+      const hasEnvVar = envValue && typeof envValue === 'string' && envValue.length > 0;
+      const rpcSource: 'env' | 'fallback' | 'none' = hasEnvVar ? 'env' : (chain.rpcUrl ? 'fallback' : 'none');
+      
       initial.set(chain.chainId, {
         chainId: chain.chainId,
         chainName: chain.name,
         rpcEnvKey: chain.rpcEnvKey,
         rpcDefined: !!chain.rpcUrl,
         rpcPrefix: maskRpcUrl(chain.rpcUrl),
+        rpcSource,
         testSuccess: null,
         testResult: null,
         testError: null,
@@ -176,13 +182,13 @@ export function RpcDebugPanel({ className }: RpcDebugPanelProps) {
                 <div className="w-24 font-medium text-sm">{result.chainName}</div>
                 
                 {/* Env var status */}
-                <div className="flex items-center gap-1.5 min-w-[80px]">
+                <div className="flex items-center gap-1.5 min-w-[100px]">
                   {getEnvVarStatusIcon(result)}
                   <span className={cn(
                     "text-xs font-medium",
                     result.rpcDefined ? "text-success" : "text-destructive"
                   )}>
-                    {result.rpcDefined ? 'SET' : 'NOT SET'}
+                    {result.rpcSource === 'env' ? 'ENV' : result.rpcSource === 'fallback' ? 'FALLBACK' : 'NOT SET'}
                   </span>
                 </div>
 
