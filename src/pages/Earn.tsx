@@ -2,11 +2,10 @@
  * Earn Page - Morpho Blue lending interface
  * 
  * Features:
- * - Morpho Blue markets via subgraph (no API key needed)
- * - Starting with Base chain (extensible to more)
- * - Search and filter
+ * - Markets and Positions tabs
+ * - In-app supply/borrow actions with platform fee
+ * - User positions dashboard
  * - Debug report for troubleshooting
- * - Mobile-first responsive design
  */
 
 import { useState, useCallback } from 'react';
@@ -20,13 +19,16 @@ import {
   Check, 
   Rocket, 
   Bug,
-  ExternalLink,
+  Wallet,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
 
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -35,29 +37,56 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
+import { MorphoPositionCard } from '@/components/earn/MorphoPositionCard';
+import { MorphoActionModal } from '@/components/earn/MorphoActionModal';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
+import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
+import { getAllMorphoChains, isMorphoSupported } from '@/lib/morpho/config';
+import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+type ActionType = 'supply' | 'withdraw' | 'borrow' | 'repay';
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
 
-  const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedDebug, setCopiedDebug] = useState(false);
+  const [activeTab, setActiveTab] = useState('markets');
+  
+  // Modal state
+  const [selectedMarket, setSelectedMarket] = useState<MorphoMarket | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<MorphoPositionWithHealth | null>(null);
+  const [actionType, setActionType] = useState<ActionType>('supply');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Fetch Morpho markets
   const { 
     markets, 
-    loading, 
-    error, 
-    refresh,
+    loading: marketsLoading, 
+    error: marketsError, 
+    refresh: refreshMarkets,
     lastFetched,
     selectedChainId,
     setSelectedChainId,
     availableChains,
     debugReport,
   } = useMorphoMarkets();
+
+  // Fetch user positions
+  const {
+    positions,
+    loading: positionsLoading,
+    error: positionsError,
+    refresh: refreshPositions,
+    totalSupplyUsd,
+    totalBorrowUsd,
+    totalCollateralUsd,
+  } = useMorphoPositions();
+
+  // Get all chains for dropdown (including disabled ones with tooltips)
+  const allChains = getAllMorphoChains();
 
   // Format last fetched time
   const lastFetchedDisplay = lastFetched 
@@ -69,18 +98,16 @@ export default function Earn() {
       })()
     : null;
 
-  // Copy wallet address
-  const handleCopyAddress = useCallback(() => {
-    if (address) {
-      navigator.clipboard.writeText(address);
-      setCopiedAddress(true);
-      setTimeout(() => setCopiedAddress(false), 2000);
-    }
-  }, [address]);
-
   // Copy debug report
   const handleCopyDebugReport = useCallback(() => {
-    const report = JSON.stringify(debugReport, null, 2);
+    const report = JSON.stringify({
+      ...debugReport,
+      positions: {
+        count: positions.length,
+        totalSupplyUsd,
+        totalBorrowUsd,
+      },
+    }, null, 2);
     navigator.clipboard.writeText(report);
     setCopiedDebug(true);
     toast({
@@ -88,10 +115,70 @@ export default function Earn() {
       description: 'Debug information has been copied to clipboard.',
     });
     setTimeout(() => setCopiedDebug(false), 2000);
-  }, [debugReport]);
+  }, [debugReport, positions, totalSupplyUsd, totalBorrowUsd]);
 
-  // Check if RPC is configured
-  const rpcWarning = !import.meta.env.VITE_RPC_BASE;
+  // Handle supply action
+  const handleSupply = useCallback((market: MorphoMarket) => {
+    if (!isConnected) {
+      toast({
+        title: 'Connect Wallet',
+        description: 'Please connect your wallet to supply assets.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setSelectedMarket(market);
+    setActionType('supply');
+    setIsModalOpen(true);
+  }, [isConnected]);
+
+  // Handle borrow action
+  const handleBorrow = useCallback((market: MorphoMarket) => {
+    if (!isConnected) {
+      toast({
+        title: 'Connect Wallet',
+        description: 'Please connect your wallet to borrow assets.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setSelectedMarket(market);
+    setActionType('borrow');
+    setIsModalOpen(true);
+  }, [isConnected]);
+
+  // Handle manage position
+  const handleManagePosition = useCallback((position: MorphoPositionWithHealth) => {
+    setSelectedPosition(position);
+    if (position.market) {
+      setSelectedMarket(position.market);
+    }
+    // Default to withdraw if has supply, repay if has borrow
+    if (position.borrowAssetsUsd > 0) {
+      setActionType('repay');
+    } else {
+      setActionType('withdraw');
+    }
+    setIsModalOpen(true);
+  }, []);
+
+  // Close modal and refresh
+  const handleCloseModal = useCallback(() => {
+    setIsModalOpen(false);
+    setSelectedMarket(null);
+    setSelectedPosition(null);
+    // Refresh data after action
+    refreshMarkets();
+    refreshPositions();
+  }, [refreshMarkets, refreshPositions]);
+
+  // Format USD values
+  const formatUsd = (value: number) => {
+    if (!Number.isFinite(value) || value === 0) return '$0.00';
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
+    return `$${value.toFixed(2)}`;
+  };
 
   return (
     <Layout>
@@ -119,36 +206,29 @@ export default function Earn() {
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Connected wallet display */}
-              {isConnected && address && (
-                <button
-                  onClick={handleCopyAddress}
-                  className="hidden sm:flex items-center gap-2 px-3 h-10 rounded-lg bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors text-sm"
-                >
-                  <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                  <span className="font-mono">{address.slice(0, 6)}...{address.slice(-4)}</span>
-                  {copiedAddress ? (
-                    <Check className="w-3.5 h-3.5 text-success" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                  )}
-                </button>
-              )}
-              
               {/* Chain selector */}
               <Select
                 value={selectedChainId?.toString() || 'all'}
                 onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
               >
-                <SelectTrigger className="w-[140px] h-10">
+                <SelectTrigger className="w-[160px] h-10">
                   <SelectValue placeholder="Select chain" />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableChains.map(chain => (
-                    <SelectItem key={chain.chainId} value={chain.chainId.toString()}>
+                  {allChains.map(chain => (
+                    <SelectItem 
+                      key={chain.chainId} 
+                      value={chain.chainId.toString()}
+                      disabled={!chain.enabled}
+                    >
                       <div className="flex items-center gap-2">
                         <img src={chain.logo} alt={chain.label} className="w-4 h-4 rounded-full" />
-                        {chain.label}
+                        <span className={!chain.enabled ? 'text-muted-foreground' : ''}>
+                          {chain.label}
+                        </span>
+                        {!chain.enabled && (
+                          <span className="text-xs text-muted-foreground">(Soon)</span>
+                        )}
                       </div>
                     </SelectItem>
                   ))}
@@ -158,11 +238,14 @@ export default function Earn() {
               <Button
                 variant="outline"
                 size="icon"
-                onClick={refresh}
-                disabled={loading}
+                onClick={() => {
+                  refreshMarkets();
+                  refreshPositions();
+                }}
+                disabled={marketsLoading || positionsLoading}
                 className="h-10 w-10"
               >
-                <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+                <RefreshCw className={cn("w-4 h-4", (marketsLoading || positionsLoading) && "animate-spin")} />
               </Button>
 
               {/* Debug report button */}
@@ -182,80 +265,156 @@ export default function Earn() {
             </div>
           </div>
 
-          {/* RPC Warning */}
-          {rpcWarning && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
-              <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs text-warning font-medium">
-                  RPC not configured
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Set VITE_RPC_BASE environment variable for optimal performance.
-                  Markets are fetched via subgraph and should still work.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Disclaimer Banner */}
           <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
             <AlertTriangle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-xs text-foreground">
-                Supply and borrow actions open Morpho's official app. Crypto DeFi Bridge does not custody funds.
+                Non-custodial lending. All actions are executed on-chain via Morpho Blue contracts.
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Lending involves smart contract risk. APY is variable and not guaranteed.
+                Smart contract risk. APY is variable and not guaranteed. A platform fee applies to supply/borrow.
               </p>
             </div>
-            <a
-              href="https://app.morpho.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              Morpho App
-              <ExternalLink className="w-3 h-3" />
-            </a>
           </div>
 
-          {/* Stats row */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 text-sm">
-                <TrendingUp className="w-4 h-4 text-primary" />
-                <span className="text-muted-foreground">Markets:</span>
-                <span className="font-medium">{markets.length}</span>
+          {/* User Dashboard (if connected and has positions) */}
+          {isConnected && positions.length > 0 && (
+            <div className="glass rounded-xl p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-primary" />
+                  Your Dashboard
+                </h2>
+                <Badge variant="outline" className="text-xs">
+                  {positions.length} position{positions.length !== 1 ? 's' : ''}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
+                  <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
+                  <div className="text-lg font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
+                  <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              {isConnected && (
-                <span className="flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-success" />
-                  Wallet connected
-                </span>
-              )}
-              {lastFetchedDisplay && (
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  Updated {lastFetchedDisplay}
-                </span>
-              )}
-            </div>
-          </div>
+          )}
 
-          {/* Markets Table */}
-          <MorphoMarketsTable
-            markets={markets}
-            loading={loading}
-            error={error}
-            onRefresh={refresh}
-          />
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="markets" className="gap-2">
+                <LayoutGrid className="w-4 h-4" />
+                Markets
+              </TabsTrigger>
+              <TabsTrigger value="positions" className="gap-2">
+                <List className="w-4 h-4" />
+                My Positions
+                {positions.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                    {positions.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Markets Tab */}
+            <TabsContent value="markets" className="space-y-4">
+              {/* Stats row */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 text-sm">
+                    <TrendingUp className="w-4 h-4 text-primary" />
+                    <span className="text-muted-foreground">Markets:</span>
+                    <span className="font-medium">{markets.length}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  {isConnected && (
+                    <span className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                      Wallet connected
+                    </span>
+                  )}
+                  {lastFetchedDisplay && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      Updated {lastFetchedDisplay}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Markets Table */}
+              <MorphoMarketsTable
+                markets={markets}
+                loading={marketsLoading}
+                error={marketsError}
+                onRefresh={refreshMarkets}
+                onSupply={handleSupply}
+                onBorrow={handleBorrow}
+              />
+            </TabsContent>
+
+            {/* Positions Tab */}
+            <TabsContent value="positions" className="space-y-4">
+              {!isConnected ? (
+                <div className="glass rounded-xl p-8 text-center">
+                  <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold mb-2">Connect Your Wallet</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Connect your wallet to view your Morpho positions
+                  </p>
+                </div>
+              ) : positionsLoading ? (
+                <div className="space-y-3">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="glass rounded-xl p-4 animate-pulse">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-muted" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-24 bg-muted rounded" />
+                          <div className="h-3 w-16 bg-muted rounded" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : positions.length === 0 ? (
+                <div className="glass rounded-xl p-8 text-center">
+                  <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <h3 className="text-lg font-semibold mb-2">No Positions Yet</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Start earning by supplying assets to Morpho markets
+                  </p>
+                  <Button onClick={() => setActiveTab('markets')}>
+                    Browse Markets
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {positions.map((position) => (
+                    <MorphoPositionCard
+                      key={`${position.chainId}-${position.marketId}`}
+                      position={position}
+                      onManage={handleManagePosition}
+                    />
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
 
           {/* Footer */}
           <div className="text-center text-xs text-muted-foreground pt-4 border-t border-border/30">
-            <p>Powered by Morpho Blue (external protocol). Data via The Graph subgraph.</p>
+            <p>Powered by Morpho Blue protocol. Data via official Morpho API.</p>
             <p className="mt-1">
               <a 
                 href="https://docs.morpho.org" 
@@ -269,6 +428,17 @@ export default function Earn() {
           </div>
         </motion.div>
       </div>
+
+      {/* Action Modal */}
+      <MorphoActionModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        market={selectedMarket}
+        actionType={actionType}
+        existingSupply={selectedPosition?.supplyAssets}
+        existingBorrow={selectedPosition?.borrowAssets}
+        existingCollateral={selectedPosition?.collateral}
+      />
     </Layout>
   );
 }

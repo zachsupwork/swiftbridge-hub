@@ -1,8 +1,7 @@
 /**
  * Morpho Markets Table Component
  * 
- * Displays Morpho Blue lending markets in a table (desktop) or cards (mobile).
- * Supply/Borrow actions open Morpho app in new tab.
+ * Displays Morpho Blue lending markets with in-app supply/borrow actions.
  */
 
 import { motion } from 'framer-motion';
@@ -11,45 +10,53 @@ import {
   Loader2, 
   RefreshCw, 
   AlertCircle, 
-  ExternalLink,
   Search,
-  Copy,
-  Check,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import type { MorphoMarket } from '@/hooks/useMorphoMarkets';
-import { getMorphoChainConfig } from '@/lib/morphoConfig';
-import { toast } from '@/hooks/use-toast';
+import type { MorphoMarket } from '@/lib/morpho/types';
+import { getMorphoChainConfig } from '@/lib/morpho/config';
 
-// Token logo mapping
-const TOKEN_LOGOS: Record<string, string> = {
-  ETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
-  WETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/weth.svg',
-  USDC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
-  DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
-  WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  CBETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/cbeth.svg',
-  WSTETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
-  RETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/reth.svg',
-};
+// Token logo with stable key and fallback
+const GENERIC_TOKEN_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 
-const getTokenLogo = (symbol: string): string => {
-  const upperSymbol = symbol.toUpperCase().replace('.', '');
-  return TOKEN_LOGOS[upperSymbol] || 
-    'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-};
+interface TokenLogoProps {
+  src: string | undefined;
+  symbol: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+const TokenLogo = memo(function TokenLogo({ src, symbol, size = 'md' }: TokenLogoProps) {
+  const [hasError, setHasError] = useState(false);
+  const sizeClasses = {
+    sm: 'w-6 h-6',
+    md: 'w-9 h-9',
+    lg: 'w-10 h-10',
+  };
+
+  return (
+    <img
+      src={hasError ? GENERIC_TOKEN_LOGO : (src || GENERIC_TOKEN_LOGO)}
+      alt={symbol}
+      className={cn(sizeClasses[size], 'rounded-full bg-muted')}
+      onError={() => setHasError(true)}
+    />
+  );
+});
 
 interface MorphoMarketsTableProps {
   markets: MorphoMarket[];
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  onSupply?: (market: MorphoMarket) => void;
+  onBorrow?: (market: MorphoMarket) => void;
 }
 
 export function MorphoMarketsTable({
@@ -57,11 +64,12 @@ export function MorphoMarketsTable({
   loading,
   error,
   onRefresh,
+  onSupply,
+  onBorrow,
 }: MorphoMarketsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization'>('tvl');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Filter and sort markets
   const filteredMarkets = useMemo(() => {
@@ -71,9 +79,9 @@ export function MorphoMarketsTable({
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(m =>
-        m.loanToken.symbol.toLowerCase().includes(query) ||
-        m.loanToken.name.toLowerCase().includes(query) ||
-        (m.collateralToken?.symbol.toLowerCase().includes(query))
+        m.loanAsset.symbol.toLowerCase().includes(query) ||
+        m.loanAsset.name.toLowerCase().includes(query) ||
+        (m.collateralAsset?.symbol.toLowerCase().includes(query))
       );
     }
 
@@ -85,7 +93,7 @@ export function MorphoMarketsTable({
           comparison = a.supplyApy - b.supplyApy;
           break;
         case 'tvl':
-          comparison = a.totalSupply - b.totalSupply;
+          comparison = a.totalSupplyUsd - b.totalSupplyUsd;
           break;
         case 'utilization':
           comparison = a.utilization - b.utilization;
@@ -97,66 +105,49 @@ export function MorphoMarketsTable({
     return result;
   }, [markets, searchQuery, sortBy, sortDirection]);
 
-  const formatAPY = (apy: number) => {
+  const formatAPY = useCallback((apy: number) => {
     if (!Number.isFinite(apy) || apy === 0) return '—';
     if (apy < 0.01) return '<0.01%';
+    if (apy >= 1000) return '>1000%';
     if (apy > 100) return `${apy.toFixed(1)}%`;
     return `${apy.toFixed(2)}%`;
-  };
+  }, []);
 
-  const formatTVL = (value: number) => {
+  const formatTVL = useCallback((value: number) => {
     if (!Number.isFinite(value) || value === 0) return '—';
     if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
     if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
     if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
     return `$${value.toFixed(0)}`;
-  };
+  }, []);
 
-  const formatUtilization = (util: number) => {
+  const formatUtilization = useCallback((util: number) => {
     if (!Number.isFinite(util)) return '—';
     return `${util.toFixed(1)}%`;
-  };
+  }, []);
 
-  const handleSupply = (market: MorphoMarket) => {
-    const config = getMorphoChainConfig(market.chainId);
-    const url = config?.morphoAppUrl || 'https://app.morpho.org';
-    window.open(url, '_blank');
-    toast({
-      title: 'Opening Morpho App',
-      description: `Supply ${market.loanToken.symbol} on Morpho Blue`,
-    });
-  };
+  const handleSupply = useCallback((market: MorphoMarket) => {
+    if (onSupply) {
+      onSupply(market);
+    }
+  }, [onSupply]);
 
-  const handleBorrow = (market: MorphoMarket) => {
-    const config = getMorphoChainConfig(market.chainId);
-    const url = config?.morphoAppUrl || 'https://app.morpho.org';
-    window.open(url, '_blank');
-    toast({
-      title: 'Opening Morpho App',
-      description: `Borrow ${market.loanToken.symbol} on Morpho Blue`,
-    });
-  };
+  const handleBorrow = useCallback((market: MorphoMarket) => {
+    if (onBorrow) {
+      onBorrow(market);
+    }
+  }, [onBorrow]);
 
-  const copyMarketId = (id: string) => {
-    navigator.clipboard.writeText(id);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-    toast({
-      title: 'Market ID Copied',
-      description: id.slice(0, 20) + '...',
-    });
-  };
-
-  const handleSortChange = (column: 'supplyApy' | 'tvl' | 'utilization') => {
+  const handleSortChange = useCallback((column: 'supplyApy' | 'tvl' | 'utilization') => {
     if (sortBy === column) {
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(column);
       setSortDirection('desc');
     }
-  };
+  }, [sortBy]);
 
-  const SortButton = ({ column, label }: { column: 'supplyApy' | 'tvl' | 'utilization'; label: string }) => (
+  const SortButton = useCallback(({ column, label }: { column: 'supplyApy' | 'tvl' | 'utilization'; label: string }) => (
     <button
       onClick={() => handleSortChange(column)}
       className={cn(
@@ -170,7 +161,7 @@ export function MorphoMarketsTable({
         sortBy === column && sortDirection === 'desc' && "rotate-180"
       )} />
     </button>
-  );
+  ), [handleSortChange, sortBy, sortDirection]);
 
   // Loading state
   if (loading && markets.length === 0) {
@@ -215,7 +206,7 @@ export function MorphoMarketsTable({
       <div className="glass rounded-xl p-8 text-center">
         <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
         <h3 className="text-lg font-semibold mb-2">No Markets Found</h3>
-        <p className="text-muted-foreground">No Morpho markets available.</p>
+        <p className="text-muted-foreground">No Morpho markets available on this chain.</p>
       </div>
     );
   }
@@ -275,7 +266,7 @@ export function MorphoMarketsTable({
                 const chainConfig = getMorphoChainConfig(market.chainId);
                 return (
                   <motion.tr
-                    key={market.id}
+                    key={`${market.chainId}-${market.id}`}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.02 }}
@@ -285,13 +276,9 @@ export function MorphoMarketsTable({
                     <td className="p-4">
                       <div className="flex items-center gap-3">
                         <div className="relative flex-shrink-0">
-                          <img
-                            src={getTokenLogo(market.loanToken.symbol)}
-                            alt={market.loanToken.symbol}
-                            className="w-9 h-9 rounded-full bg-muted"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                            }}
+                          <TokenLogo 
+                            src={market.loanAsset.logoUrl} 
+                            symbol={market.loanAsset.symbol}
                           />
                           {chainConfig && (
                             <img
@@ -303,24 +290,16 @@ export function MorphoMarketsTable({
                         </div>
                         <div>
                           <div className="font-medium flex items-center gap-1.5">
-                            {market.loanToken.symbol}
-                            {market.collateralToken && (
+                            {market.loanAsset.symbol}
+                            {market.collateralAsset && (
                               <span className="text-muted-foreground font-normal">
-                                / {market.collateralToken.symbol}
+                                / {market.collateralAsset.symbol}
                               </span>
                             )}
                           </div>
-                          <button
-                            onClick={() => copyMarketId(market.id)}
-                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          >
-                            {market.id.slice(0, 10)}...
-                            {copiedId === market.id ? (
-                              <Check className="w-3 h-3 text-success" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
-                            )}
-                          </button>
+                          <div className="text-xs text-muted-foreground">
+                            LLTV: {market.lltv.toFixed(0)}%
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -342,7 +321,7 @@ export function MorphoMarketsTable({
                     {/* Total Supply */}
                     <td className="p-4 text-right">
                       <div className="text-sm font-medium">
-                        {formatTVL(market.totalSupply)}
+                        {formatTVL(market.totalSupplyUsd)}
                       </div>
                     </td>
 
@@ -369,17 +348,18 @@ export function MorphoMarketsTable({
                           onClick={() => handleSupply(market)}
                           className="h-8 px-3 gap-1"
                         >
+                          <TrendingUp className="w-3 h-3" />
                           Supply
-                          <ExternalLink className="w-3 h-3" />
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => handleBorrow(market)}
                           className="h-8 px-3 gap-1"
+                          disabled={!market.collateralAsset}
                         >
+                          <Wallet className="w-3 h-3" />
                           Borrow
-                          <ExternalLink className="w-3 h-3" />
                         </Button>
                       </div>
                     </td>
@@ -397,7 +377,7 @@ export function MorphoMarketsTable({
           const chainConfig = getMorphoChainConfig(market.chainId);
           return (
             <motion.div
-              key={market.id}
+              key={`mobile-${market.chainId}-${market.id}`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.02 }}
@@ -406,13 +386,10 @@ export function MorphoMarketsTable({
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
-                    <img
-                      src={getTokenLogo(market.loanToken.symbol)}
-                      alt={market.loanToken.symbol}
-                      className="w-10 h-10 rounded-full bg-muted"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                      }}
+                    <TokenLogo 
+                      src={market.loanAsset.logoUrl} 
+                      symbol={market.loanAsset.symbol}
+                      size="lg"
                     />
                     {chainConfig && (
                       <img
@@ -424,15 +401,15 @@ export function MorphoMarketsTable({
                   </div>
                   <div>
                     <div className="font-medium">
-                      {market.loanToken.symbol}
-                      {market.collateralToken && (
+                      {market.loanAsset.symbol}
+                      {market.collateralAsset && (
                         <span className="text-muted-foreground font-normal">
-                          {' '}/ {market.collateralToken.symbol}
+                          {' '}/ {market.collateralAsset.symbol}
                         </span>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {chainConfig?.label || 'Unknown Chain'}
+                      {chainConfig?.label || 'Unknown'} • LLTV: {market.lltv.toFixed(0)}%
                     </div>
                   </div>
                 </div>
@@ -448,20 +425,43 @@ export function MorphoMarketsTable({
                 <div className="grid grid-cols-2 gap-4 text-sm flex-1">
                   <div>
                     <span className="text-muted-foreground">TVL: </span>
-                    <span className="font-medium">{formatTVL(market.totalSupply)}</span>
+                    <span className="font-medium">{formatTVL(market.totalSupplyUsd)}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Util: </span>
-                    <span className="font-medium">{formatUtilization(market.utilization)}</span>
+                    <Badge 
+                      variant="outline" 
+                      className={cn(
+                        "text-xs h-5",
+                        market.utilization > 90 ? "bg-destructive/10 text-destructive border-destructive/30" :
+                        market.utilization > 70 ? "bg-warning/10 text-warning border-warning/30" :
+                        "bg-muted/50"
+                      )}
+                    >
+                      {formatUtilization(market.utilization)}
+                    </Badge>
                   </div>
                 </div>
+              </div>
+
+              <div className="flex gap-2 mt-3">
                 <Button
                   size="sm"
                   onClick={() => handleSupply(market)}
-                  className="h-8 px-3 gap-1"
+                  className="flex-1 h-9 gap-1"
                 >
+                  <TrendingUp className="w-3 h-3" />
                   Supply
-                  <ExternalLink className="w-3 h-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBorrow(market)}
+                  className="flex-1 h-9 gap-1"
+                  disabled={!market.collateralAsset}
+                >
+                  <Wallet className="w-3 h-3" />
+                  Borrow
                 </Button>
               </div>
             </motion.div>
