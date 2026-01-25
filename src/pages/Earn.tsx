@@ -1,80 +1,73 @@
 /**
- * Earn Page - Aave-style lending interface
+ * Earn Page - Morpho Blue lending interface
  * 
  * Features:
- * - Multi-chain market display (mainnet only)
+ * - Morpho Blue markets via subgraph (no API key needed)
+ * - Starting with Base chain (extensible to more)
  * - Search and filter
- * - Supply drawer with mandatory fee
+ * - Debug report for troubleshooting
  * - Mobile-first responsive design
- * - LIVE Aave V3 data only - no demo/preview mode
- * - Debug panels in collapsible accordion (not visible by default)
  */
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Search, RefreshCw, AlertTriangle, TrendingUp, Lock, Clock, Copy, Check, Rocket, ChevronDown } from 'lucide-react';
+import { 
+  RefreshCw, 
+  AlertTriangle, 
+  TrendingUp, 
+  Clock, 
+  Copy, 
+  Check, 
+  Rocket, 
+  Bug,
+  ExternalLink,
+} from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
-import { useReadContracts } from 'wagmi';
-import { erc20Abi } from 'viem';
 
 import { Layout } from '@/components/layout/Layout';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { EarnChainSelector } from '@/components/earn/EarnChainSelector';
-import { EarnMarketsTable } from '@/components/earn/EarnMarketsTable';
-import { EarnSupplyDrawer } from '@/components/earn/EarnSupplyDrawer';
-import { RpcDebugPanel } from '@/components/earn/RpcDebugPanel';
-import { AaveDiagnosticsPanel } from '@/components/earn/AaveDiagnosticsPanel';
-import { BorrowTab } from '@/components/earn/BorrowTab';
-import { useLendingMarkets, type LendingMarket, isEarnChainSupported } from '@/hooks/useLendingMarkets';
-import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
+import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
+import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
-  const { trackEarnView, trackFilterChange } = useEarnAnalytics();
 
-  // State
-  const [selectedChainId, setSelectedChainId] = useState<number | undefined>(undefined);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'apy' | 'tvl' | 'name'>('tvl');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [copiedDebug, setCopiedDebug] = useState(false);
 
-  // Fetch markets - ALWAYS live data
+  // Fetch Morpho markets
   const { 
     markets, 
     loading, 
     error, 
-    errorMessage, 
     refresh,
-    refreshChain,
-    chains, 
-    lastFetched, 
-    isRetrying,
-    partialFailures,
-  } = useLendingMarkets(selectedChainId);
-
-  // Track page view
-  useEffect(() => {
-    trackEarnView();
-  }, [trackEarnView]);
+    lastFetched,
+    selectedChainId,
+    setSelectedChainId,
+    availableChains,
+    debugReport,
+  } = useMorphoMarkets();
 
   // Format last fetched time
-  const lastFetchedDisplay = useMemo(() => {
-    if (!lastFetched) return null;
-    const seconds = Math.floor((Date.now() - lastFetched) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ago`;
-  }, [lastFetched]);
+  const lastFetchedDisplay = lastFetched 
+    ? (() => {
+        const seconds = Math.floor((Date.now() - lastFetched) / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes}m ago`;
+      })()
+    : null;
 
   // Copy wallet address
   const handleCopyAddress = useCallback(() => {
@@ -85,115 +78,20 @@ export default function Earn() {
     }
   }, [address]);
 
-  // Filter and sort markets
-  const filteredMarkets = useMemo(() => {
-    let result = [...markets];
-
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        m => 
-          m.assetSymbol.toLowerCase().includes(query) ||
-          m.assetName.toLowerCase().includes(query) ||
-          m.chainName.toLowerCase().includes(query)
-      );
-    }
-
-    // Sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortBy) {
-        case 'apy':
-          comparison = a.supplyAPY - b.supplyAPY;
-          break;
-        case 'tvl':
-          comparison = (a.tvl || 0) - (b.tvl || 0);
-          break;
-        case 'name':
-          comparison = a.assetSymbol.localeCompare(b.assetSymbol);
-          break;
-      }
-      return sortDirection === 'desc' ? -comparison : comparison;
+  // Copy debug report
+  const handleCopyDebugReport = useCallback(() => {
+    const report = JSON.stringify(debugReport, null, 2);
+    navigator.clipboard.writeText(report);
+    setCopiedDebug(true);
+    toast({
+      title: 'Debug Report Copied',
+      description: 'Debug information has been copied to clipboard.',
     });
+    setTimeout(() => setCopiedDebug(false), 2000);
+  }, [debugReport]);
 
-    return result;
-  }, [markets, searchQuery, sortBy, sortDirection]);
-
-  // Batch fetch wallet balances for displayed markets
-  const balanceContracts = useMemo(() => {
-    if (!address || !isConnected) return [];
-    return filteredMarkets.slice(0, 20).map(market => ({
-      address: market.assetAddress,
-      abi: erc20Abi,
-      functionName: 'balanceOf' as const,
-      args: [address] as const,
-      chainId: market.chainId,
-    }));
-  }, [filteredMarkets, address, isConnected]);
-
-  const { data: balancesData, refetch: refetchBalances } = useReadContracts({
-    contracts: balanceContracts,
-    query: {
-      enabled: balanceContracts.length > 0,
-    },
-  });
-
-  // Refetch balances when wallet or chain changes
-  useEffect(() => {
-    if (isConnected && address) {
-      refetchBalances();
-    }
-  }, [address, walletChainId, isConnected, refetchBalances]);
-
-  // Convert balances to lookup map
-  const walletBalances = useMemo(() => {
-    const balances: Record<string, { balance: bigint; formatted: string }> = {};
-    if (!balancesData) return balances;
-
-    filteredMarkets.slice(0, 20).forEach((market, index) => {
-      const result = balancesData[index];
-      if (result?.status === 'success' && result.result !== undefined) {
-        const balance = result.result as bigint;
-        const formatted = (Number(balance) / Math.pow(10, market.decimals)).toString();
-        balances[`${market.chainId}-${market.assetAddress}`] = { balance, formatted };
-      }
-    });
-
-    return balances;
-  }, [balancesData, filteredMarkets]);
-
-  // Handlers
-  const handleChainChange = (chainId: number | undefined) => {
-    setSelectedChainId(chainId);
-    trackFilterChange({ chain: chainId?.toString() || 'all' });
-  };
-
-  const handleSortChange = (column: 'apy' | 'tvl' | 'name') => {
-    if (sortBy === column) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortDirection('desc');
-    }
-  };
-
-  const handleSupplyClick = (market: LendingMarket) => {
-    setSelectedMarket(market);
-    setIsDrawerOpen(true);
-  };
-
-  const handleDrawerClose = useCallback(() => {
-    setIsDrawerOpen(false);
-    setSelectedMarket(null);
-    // Refresh balances after supply
-    refetchBalances();
-    refresh();
-  }, [refetchBalances, refresh]);
-
-  // Check if user's wallet is on unsupported chain (including Sepolia)
-  const walletOnUnsupportedChain = isConnected && !isEarnChainSupported(walletChainId);
-  const isOnSepolia = walletChainId === 11155111;
+  // Check if RPC is configured
+  const rpcWarning = !import.meta.env.VITE_RPC_BASE;
 
   return (
     <Layout>
@@ -203,32 +101,6 @@ export default function Earn() {
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* Diagnostics Accordion - Collapsed by default */}
-          <Collapsible open={showDiagnostics} onOpenChange={setShowDiagnostics}>
-            <CollapsibleTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full justify-between text-xs text-muted-foreground hover:text-foreground"
-              >
-                <span>🔧 Diagnostics & Debug Tools</span>
-                <ChevronDown className={cn(
-                  "w-4 h-4 transition-transform",
-                  showDiagnostics && "rotate-180"
-                )} />
-              </Button>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="space-y-2 mt-2">
-              <RpcDebugPanel 
-                className="mb-2" 
-                partialFailures={partialFailures}
-                onRetryChain={refreshChain}
-                onRetryAll={refresh}
-              />
-              <AaveDiagnosticsPanel className="mb-2" />
-            </CollapsibleContent>
-          </Collapsible>
-
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -236,18 +108,17 @@ export default function Earn() {
                 <h1 className="text-2xl sm:text-3xl font-bold">
                   <span className="text-gradient">Earn</span>
                 </h1>
-                {/* Live badge */}
-                <Badge variant="outline" className="text-xs px-2 h-5 border-success/40 text-success bg-success/10">
+                <Badge variant="outline" className="text-xs px-2 h-5 border-primary/40 text-primary bg-primary/10">
                   <Rocket className="w-3 h-3 mr-1" />
-                  Live
+                  Morpho Blue
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Data sourced directly from Aave V3 smart contracts
+                Lending markets powered by Morpho Blue protocol
               </p>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Connected wallet display */}
               {isConnected && address && (
                 <button
@@ -264,150 +135,140 @@ export default function Earn() {
                 </button>
               )}
               
-              <EarnChainSelector
-                chains={chains}
-                selectedChainId={selectedChainId}
-                onChainChange={handleChainChange}
-                showAllChainsOption={true}
-              />
+              {/* Chain selector */}
+              <Select
+                value={selectedChainId?.toString() || 'all'}
+                onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
+              >
+                <SelectTrigger className="w-[140px] h-10">
+                  <SelectValue placeholder="Select chain" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableChains.map(chain => (
+                    <SelectItem key={chain.chainId} value={chain.chainId.toString()}>
+                      <div className="flex items-center gap-2">
+                        <img src={chain.logo} alt={chain.label} className="w-4 h-4 rounded-full" />
+                        {chain.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Button
                 variant="outline"
                 size="icon"
                 onClick={refresh}
-                disabled={loading || isRetrying}
+                disabled={loading}
                 className="h-10 w-10"
               >
-                <RefreshCw className={`w-4 h-4 ${loading || isRetrying ? 'animate-spin' : ''}`} />
+                <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+              </Button>
+
+              {/* Debug report button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCopyDebugReport}
+                className="h-10 gap-2 text-muted-foreground"
+              >
+                {copiedDebug ? (
+                  <Check className="w-4 h-4 text-success" />
+                ) : (
+                  <Bug className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Copy Debug</span>
               </Button>
             </div>
           </div>
 
-          {/* Disclaimer Banner */}
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-            <AlertTriangle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs text-foreground">
-                Funds are supplied directly to Aave V3. Crypto DeFi Bridge does not custody funds.
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Supplying assets involves smart contract risk. APY is variable and not guaranteed.
-              </p>
-            </div>
-          </div>
-
-          {/* Wallet on unsupported chain warning */}
-          {walletOnUnsupportedChain && (
+          {/* RPC Warning */}
+          {rpcWarning && (
             <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
               <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
+              <div>
                 <p className="text-xs text-warning font-medium">
-                  {isOnSepolia 
-                    ? "Earn is not available on Sepolia testnet."
-                    : "Earn is not available on your current network."
-                  }
+                  RPC not configured
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Please switch to a supported chain: Ethereum, Arbitrum, Optimism, Polygon, Base, or Avalanche.
+                  Set VITE_RPC_BASE environment variable for optimal performance.
+                  Markets are fetched via subgraph and should still work.
                 </p>
               </div>
             </div>
           )}
 
-          {/* Tabs - Both ALWAYS clickable */}
-          <Tabs defaultValue="lend" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 max-w-xs">
-              <TabsTrigger value="lend" className="gap-2">
-                <TrendingUp className="w-4 h-4" />
-                Lend
-              </TabsTrigger>
-              <TabsTrigger value="borrow" className="gap-2">
-                <Lock className="w-4 h-4" />
-                Borrow
-              </TabsTrigger>
-            </TabsList>
+          {/* Disclaimer Banner */}
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+            <AlertTriangle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs text-foreground">
+                Supply and borrow actions open Morpho's official app. Crypto DeFi Bridge does not custody funds.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Lending involves smart contract risk. APY is variable and not guaranteed.
+              </p>
+            </div>
+            <a
+              href="https://app.morpho.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Morpho App
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
 
-            <TabsContent value="lend" className="mt-6 space-y-4">
-              {/* Search */}
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by asset name or symbol..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-10 bg-muted/30 border-border/50"
-                />
+          {/* Stats row */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                <span className="text-muted-foreground">Markets:</span>
+                <span className="font-medium">{markets.length}</span>
               </div>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              {isConnected && (
+                <span className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                  Wallet connected
+                </span>
+              )}
+              {lastFetchedDisplay && (
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Updated {lastFetchedDisplay}
+                </span>
+              )}
+            </div>
+          </div>
 
-              {/* Results count and last updated */}
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-sm text-muted-foreground">
-                  {filteredMarkets.length} market{filteredMarkets.length !== 1 ? 's' : ''} found
-                </p>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  {isConnected && (
-                    <span className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-full bg-success" />
-                      Wallet connected
-                    </span>
-                  )}
-                  {lastFetchedDisplay && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Last updated: {lastFetchedDisplay}
-                    </span>
-                  )}
-                </div>
-              </div>
+          {/* Markets Table */}
+          <MorphoMarketsTable
+            markets={markets}
+            loading={loading}
+            error={error}
+            onRefresh={refresh}
+          />
 
-              {/* Markets Table */}
-              <EarnMarketsTable
-                markets={filteredMarkets}
-                loading={loading}
-                error={error}
-                errorMessage={errorMessage}
-                onSupplyClick={handleSupplyClick}
-                onRefresh={refresh}
-                walletBalances={walletBalances}
-                sortBy={sortBy}
-                sortDirection={sortDirection}
-                onSortChange={handleSortChange}
-                isRetrying={isRetrying}
-                onChainChange={handleChainChange}
-                partialFailures={partialFailures}
-              />
-            </TabsContent>
-
-            <TabsContent value="borrow" className="mt-6">
-              {/* Borrow Warning */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20 mb-6">
-                <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs text-warning font-medium">
-                    Borrowing has liquidation risk. Monitor your Health Factor.
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    If your Health Factor drops below 1.0, your collateral may be liquidated.
-                  </p>
-                </div>
-              </div>
-              
-              <BorrowTab />
-            </TabsContent>
-          </Tabs>
-
-          {/* Footer note */}
+          {/* Footer */}
           <div className="text-center text-xs text-muted-foreground pt-4 border-t border-border/30">
-            Powered by Aave V3 (external protocol). Platform fee (if enabled) is separate and disclosed.
+            <p>Powered by Morpho Blue (external protocol). Data via The Graph subgraph.</p>
+            <p className="mt-1">
+              <a 
+                href="https://docs.morpho.org" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                Learn more about Morpho →
+              </a>
+            </p>
           </div>
         </motion.div>
       </div>
-
-      {/* Supply Drawer */}
-      <EarnSupplyDrawer
-        market={selectedMarket}
-        isOpen={isDrawerOpen}
-        onClose={handleDrawerClose}
-      />
     </Layout>
   );
 }
