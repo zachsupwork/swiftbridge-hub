@@ -15,6 +15,9 @@
   "dependencies": {
     "@bgd-labs/aave-address-book": "^4.41.5",
     "@hookform/resolvers": "^3.10.0",
+    "@morpho-org/blue-sdk": "^5.12.0",
+    "@morpho-org/blue-sdk-viem": "^4.2.1",
+    "@morpho-org/morpho-ts": "^2.4.6",
     "@mysten/dapp-kit": "^0.14.53",
     "@mysten/sui": "^1.45.2",
     "@radix-ui/react-accordion": "^1.2.11",

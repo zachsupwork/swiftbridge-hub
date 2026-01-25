@@ -1,13 +1,24 @@
 /**
  * Morpho Markets Hook
  * 
- * Fetches Morpho Blue markets from subgraph with caching and error handling.
- * No API key required - uses public subgraph.
+ * Fetches Morpho Blue markets from API with caching and error handling.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { fetchMorphoMarkets, type MorphoMarket } from '@/lib/morphoSubgraph';
-import { getEnabledMorphoChains, getMorphoChainConfig, type MorphoChainConfig } from '@/lib/morphoConfig';
+import { fetchMorphoMarkets } from '@/lib/morpho/apiClient';
+import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
+import type { MorphoMarket, MorphoChainConfig } from '@/lib/morpho/types';
+
+export interface DebugReport {
+  timestamp: string;
+  selectedChainId: number | undefined;
+  chainsEnabled: string[];
+  subgraphUrl: string;
+  marketsLoadedCount: number;
+  first3MarketIds: string[];
+  lastError: string | null;
+  fetchDurationMs: number | null;
+}
 
 export interface UseMorphoMarketsResult {
   markets: MorphoMarket[];
@@ -19,17 +30,6 @@ export interface UseMorphoMarketsResult {
   setSelectedChainId: (chainId: number | undefined) => void;
   availableChains: MorphoChainConfig[];
   debugReport: DebugReport;
-}
-
-export interface DebugReport {
-  timestamp: string;
-  selectedChainId: number | undefined;
-  rpcConfigured: boolean;
-  subgraphUrl: string | null;
-  marketsLoadedCount: number;
-  first3MarketIds: string[];
-  lastError: string | null;
-  fetchDurationMs: number | null;
 }
 
 // In-memory cache per chainId
@@ -90,7 +90,7 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
           }
         }
 
-        // Fetch from subgraph
+        // Fetch from API
         try {
           console.log(`[Morpho] Fetching fresh markets for ${chain.label}...`);
           const chainMarkets = await fetchMorphoMarkets({
@@ -106,8 +106,9 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
           });
 
           allMarkets.push(...chainMarkets);
-        } catch (chainError: any) {
-          console.error(`[Morpho] Failed to fetch ${chain.label}:`, chainError.message);
+        } catch (chainError: unknown) {
+          const errorMessage = chainError instanceof Error ? chainError.message : 'Unknown error';
+          console.error(`[Morpho] Failed to fetch ${chain.label}:`, errorMessage);
           // Continue with other chains if one fails
           if (chainsToFetch.length === 1) {
             throw chainError; // Re-throw if this was the only chain
@@ -118,7 +119,7 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
       // Only update state if this is the latest fetch and component is still mounted
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
         // Sort by TVL (total supply) descending
-        allMarkets.sort((a, b) => b.totalSupply - a.totalSupply);
+        allMarkets.sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd);
 
         setMarkets(allMarkets);
         setLastFetched(Date.now());
@@ -127,10 +128,11 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
         console.log(`[Morpho] ✓ Loaded ${allMarkets.length} markets in ${Date.now() - startTime}ms`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Morpho] Failed to fetch markets:', err);
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
-        setError(err.message || 'Failed to fetch Morpho markets');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch Morpho markets';
+        setError(errorMessage);
         setFetchDurationMs(Date.now() - startTime);
       }
     } finally {
@@ -157,7 +159,7 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
   const debugReport: DebugReport = useMemo(() => ({
     timestamp: new Date().toISOString(),
     selectedChainId,
-    rpcConfigured: selectedChainId ? !!getMorphoChainConfig(selectedChainId) : availableChains.length > 0,
+    chainsEnabled: availableChains.map(c => c.label),
     subgraphUrl: 'https://api.morpho.org/graphql',
     marketsLoadedCount: markets.length,
     first3MarketIds: markets.slice(0, 3).map(m => m.id),
@@ -184,5 +186,4 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 }
 
 // Re-export types
-export type { MorphoMarket } from '@/lib/morphoSubgraph';
-export type { MorphoChainConfig } from '@/lib/morphoConfig';
+export type { MorphoMarket, MorphoChainConfig } from '@/lib/morpho/types';
