@@ -25,6 +25,8 @@ import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
 import Earn from "./pages/Earn";
+import Support from "./pages/Support";
+import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
 import { useMemo } from "react";
 
@@ -91,6 +93,8 @@ const App = () => (
             <Route path="/earn" element={<Earn />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/support" element={<Support />} />
+            <Route path="/docs" element={<Docs />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
