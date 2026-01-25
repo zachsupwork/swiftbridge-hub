@@ -1,5 +1,5 @@
 /**
- * Enhanced Markets Table with TokenIcon and stable keys
+ * Enhanced Markets Table with TokenIcon, stable keys, and fixed APY normalization
  */
 
 import { motion } from 'framer-motion';
@@ -11,7 +11,7 @@ import {
   Search,
   TrendingUp,
   Wallet,
-  ExternalLink,
+  Info,
 } from 'lucide-react';
 import { useState, useMemo, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,19 @@ interface MorphoMarketsTableProps {
   onBorrow?: (market: MorphoMarket) => void;
 }
 
+/**
+ * Normalize APY values that might be in decimal form (0.05 = 5%) or percent form (5 = 5%)
+ * If the value is <= 1.5, we assume it's a decimal and multiply by 100
+ */
+function normalizeAPY(apy: number): number {
+  if (!Number.isFinite(apy) || apy === 0) return 0;
+  // If APY looks like a decimal (<=1.5), convert to percent
+  if (apy > 0 && apy <= 1.5) {
+    return apy * 100;
+  }
+  return apy;
+}
+
 export function MorphoMarketsTable({
   markets,
   loading,
@@ -42,12 +55,16 @@ export function MorphoMarketsTable({
   onBorrow,
 }: MorphoMarketsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('tvl');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('supplyApy');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc'); // Default: low to high APY
 
-  // Filter and sort markets
+  // Filter and sort markets with normalized APY
   const filteredMarkets = useMemo(() => {
-    let result = [...markets];
+    let result = markets.map(m => ({
+      ...m,
+      normalizedSupplyApy: normalizeAPY(m.supplyApy),
+      normalizedBorrowApy: normalizeAPY(m.borrowApy),
+    }));
 
     // Filter by search
     if (searchQuery) {
@@ -64,10 +81,10 @@ export function MorphoMarketsTable({
       let comparison = 0;
       switch (sortBy) {
         case 'supplyApy':
-          comparison = a.supplyApy - b.supplyApy;
+          comparison = a.normalizedSupplyApy - b.normalizedSupplyApy;
           break;
         case 'borrowApy':
-          comparison = a.borrowApy - b.borrowApy;
+          comparison = a.normalizedBorrowApy - b.normalizedBorrowApy;
           break;
         case 'tvl':
           comparison = a.totalSupplyUsd - b.totalSupplyUsd;
@@ -83,11 +100,11 @@ export function MorphoMarketsTable({
   }, [markets, searchQuery, sortBy, sortDirection]);
 
   const formatAPY = useCallback((apy: number) => {
-    if (!Number.isFinite(apy) || apy === 0) return '—';
-    if (apy < 0.01) return '<0.01%';
-    if (apy >= 1000) return '>1000%';
-    if (apy > 100) return `${apy.toFixed(1)}%`;
-    return `${apy.toFixed(2)}%`;
+    const normalized = normalizeAPY(apy);
+    if (!Number.isFinite(normalized) || normalized === 0) return '—';
+    if (normalized < 0.01) return '<0.01%';
+    if (normalized > 100) return `${normalized.toFixed(1)}%`;
+    return `${normalized.toFixed(2)}%`;
   }, []);
 
   const formatTVL = useCallback((value: number) => {
@@ -116,7 +133,8 @@ export function MorphoMarketsTable({
       setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(column);
-      setSortDirection('desc');
+      // Default direction based on column
+      setSortDirection(column === 'supplyApy' ? 'asc' : 'desc');
     }
   }, [sortBy]);
 
@@ -188,15 +206,21 @@ export function MorphoMarketsTable({
 
   return (
     <div className="space-y-4">
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by token symbol..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10 h-10 bg-muted/30 border-border/50"
-        />
+      {/* Search and info */}
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by token symbol..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 h-10 bg-muted/30 border-border/50"
+          />
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Info className="w-3.5 h-3.5" />
+          <span>Rates source: Morpho API</span>
+        </div>
       </div>
 
       {/* Results count */}
@@ -212,6 +236,17 @@ export function MorphoMarketsTable({
         )}
       </div>
 
+      {/* Educational note */}
+      <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+          <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p><strong>Supply:</strong> Deposit into ONE market to earn Supply APY on your assets.</p>
+            <p><strong>Borrow:</strong> Requires collateral first. Max borrow depends on LTV. You can only borrow the market's loan asset.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Desktop Table */}
       <div className="hidden md:block glass rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -225,7 +260,7 @@ export function MorphoMarketsTable({
                   <SortButton column="supplyApy" label="Supply APY" />
                 </th>
                 <th className="text-right p-4">
-                  <SortButton column="borrowApy" label="Borrow APY" />
+                  <SortButton column="borrowApy" label="Borrow APR" />
                 </th>
                 <th className="text-right p-4">
                   <SortButton column="tvl" label="Total Supply" />
@@ -296,7 +331,7 @@ export function MorphoMarketsTable({
                     </div>
                   </td>
 
-                  {/* Borrow APY */}
+                  {/* Borrow APR */}
                   <td className="p-4 text-right">
                     <div className="text-sm text-warning">
                       {formatAPY(market.borrowApy)}

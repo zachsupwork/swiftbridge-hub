@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info } from 'lucide-react';
+import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet } from 'lucide-react';
 import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
 import { TokenSelector } from './TokenSelector';
@@ -30,6 +30,7 @@ export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
   const { switchChainAsync } = useSwitchChain();
+  const wallets = useMultiWallet();
 
   const [fromChainId, setFromChainId] = useState(1);
   const [toChainId, setToChainId] = useState(1);
@@ -72,6 +73,39 @@ export function SwapCard() {
     setFromToken(toToken);
     setToToken(tempToken);
   }, [fromChainId, toChainId, fromToken, toToken]);
+
+  // Validation states
+  const hasValidInputs = fromToken && toToken && fromAmount && parseFloat(fromAmount) > 0;
+  const isFromChainSupported = isChainSupported(fromChainId);
+  const isToChainSupported = isChainSupported(toChainId);
+  const isRouteChainSupported = route ? isChainSupported(route.fromChainId) : true;
+
+  // Helper text based on current state
+  const helperText = useMemo(() => {
+    if (!isConnected) {
+      return 'Connect wallet to get a quote.';
+    }
+    if (!hasValidInputs) {
+      return 'Select tokens and enter an amount.';
+    }
+    if (state === 'quoting') {
+      return 'Finding best route...';
+    }
+    if (route) {
+      return 'Review quote, then click Swap to execute.';
+    }
+    return 'Click Get Quote to estimate output, fees, and route.';
+  }, [isConnected, hasValidInputs, state, route]);
+
+  // Button label based on state
+  const buttonLabel = useMemo(() => {
+    if (!isConnected) return 'Connect Wallet';
+    if (state === 'quoting') return 'Finding Route...';
+    if (state === 'approving') return 'Approving...';
+    if (state === 'swapping') return 'Confirm in Wallet...';
+    if (route) return 'Swap';
+    return 'Get Quote';
+  }, [isConnected, state, route]);
 
   const handleQuote = async () => {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
@@ -217,9 +251,6 @@ export function SwapCard() {
   };
 
   const isTestnet = fromChainId === 11155111 || toChainId === 11155111;
-  const isFromChainSupported = isChainSupported(fromChainId);
-  const isToChainSupported = isChainSupported(toChainId);
-  const isRouteChainSupported = route ? isChainSupported(route.fromChainId) : true;
 
   if (state === 'tracking' && txHash && route && swapId) {
     return (
@@ -371,7 +402,6 @@ export function SwapCard() {
                 selectedChainId={toChainId}
                 onSelect={(chain) => setToChainId(chain.id)}
                 label="To Chain"
-                excludeChainId={fromChainId === toChainId ? undefined : undefined}
               />
             </div>
             <div className="flex-1">
@@ -414,9 +444,7 @@ export function SwapCard() {
                     animate={{ opacity: 1 }}
                     className="text-sm text-muted-foreground/70 font-normal"
                   >
-                    {isConnected 
-                      ? "Wallet connected — click Get Quote" 
-                      : "Click Get Quote to calculate output"}
+                    —
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -424,13 +452,11 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Quote info helper text with fee tooltip */}
+        {/* Helper text with fee tooltip */}
         <div className="flex items-center justify-between px-1">
-          <div className="flex items-start gap-2 text-xs text-muted-foreground/60">
+          <div className="flex items-start gap-2 text-xs text-muted-foreground/80">
             <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-            <span>
-              Quotes are calculated after clicking Get Quote.
-            </span>
+            <span>{helperText}</span>
           </div>
           <IntegratorFeeTooltip />
         </div>
@@ -471,10 +497,14 @@ export function SwapCard() {
           />
         )}
 
-        {/* Action buttons */}
+        {/* Action button */}
         {!isConnected ? (
-          <Button disabled className="w-full py-6 text-lg">
-            Connect Wallet to Swap
+          <Button 
+            disabled 
+            className="w-full py-6 text-lg gap-2"
+          >
+            <Wallet className="w-5 h-5" />
+            Connect Wallet
           </Button>
         ) : !isFromChainSupported || !isToChainSupported ? (
           <Button disabled className="w-full py-6 text-lg bg-destructive/20 text-destructive">
@@ -484,7 +514,7 @@ export function SwapCard() {
         ) : state === 'quoting' || state === 'approving' || state === 'swapping' ? (
           <Button disabled className="w-full py-6 text-lg gradient-primary">
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            {state === 'quoting' ? 'Finding best route...' : state === 'approving' ? 'Approving...' : 'Confirm in wallet...'}
+            {buttonLabel}
           </Button>
         ) : route && !isRouteChainSupported ? (
           <Button disabled className="w-full py-6 text-lg bg-destructive/20 text-destructive">
@@ -496,12 +526,12 @@ export function SwapCard() {
             onClick={handleExecute}
             className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90"
           >
-            Execute Swap
+            Swap
           </Button>
         ) : (
           <Button
             onClick={handleQuote}
-            disabled={!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0}
+            disabled={!hasValidInputs}
             className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             Get Quote

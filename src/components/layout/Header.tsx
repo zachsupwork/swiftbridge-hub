@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp } from 'lucide-react';
+import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import logoImage from '@/assets/cdb-logo.png';
 import { MultiWalletButton } from '@/components/wallets/MultiWalletButton';
 
 const navItems = [
-  { path: '/swap', label: 'Swap', icon: ArrowLeftRight },
+  { path: '/', label: 'Swap', icon: ArrowLeftRight, matchExact: true },
   { path: '/earn', label: 'Earn', icon: TrendingUp },
+  { path: '/borrow', label: 'Borrow', icon: Coins },
   { path: '/portfolio', label: 'Portfolio', icon: Wallet },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
@@ -17,34 +18,40 @@ export function Header() {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const isActive = (item: typeof navItems[0]) => {
+    if (item.matchExact) {
+      return location.pathname === item.path || location.pathname === '/swap';
+    }
+    return location.pathname === item.path;
+  };
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 gap-2">
           {/* Logo - properly constrained for mobile */}
-          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink-0 max-w-[180px] sm:max-w-none" aria-label="Crypto DeFi Bridge Home">
+          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink-0 max-w-[140px] sm:max-w-none" aria-label="Crypto DeFi Bridge Home">
             <img 
               src={logoImage} 
               alt="Crypto DeFi Bridge Logo" 
               className="w-8 h-8 rounded-lg flex-shrink-0"
             />
             <div className="flex flex-col leading-tight min-w-0">
-              <span className="text-sm sm:text-xl font-bold text-gradient truncate">CRYPTO DEFI BRIDGE</span>
+              <span className="text-xs sm:text-base font-bold text-gradient truncate">Crypto DeFi Bridge</span>
             </div>
           </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || 
-                (item.path === '/swap' && location.pathname === '/');
+              const active = isActive(item);
               return (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
                     "relative px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                    isActive 
+                    active 
                       ? "text-primary" 
                       : "text-muted-foreground hover:text-foreground"
                   )}
@@ -53,7 +60,7 @@ export function Header() {
                     <item.icon className="w-4 h-4" />
                     {item.label}
                   </span>
-                  {isActive && (
+                  {active && (
                     <motion.div
                       layoutId="nav-indicator"
                       className="absolute inset-0 rounded-lg bg-primary/10 -z-10"
@@ -66,7 +73,7 @@ export function Header() {
           </nav>
 
           {/* Right side */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Multi-Chain Wallet Connect */}
             <MultiWalletButton />
 
@@ -92,8 +99,7 @@ export function Header() {
           >
             <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
               {navItems.map((item) => {
-                const isActive = location.pathname === item.path || 
-                  (item.path === '/swap' && location.pathname === '/');
+                const active = isActive(item);
                 return (
                   <Link
                     key={item.path}
@@ -101,7 +107,7 @@ export function Header() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={cn(
                       "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-                      isActive 
+                      active 
                         ? "bg-primary/10 text-primary" 
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}

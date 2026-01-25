@@ -3,7 +3,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronRight, AlertCircle, Wallet } from 'lucide-react';
 import { Chain, getChains } from '@/lib/lifiClient';
 import { useMultiWallet, getWalletTypeForChain, WalletType } from '@/lib/wallets';
+import { SUPPORTED_CHAIN_IDS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
+
+// Local fallback chain icons
+const CHAIN_ICON_FALLBACKS: Record<number, string> = {
+  1: '/icons/chains/ethereum.svg',
+  10: '/icons/chains/optimism.svg',
+  56: '/icons/chains/bnb.svg',
+  100: '/icons/chains/gnosis.svg',
+  137: '/icons/chains/polygon.svg',
+  250: '/icons/chains/fantom.svg',
+  324: '/icons/chains/zksync.svg',
+  8453: '/icons/chains/base.svg',
+  42161: '/icons/chains/arbitrum.svg',
+  43114: '/icons/chains/avalanche.svg',
+  59144: '/icons/chains/linea.svg',
+  534352: '/icons/chains/scroll.svg',
+  5000: '/icons/chains/mantle.svg',
+};
 
 interface ChainSelectorProps {
   selectedChainId: number;
@@ -29,14 +47,20 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
   const [isOpen, setIsOpen] = useState(false);
   const [chains, setChains] = useState<ExtendedChain[]>([]);
   const [showMoreChains, setShowMoreChains] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
   const wallets = useMultiWallet();
 
   useEffect(() => {
     getChains().then(setChains);
   }, []);
 
-  const selectedChain = chains.find(c => c.id === selectedChainId);
-  const filteredChains = chains.filter(c => c.id !== excludeChainId);
+  // Filter to only LiFi-supported chains that are also in our wagmi config
+  const supportedChains = useMemo(() => {
+    return chains.filter(c => SUPPORTED_CHAIN_IDS.has(c.id));
+  }, [chains]);
+
+  const selectedChain = supportedChains.find(c => c.id === selectedChainId);
+  const filteredChains = supportedChains.filter(c => c.id !== excludeChainId);
 
   // Categorize chains by wallet type and availability
   const { availableChains, unavailableChains } = useMemo(() => {
@@ -70,6 +94,17 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
     setIsOpen(false);
   };
 
+  const getChainIcon = (chain: ExtendedChain, hasError: boolean) => {
+    if (hasError && CHAIN_ICON_FALLBACKS[chain.id]) {
+      return CHAIN_ICON_FALLBACKS[chain.id];
+    }
+    return chain.logoURI;
+  };
+
+  const handleImageError = (chainId: number) => {
+    setImageErrors(prev => new Set(prev).add(chainId));
+  };
+
   return (
     <div className="relative">
       <label className="text-xs text-muted-foreground mb-1 block">{label}</label>
@@ -80,12 +115,10 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
         {selectedChain ? (
           <>
             <img
-              src={selectedChain.logoURI}
+              src={getChainIcon(selectedChain, imageErrors.has(selectedChain.id))}
               alt={selectedChain.name}
-              className="w-6 h-6 rounded-full"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
+              className="w-6 h-6 rounded-full bg-muted"
+              onError={() => handleImageError(selectedChain.id)}
             />
             <span className="flex-1 text-left font-medium">{selectedChain.name}</span>
           </>
@@ -124,12 +157,10 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
                       )}
                     >
                       <img
-                        src={chain.logoURI}
+                        src={getChainIcon(chain, imageErrors.has(chain.id))}
                         alt={chain.name}
-                        className="w-6 h-6 rounded-full"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
+                        className="w-6 h-6 rounded-full bg-muted"
+                        onError={() => handleImageError(chain.id)}
                       />
                       <span className="font-medium">{chain.name}</span>
                       {chain.id === 11155111 && (
@@ -174,12 +205,10 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
                               className="w-full flex items-center gap-3 p-3 rounded-lg opacity-50 cursor-not-allowed"
                             >
                               <img
-                                src={chain.logoURI}
+                                src={getChainIcon(chain, imageErrors.has(chain.id))}
                                 alt={chain.name}
-                                className="w-6 h-6 rounded-full grayscale"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                }}
+                                className="w-6 h-6 rounded-full grayscale bg-muted"
+                                onError={() => handleImageError(chain.id)}
                               />
                               <div className="flex-1 text-left">
                                 <span className="font-medium text-sm">{chain.name}</span>
