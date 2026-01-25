@@ -7,6 +7,8 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useConnectWallet, useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -58,27 +60,6 @@ export function MultiWalletButton() {
 
   const connectedCount = [wallets.evm.connected, wallets.solana.connected, wallets.bitcoin.connected, wallets.sui.connected].filter(Boolean).length;
 
-  // Handle ESC key to close modal
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && isOpen) {
-      setIsOpen(false);
-    }
-  }, [isOpen]);
-
-  // Lock body scroll when modal is open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      document.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, handleKeyDown]);
-
   const handleBitcoinConnect = async () => {
     try {
       await connectBitcoin();
@@ -100,179 +81,146 @@ export function MultiWalletButton() {
         )}
       >
         <Wallet className="w-4 h-4" />
-        <span className="text-sm font-medium">
-          {connectedCount > 0 ? `${connectedCount} Wallet${connectedCount > 1 ? 's' : ''}` : 'Connect Wallets'}
+        <span className="text-sm font-medium hidden sm:inline">
+          {connectedCount > 0 ? `${connectedCount} Wallet${connectedCount > 1 ? 's' : ''}` : 'Connect'}
         </span>
-        <ChevronDown className={cn('w-4 h-4 transition-transform', isOpen && 'rotate-180')} />
+        <ChevronDown className={cn('w-4 h-4 transition-transform hidden sm:block', isOpen && 'rotate-180')} />
       </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <>
-            {/* Backdrop overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-              onClick={closeModal}
-              aria-hidden="true"
-            />
-            
-            {/* Modal container */}
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="wallet-modal-title"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-32px)] max-w-[420px] max-h-[80vh] overflow-y-auto rounded-2xl bg-background border border-border shadow-2xl"
-            >
-              <div className="p-4 sm:p-5">
-                {/* Header */}
-                <div className="flex items-center justify-between pb-3 mb-4 border-b border-border">
-                  <h2 id="wallet-modal-title" className="text-lg font-semibold text-foreground">
-                    Connect Wallets
-                  </h2>
-                  <button
-                    onClick={closeModal}
-                    className="flex items-center justify-center w-11 h-11 -mr-2 rounded-lg hover:bg-muted/50 transition-colors"
-                    aria-label="Close modal"
-                  >
-                    <X className="w-5 h-5 text-muted-foreground" />
-                  </button>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="sm:max-w-[420px] max-h-[90vh] p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b border-border">
+            <DialogTitle className="text-lg font-semibold">Connect Wallets</DialogTitle>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[calc(90vh-80px)]">
+            <div className="p-5 space-y-4">
+              {/* Connected wallets summary */}
+              {wallets.anyWalletConnected && (
+                <div className="flex flex-wrap gap-1.5">
+                  <WalletStatusPill type="evm" address={wallets.evm.address} connected={wallets.evm.connected} />
+                  <WalletStatusPill type="solana" address={wallets.solana.address} connected={wallets.solana.connected} />
+                  <WalletStatusPill type="bitcoin" address={wallets.bitcoin.address} connected={wallets.bitcoin.connected} />
+                  <WalletStatusPill type="sui" address={wallets.sui.address} connected={wallets.sui.connected} />
                 </div>
+              )}
 
-                {/* Connected wallets summary */}
-                {wallets.anyWalletConnected && (
-                  <div className="flex flex-wrap gap-1.5 mb-4">
-                    <WalletStatusPill type="evm" address={wallets.evm.address} connected={wallets.evm.connected} />
-                    <WalletStatusPill type="solana" address={wallets.solana.address} connected={wallets.solana.connected} />
-                    <WalletStatusPill type="bitcoin" address={wallets.bitcoin.address} connected={wallets.bitcoin.connected} />
-                    <WalletStatusPill type="sui" address={wallets.sui.address} connected={wallets.sui.connected} />
-                  </div>
-                )}
-
-                {/* Wallet sections */}
-                <div className="space-y-4">
-                  {/* EVM Wallet (RainbowKit) */}
-                  <WalletSection
-                    title="EVM Chains"
-                    titleColor={WALLET_CONFIG.evm.color}
-                    connected={wallets.evm.connected}
-                  >
-                    <ConnectButton.Custom>
-                      {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
-                        const connected = mounted && account && chain;
-                        return (
-                          <div className="space-y-2">
-                            {!connected ? (
-                              <WalletConnectButton onClick={openConnectModal}>
-                                Connect EVM Wallet
+              {/* Wallet sections */}
+              <div className="space-y-4">
+                {/* EVM Wallet (RainbowKit) */}
+                <WalletSection
+                  title="EVM Chains"
+                  titleColor={WALLET_CONFIG.evm.color}
+                  connected={wallets.evm.connected}
+                >
+                  <ConnectButton.Custom>
+                    {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
+                      const connected = mounted && account && chain;
+                      return (
+                        <div className="space-y-2">
+                          {!connected ? (
+                            <WalletConnectButton onClick={openConnectModal}>
+                              Connect EVM Wallet
+                            </WalletConnectButton>
+                          ) : (
+                            <div className="flex gap-2">
+                              <WalletConnectButton onClick={openChainModal} variant="secondary" className="flex-1">
+                                {chain.name}
                               </WalletConnectButton>
-                            ) : (
-                              <div className="flex gap-2">
-                                <WalletConnectButton onClick={openChainModal} variant="secondary" className="flex-1">
-                                  {chain.name}
-                                </WalletConnectButton>
-                                <Button 
-                                  onClick={openAccountModal} 
-                                  variant="ghost" 
-                                  className="h-12 px-4 text-sm"
-                                >
-                                  Disconnect
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }}
-                    </ConnectButton.Custom>
-                  </WalletSection>
+                              <Button 
+                                onClick={openAccountModal} 
+                                variant="ghost" 
+                                className="h-12 px-4 text-sm"
+                              >
+                                Disconnect
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
+                  </ConnectButton.Custom>
+                </WalletSection>
 
-                  {/* Solana Wallet */}
-                  <WalletSection
-                    title="Solana"
-                    titleColor={WALLET_CONFIG.solana.color}
-                    connected={wallets.solana.connected}
-                  >
-                    <div className="wallet-button-wrapper">
-                      <WalletMultiButton />
+                {/* Solana Wallet */}
+                <WalletSection
+                  title="Solana"
+                  titleColor={WALLET_CONFIG.solana.color}
+                  connected={wallets.solana.connected}
+                >
+                  <div className="wallet-button-wrapper">
+                    <WalletMultiButton />
+                  </div>
+                </WalletSection>
+
+                {/* Bitcoin Wallet */}
+                <WalletSection
+                  title="Bitcoin"
+                  titleColor={WALLET_CONFIG.bitcoin.color}
+                  connected={wallets.bitcoin.connected}
+                >
+                  {!btcAvailable ? (
+                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/50 text-sm text-muted-foreground">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                      <span className="leading-relaxed">
+                        Install UniSat, Xverse, or Leather wallet extension to use Bitcoin routes.
+                      </span>
                     </div>
-                  </WalletSection>
-
-                  {/* Bitcoin Wallet */}
-                  <WalletSection
-                    title="Bitcoin"
-                    titleColor={WALLET_CONFIG.bitcoin.color}
-                    connected={wallets.bitcoin.connected}
-                  >
-                    {!btcAvailable ? (
-                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/50 text-sm text-muted-foreground">
-                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                        <span className="leading-relaxed">
-                          Install UniSat, Xverse, or Leather wallet extension to use Bitcoin routes.
-                        </span>
+                  ) : wallets.bitcoin.connected ? (
+                    <div className="flex gap-2">
+                      <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
+                        {btcProvider}: {wallets.bitcoin.shortAddress}
                       </div>
-                    ) : wallets.bitcoin.connected ? (
-                      <div className="flex gap-2">
-                        <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
-                          {btcProvider}: {wallets.bitcoin.shortAddress}
-                        </div>
-                        <Button 
-                          onClick={disconnectBitcoin} 
-                          variant="ghost" 
-                          className="h-12 px-4 text-sm"
-                        >
-                          Disconnect
-                        </Button>
-                      </div>
-                    ) : (
-                      <WalletConnectButton onClick={handleBitcoinConnect}>
-                        Connect {btcProvider || 'Bitcoin'} Wallet
-                      </WalletConnectButton>
-                    )}
-                  </WalletSection>
+                      <Button 
+                        onClick={disconnectBitcoin} 
+                        variant="ghost" 
+                        className="h-12 px-4 text-sm"
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  ) : (
+                    <WalletConnectButton onClick={handleBitcoinConnect}>
+                      Connect {btcProvider || 'Bitcoin'} Wallet
+                    </WalletConnectButton>
+                  )}
+                </WalletSection>
 
-                  {/* Sui Wallet */}
-                  <WalletSection
-                    title="Sui"
-                    titleColor={WALLET_CONFIG.sui.color}
-                    connected={wallets.sui.connected}
-                  >
-                    {wallets.sui.connected ? (
-                      <div className="flex gap-2">
-                        <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
-                          {wallets.sui.shortAddress}
-                        </div>
-                        <Button 
-                          onClick={() => disconnectSui()} 
-                          variant="ghost" 
-                          className="h-12 px-4 text-sm"
-                        >
-                          Disconnect
-                        </Button>
+                {/* Sui Wallet */}
+                <WalletSection
+                  title="Sui"
+                  titleColor={WALLET_CONFIG.sui.color}
+                  connected={wallets.sui.connected}
+                >
+                  {wallets.sui.connected ? (
+                    <div className="flex gap-2">
+                      <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
+                        {wallets.sui.shortAddress}
                       </div>
-                    ) : (
-                      <WalletConnectButton onClick={() => connectSui({ wallet: null as any })}>
-                        Connect Sui Wallet
-                      </WalletConnectButton>
-                    )}
-                  </WalletSection>
-                </div>
-
-                {/* Footer helper text */}
-                <p className="text-xs text-muted-foreground/60 text-center pt-4 mt-4 border-t border-border">
-                  Connect wallets for the chains you want to use
-                </p>
+                      <Button 
+                        onClick={() => disconnectSui()} 
+                        variant="ghost" 
+                        className="h-12 px-4 text-sm"
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  ) : (
+                    <WalletConnectButton onClick={() => connectSui({ wallet: null as any })}>
+                      Connect Sui Wallet
+                    </WalletConnectButton>
+                  )}
+                </WalletSection>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+
+              {/* Footer helper text */}
+              <p className="text-xs text-muted-foreground/60 text-center pt-2">
+                Connect wallets for the chains you want to use
+              </p>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

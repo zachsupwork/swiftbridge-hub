@@ -25,6 +25,7 @@ import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
 import Earn from "./pages/Earn";
+import Borrow from "./pages/Borrow";
 import Support from "./pages/Support";
 import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
@@ -88,9 +89,10 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Navigate to="/swap" replace />} />
+            <Route path="/" element={<Index />} />
             <Route path="/swap" element={<Index />} />
             <Route path="/earn" element={<Earn />} />
+            <Route path="/borrow" element={<Borrow />} />
             <Route path="/portfolio" element={<Portfolio />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/support" element={<Support />} />
