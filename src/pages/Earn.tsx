@@ -348,16 +348,14 @@ export default function Earn() {
                 <strong>Non-custodial lending.</strong> All actions execute directly on Morpho Blue smart contracts.
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                APY is variable and based on market utilization. A platform fee of 0.10% applies to supply/borrow.
+                APY is variable and based on market utilization. Smart contract risk applies.
               </p>
             </div>
             <a
-              href="https://docs.morpho.org"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/docs"
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
-              Docs
+              Learn more
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>

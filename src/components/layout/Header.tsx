@@ -20,17 +20,16 @@ export function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink" aria-label="CryptoDeFiBridge Home">
+        <div className="flex items-center justify-between h-16 gap-2">
+          {/* Logo - properly constrained for mobile */}
+          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink-0 max-w-[180px] sm:max-w-none" aria-label="Crypto DeFi Bridge Home">
             <img 
               src={logoImage} 
-              alt="CryptoDeFiBridge Logo" 
+              alt="Crypto DeFi Bridge Logo" 
               className="w-8 h-8 rounded-lg flex-shrink-0"
             />
-            <div className="flex flex-col leading-tight">
-              <span className="text-base sm:text-xl font-bold text-gradient">CryptoDeFiBridge</span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground/60 tracking-wide">cryptodefibridge</span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-sm sm:text-xl font-bold text-gradient truncate">CRYPTO DEFI BRIDGE</span>
             </div>
           </Link>
 

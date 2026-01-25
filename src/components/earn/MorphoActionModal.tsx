@@ -1,7 +1,9 @@
 /**
  * Morpho Action Modal Component
  * 
- * Handles supply, withdraw, borrow, repay with 2-step fee flow.
+ * Handles supply, withdraw, borrow, repay WITHOUT fee approval steps.
+ * Fee is only collected on swap/bridge via integrator fee model.
+ * This avoids the MetaMask "untrusted EOA" warning.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -44,13 +46,11 @@ import {
   MORPHO_BLUE_ABI, 
   MORPHO_BLUE_ADDRESS,
   marketToParams,
-  calculateFee,
   type ActionStep,
   getStepDescription,
 } from '@/lib/morpho/blueActions';
 import { getMorphoChainConfig, getChainRpcUrl } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
-import { FEE_WALLET, isPlatformFeeConfigured } from '@/lib/env';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 
@@ -83,17 +83,12 @@ export function MorphoActionModal({
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<ActionStep>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [feeTxHash, setFeeTxHash] = useState<Hash | undefined>();
   const [approvalTxHash, setApprovalTxHash] = useState<Hash | undefined>();
   const [actionTxHash, setActionTxHash] = useState<Hash | undefined>();
 
   // Get token info based on action type
   const token = useMemo(() => {
     if (!market) return null;
-    
-    // For borrow/repay, use loan asset
-    // For supply/withdraw, use loan asset
-    // For collateral actions, would use collateral asset
     return market.loanAsset;
   }, [market]);
 
@@ -118,20 +113,7 @@ export function MorphoActionModal({
     query: { enabled: !!address && !!tokenAddress },
   });
 
-  // Read fee wallet allowance
-  const { data: feeAllowance, refetch: refetchFeeAllowance } = useReadContract({
-    address: tokenAddress,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: address && isPlatformFeeConfigured() ? [address, FEE_WALLET] : undefined,
-    query: { enabled: !!address && !!tokenAddress && isPlatformFeeConfigured() },
-  });
-
   // Wait for transactions
-  const { isLoading: isFeeConfirming, isSuccess: isFeeConfirmed } = useWaitForTransactionReceipt({
-    hash: feeTxHash,
-  });
-
   const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: approvalTxHash,
   });
@@ -149,25 +131,12 @@ export function MorphoActionModal({
     }
   }, [amount, decimals]);
 
-  // Calculate fee
-  const feeInfo = useMemo(() => {
-    if (actionType === 'withdraw' || actionType === 'repay') return null;
-    return calculateFee(parsedAmount, decimals);
-  }, [parsedAmount, decimals, actionType]);
-
-  // Net amount after fee
-  const netAmount = useMemo(() => {
-    if (!feeInfo) return parsedAmount;
-    return parsedAmount - feeInfo.feeAmount;
-  }, [parsedAmount, feeInfo]);
-
   // Reset state when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       setAmount('');
       setStep('idle');
       setError(null);
-      setFeeTxHash(undefined);
       setApprovalTxHash(undefined);
       setActionTxHash(undefined);
     }
@@ -195,8 +164,7 @@ export function MorphoActionModal({
       case 'withdraw':
         return existingSupply;
       case 'borrow':
-        // Would need to calculate based on collateral
-        return 0n; // Placeholder
+        return 0n; // Would need collateral calculation
       case 'repay':
         return existingBorrow;
       default:
@@ -210,7 +178,7 @@ export function MorphoActionModal({
     }
   }, [maxAmount, decimals]);
 
-  // Execute the action
+  // Execute the action - NO FEE COLLECTION (fees only on swap/bridge)
   const executeAction = useCallback(async () => {
     if (!market || !address || !tokenAddress || parsedAmount === 0n) return;
 
@@ -218,50 +186,17 @@ export function MorphoActionModal({
       setError(null);
       const marketParams = marketToParams(market);
 
-      // Step 1: Fee approval (if needed)
-      if (feeInfo && feeInfo.feeAmount > 0n) {
-        // Check if fee approval needed
-        const currentFeeAllowance = feeAllowance || 0n;
-        if (currentFeeAllowance < feeInfo.feeAmount) {
-          setStep('fee_approval');
-          const feeApprovalTx = await writeContractAsync({
-            address: tokenAddress,
-            abi: erc20Abi,
-            functionName: 'approve',
-            args: [FEE_WALLET, feeInfo.feeAmount],
-          } as any);
-          setFeeTxHash(feeApprovalTx);
-          setStep('fee_pending');
-          // Wait handled by useWaitForTransactionReceipt
-          return;
-        }
-
-        // Step 2: Fee transfer
-        setStep('fee_transfer');
-        const feeTransferTx = await writeContractAsync({
-          address: tokenAddress,
-          abi: erc20Abi,
-          functionName: 'transfer',
-          args: [FEE_WALLET, feeInfo.feeAmount],
-        } as any);
-        setFeeTxHash(feeTransferTx);
-        setStep('fee_confirming');
-        // Wait for fee transfer to confirm
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      // Step 3: Token approval for Morpho (for supply/repay)
+      // Step 1: Token approval for Morpho (for supply/repay only)
       if (actionType === 'supply' || actionType === 'repay') {
-        const amountToApprove = actionType === 'supply' ? netAmount : parsedAmount;
         const currentAllowance = morphoAllowance || 0n;
         
-        if (currentAllowance < amountToApprove) {
+        if (currentAllowance < parsedAmount) {
           setStep('approval');
           const approvalTx = await writeContractAsync({
             address: tokenAddress,
             abi: erc20Abi,
             functionName: 'approve',
-            args: [MORPHO_BLUE_ADDRESS, amountToApprove],
+            args: [MORPHO_BLUE_ADDRESS, parsedAmount],
           } as any);
           setApprovalTxHash(approvalTx);
           setStep('approval_pending');
@@ -270,7 +205,7 @@ export function MorphoActionModal({
         }
       }
 
-      // Step 4: Execute Morpho action
+      // Step 2: Execute Morpho action
       setStep('action');
 
       let txHash: Hash;
@@ -281,7 +216,7 @@ export function MorphoActionModal({
             address: MORPHO_BLUE_ADDRESS,
             abi: MORPHO_BLUE_ABI,
             functionName: 'supply',
-            args: [marketParams, netAmount, 0n, address, '0x'],
+            args: [marketParams, parsedAmount, 0n, address, '0x'],
           } as any);
           break;
 
@@ -299,7 +234,7 @@ export function MorphoActionModal({
             address: MORPHO_BLUE_ADDRESS,
             abi: MORPHO_BLUE_ABI,
             functionName: 'borrow',
-            args: [marketParams, netAmount, 0n, address, address],
+            args: [marketParams, parsedAmount, 0n, address, address],
           } as any);
           break;
 
@@ -326,24 +261,15 @@ export function MorphoActionModal({
       setStep('error');
     }
   }, [
-    market, address, tokenAddress, parsedAmount, netAmount, 
-    feeInfo, feeAllowance, morphoAllowance, actionType,
+    market, address, tokenAddress, parsedAmount, 
+    morphoAllowance, actionType,
     writeContractAsync,
   ]);
 
   // Handle transaction confirmations
   useEffect(() => {
-    if (isFeeConfirmed && step === 'fee_pending') {
-      refetchFeeAllowance();
-      // Continue with the flow
-      executeAction();
-    }
-  }, [isFeeConfirmed, step]);
-
-  useEffect(() => {
     if (isApprovalConfirmed && step === 'approval_pending') {
       refetchAllowance();
-      // Continue with the flow
       executeAction();
     }
   }, [isApprovalConfirmed, step]);
@@ -384,7 +310,7 @@ export function MorphoActionModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={() => onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className={getActionColor()}>{getActionIcon()}</span>
@@ -441,23 +367,20 @@ export function MorphoActionModal({
             />
           </div>
 
-          {/* Fee info */}
-          {feeInfo && feeInfo.feeAmount > 0n && (
-            <div className="p-3 rounded-lg bg-muted/30 space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                <Info className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Platform Fee ({feeInfo.feePercentage}%)</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Fee Amount</span>
-                <span className="font-mono">{feeInfo.feeAmountFormatted} {token.symbol}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>You'll {actionType}</span>
-                <span className="font-mono font-medium">{formatUnits(netAmount, decimals)} {token.symbol}</span>
-              </div>
+          {/* Preview summary */}
+          <div className="p-3 rounded-lg bg-muted/30 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <Info className="w-4 h-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Transaction Preview</span>
             </div>
-          )}
+            <div className="flex items-center justify-between text-sm">
+              <span>You'll {actionType}</span>
+              <span className="font-mono font-medium">{amount || '0'} {token.symbol}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              No platform fee on Earn. Fees only apply to swap/bridge.
+            </p>
+          </div>
 
           {/* Transaction steps */}
           {step !== 'idle' && (
