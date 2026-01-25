@@ -435,16 +435,29 @@ async function fetchMarketsWithClient(
   
   try {
     // Call UiPoolDataProviderV3.getReservesData with checksummed addresses
-    const result = await fetchWithRetry(async () => {
-      return await (client.readContract as any)({
-        address: checksummedUiProvider,
-        abi: UI_POOL_DATA_PROVIDER_ABI,
-        functionName: 'getReservesData',
-        args: [checksummedProvider],
-      }) as [AaveReserveData[], unknown];
-    }, 1, 1000, `getReservesData-${name}`);
+    console.log(`[Earn] ${name}: About to call readContract...`);
+    
+    let result: [AaveReserveData[], unknown];
+    try {
+      result = await fetchWithRetry(async () => {
+        const res = await (client.readContract as any)({
+          address: checksummedUiProvider,
+          abi: UI_POOL_DATA_PROVIDER_ABI,
+          functionName: 'getReservesData',
+          args: [checksummedProvider],
+        });
+        console.log(`[Earn] ${name}: readContract returned successfully, type:`, typeof res, Array.isArray(res));
+        return res as [AaveReserveData[], unknown];
+      }, 1, 1000, `getReservesData-${name}`);
+    } catch (readError: any) {
+      console.error(`[Earn] ${name}: readContract FAILED:`, readError?.message?.substring(0, 500));
+      console.error(`[Earn] ${name}: readContract ERROR FULL:`, JSON.stringify(readError, Object.getOwnPropertyNames(readError || {})));
+      throw readError;
+    }
 
+    console.log(`[Earn] ${name}: Result received, extracting reserves...`);
     const [reserves] = result;
+    console.log(`[Earn] ${name}: Reserves extracted, count:`, reserves?.length, 'first reserve symbol:', reserves?.[0]?.symbol);
     
     if (!reserves || reserves.length === 0) {
       const error = {
@@ -478,10 +491,9 @@ async function fetchMarketsWithClient(
         // Calculate liquidity and debt using safe conversion
         const availableLiquidity = toTokenAmount(reserve.availableLiquidity, decimals);
         const totalScaledVariableDebt = toTokenAmount(reserve.totalScaledVariableDebt, decimals);
-        const totalStableDebt = toTokenAmount(reserve.totalPrincipalStableDebt, decimals);
         
-        // TVL = available + all borrowed
-        const tvl = availableLiquidity + totalScaledVariableDebt + totalStableDebt;
+        // TVL = available + variable debt (no stable debt in this ABI version)
+        const tvl = availableLiquidity + totalScaledVariableDebt;
 
         return {
           id: `aave-${chainId}-${reserve.underlyingAsset}`,
@@ -519,6 +531,10 @@ async function fetchMarketsWithClient(
     
     return markets;
   } catch (error: any) {
+    // VERBOSE ERROR LOGGING FOR DEBUGGING
+    console.error(`[AAVE ERROR RAW]`, chainId, name, error);
+    console.error(`[AAVE ERROR JSON]`, chainId, name, JSON.stringify(error, Object.getOwnPropertyNames(error || {})));
+    
     // Check if it's already our error type
     if (typeof error === 'object' && error !== null && 'type' in error) {
       throw error;
