@@ -1,7 +1,5 @@
 /**
- * Morpho Position Card Component
- * 
- * Displays a user's position in a Morpho market with manage actions.
+ * Enhanced Position Card with TokenIcon
  */
 
 import { memo, useState, useCallback } from 'react';
@@ -14,38 +12,22 @@ import {
   ChevronUp,
   Wallet,
   Shield,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
+import { TokenIcon } from '@/components/common/TokenIcon';
+import { ChainIcon } from '@/components/common/ChainIcon';
+import { RiskBar } from '@/components/common/RiskBar';
 import type { MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
-
-const GENERIC_TOKEN_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-
-interface TokenLogoProps {
-  src: string | undefined;
-  symbol: string;
-  size?: 'sm' | 'md';
-}
-
-const TokenLogo = memo(function TokenLogo({ src, symbol, size = 'md' }: TokenLogoProps) {
-  const [hasError, setHasError] = useState(false);
-  const sizeClasses = size === 'sm' ? 'w-6 h-6' : 'w-8 h-8';
-
-  return (
-    <img
-      src={hasError ? GENERIC_TOKEN_LOGO : (src || GENERIC_TOKEN_LOGO)}
-      alt={symbol}
-      className={cn(sizeClasses, 'rounded-full bg-muted')}
-      onError={() => setHasError(true)}
-    />
-  );
-});
+import type { ActionType } from './EnhancedActionModal';
 
 interface MorphoPositionCardProps {
   position: MorphoPositionWithHealth;
-  onManage?: (position: MorphoPositionWithHealth) => void;
+  onManage?: (position: MorphoPositionWithHealth, action?: ActionType) => void;
 }
 
 export const MorphoPositionCard = memo(function MorphoPositionCard({
@@ -101,17 +83,29 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative flex-shrink-0">
-              <TokenLogo 
-                src={market.loanAsset.logoUrl} 
-                symbol={market.loanAsset.symbol}
-              />
-              {chainConfig && (
-                <img
-                  src={chainConfig.logo}
-                  alt={chainConfig.label}
-                  className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-card bg-card"
+              <div className="flex -space-x-2">
+                <TokenIcon 
+                  address={market.loanAsset.address}
+                  symbol={market.loanAsset.symbol}
+                  logoUrl={market.loanAsset.logoUrl}
+                  size="md"
+                  className="ring-2 ring-card"
                 />
-              )}
+                {market.collateralAsset && (
+                  <TokenIcon 
+                    address={market.collateralAsset.address}
+                    symbol={market.collateralAsset.symbol}
+                    logoUrl={market.collateralAsset.logoUrl}
+                    size="md"
+                    className="ring-2 ring-card"
+                  />
+                )}
+              </div>
+              <ChainIcon 
+                chainId={position.chainId}
+                size="xs"
+                className="absolute -bottom-1 -right-1 ring-2 ring-card"
+              />
             </div>
             <div>
               <div className="font-medium flex items-center gap-1.5">
@@ -123,7 +117,7 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
                 )}
               </div>
               <div className="text-xs text-muted-foreground">
-                {chainConfig?.label || 'Unknown Chain'}
+                {chainConfig?.label || 'Unknown Chain'} • LLTV: {market.lltv.toFixed(0)}%
               </div>
             </div>
           </div>
@@ -140,7 +134,7 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
             {/* Health factor if borrowing */}
             {hasBorrow && (
               <div className="text-right">
-                <div className={cn("font-semibold flex items-center gap-1", getHealthColor(position.healthFactor))}>
+                <div className={cn("font-semibold flex items-center gap-1 justify-end", getHealthColor(position.healthFactor))}>
                   {!position.isHealthy && <AlertTriangle className="w-3.5 h-3.5" />}
                   {formatHealthFactor(position.healthFactor)}
                 </div>
@@ -157,7 +151,7 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
         </div>
 
         {/* Quick stats row */}
-        <div className="flex gap-3 mt-3">
+        <div className="flex flex-wrap gap-2 mt-3">
           {hasSupply && (
             <Badge variant="outline" className="bg-success/10 text-success border-success/30">
               <TrendingUp className="w-3 h-3 mr-1" />
@@ -185,9 +179,10 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          className="p-4 bg-muted/10"
+          className="p-4 bg-muted/10 space-y-4"
         >
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {hasSupply && (
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Supplied</div>
@@ -228,6 +223,65 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
             )}
           </div>
 
+          {/* Risk bar */}
+          {hasBorrow && (
+            <RiskBar 
+              healthFactor={position.healthFactor}
+              lltv={market.lltv}
+              showLabel
+            />
+          )}
+
+          {/* Quick actions */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {hasSupply && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'supply')}
+                  className="gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Supply More
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'withdraw')}
+                  className="gap-1"
+                >
+                  <Minus className="w-3 h-3" />
+                  Withdraw
+                </Button>
+              </>
+            )}
+            {hasBorrow && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'repay')}
+                  className="gap-1"
+                >
+                  <Shield className="w-3 h-3" />
+                  Repay
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'borrow')}
+                  className="gap-1"
+                  disabled={!position.isHealthy}
+                >
+                  <Wallet className="w-3 h-3" />
+                  Borrow More
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Main manage button */}
           <Button
             onClick={() => onManage?.(position)}
             className="w-full gap-2"
@@ -240,3 +294,5 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
     </motion.div>
   );
 });
+
+export default MorphoPositionCard;

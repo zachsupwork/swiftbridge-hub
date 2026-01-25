@@ -1,14 +1,17 @@
 /**
- * Earn Page - Morpho Blue lending interface
+ * Earn Page - Enhanced Morpho Blue lending interface
  * 
  * Features:
  * - Markets and Positions tabs
  * - In-app supply/borrow actions with platform fee
- * - User positions dashboard
+ * - User positions dashboard with health monitoring
+ * - Before/After simulation in action modals
+ * - How It Works educational section
  * - Debug report for troubleshooting
+ * - Auto-refresh every 30 seconds
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
   RefreshCw, 
@@ -22,6 +25,9 @@ import {
   Wallet,
   LayoutGrid,
   List,
+  ExternalLink,
+  Shield,
+  Info,
 } from 'lucide-react';
 import { useAccount, useChainId } from 'wagmi';
 
@@ -38,15 +44,20 @@ import {
 } from '@/components/ui/select';
 import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
 import { MorphoPositionCard } from '@/components/earn/MorphoPositionCard';
+import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
 import { MorphoActionModal } from '@/components/earn/MorphoActionModal';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
 import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
-import { getAllMorphoChains, isMorphoSupported } from '@/lib/morpho/config';
+import { getAllMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
+import { RiskBar } from '@/components/common/RiskBar';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 type ActionType = 'supply' | 'withdraw' | 'borrow' | 'repay';
+
+const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
@@ -54,6 +65,7 @@ export default function Earn() {
 
   const [copiedDebug, setCopiedDebug] = useState(false);
   const [activeTab, setActiveTab] = useState('markets');
+  const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
   // Modal state
   const [selectedMarket, setSelectedMarket] = useState<MorphoMarket | null>(null);
@@ -88,6 +100,14 @@ export default function Earn() {
   // Get all chains for dropdown (including disabled ones with tooltips)
   const allChains = getAllMorphoChains();
 
+  // Calculate aggregate health factor
+  const aggregateHealthFactor = positions.reduce((acc, pos) => {
+    if (pos.healthFactor !== null && pos.healthFactor < (acc || Infinity)) {
+      return pos.healthFactor;
+    }
+    return acc;
+  }, null as number | null);
+
   // Format last fetched time
   const lastFetchedDisplay = lastFetched 
     ? (() => {
@@ -98,6 +118,30 @@ export default function Earn() {
       })()
     : null;
 
+  // Auto-refresh effect
+  useEffect(() => {
+    const startAutoRefresh = () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+      }
+      autoRefreshRef.current = setInterval(() => {
+        console.log('[Earn] Auto-refreshing data...');
+        refreshMarkets();
+        if (isConnected) {
+          refreshPositions();
+        }
+      }, AUTO_REFRESH_INTERVAL);
+    };
+
+    startAutoRefresh();
+
+    return () => {
+      if (autoRefreshRef.current) {
+        clearInterval(autoRefreshRef.current);
+      }
+    };
+  }, [refreshMarkets, refreshPositions, isConnected]);
+
   // Copy debug report
   const handleCopyDebugReport = useCallback(() => {
     const report = JSON.stringify({
@@ -106,6 +150,13 @@ export default function Earn() {
         count: positions.length,
         totalSupplyUsd,
         totalBorrowUsd,
+        totalCollateralUsd,
+        lowestHealthFactor: aggregateHealthFactor,
+      },
+      wallet: {
+        connected: isConnected,
+        address: address?.slice(0, 10) + '...',
+        chainId: walletChainId,
       },
     }, null, 2);
     navigator.clipboard.writeText(report);
@@ -115,7 +166,7 @@ export default function Earn() {
       description: 'Debug information has been copied to clipboard.',
     });
     setTimeout(() => setCopiedDebug(false), 2000);
-  }, [debugReport, positions, totalSupplyUsd, totalBorrowUsd]);
+  }, [debugReport, positions, totalSupplyUsd, totalBorrowUsd, totalCollateralUsd, aggregateHealthFactor, isConnected, address, walletChainId]);
 
   // Handle supply action
   const handleSupply = useCallback((market: MorphoMarket) => {
@@ -128,6 +179,7 @@ export default function Earn() {
       return;
     }
     setSelectedMarket(market);
+    setSelectedPosition(null);
     setActionType('supply');
     setIsModalOpen(true);
   }, [isConnected]);
@@ -143,18 +195,21 @@ export default function Earn() {
       return;
     }
     setSelectedMarket(market);
+    setSelectedPosition(null);
     setActionType('borrow');
     setIsModalOpen(true);
   }, [isConnected]);
 
   // Handle manage position
-  const handleManagePosition = useCallback((position: MorphoPositionWithHealth) => {
+  const handleManagePosition = useCallback((position: MorphoPositionWithHealth, action?: ActionType) => {
     setSelectedPosition(position);
     if (position.market) {
       setSelectedMarket(position.market);
     }
-    // Default to withdraw if has supply, repay if has borrow
-    if (position.borrowAssetsUsd > 0) {
+    // Use provided action or default based on position
+    if (action) {
+      setActionType(action);
+    } else if (position.borrowAssetsUsd > 0) {
       setActionType('repay');
     } else {
       setActionType('withdraw');
@@ -180,6 +235,20 @@ export default function Earn() {
     return `$${value.toFixed(2)}`;
   };
 
+  // Net APY calculation (simplified)
+  const netApy = positions.length > 0 && totalSupplyUsd > 0
+    ? positions.reduce((acc, pos) => {
+        if (pos.market) {
+          const supplyContribution = (pos.supplyAssetsUsd / totalSupplyUsd) * pos.market.supplyApy;
+          const borrowCost = totalBorrowUsd > 0 
+            ? (pos.borrowAssetsUsd / totalBorrowUsd) * pos.market.borrowApy 
+            : 0;
+          return acc + supplyContribution - borrowCost;
+        }
+        return acc;
+      }, 0)
+    : null;
+
   return (
     <Layout>
       <div className="container mx-auto px-4 py-6 max-w-6xl">
@@ -201,7 +270,7 @@ export default function Earn() {
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Lending markets powered by Morpho Blue protocol
+                Supply & borrow with permissionless lending markets
               </p>
             </div>
             
@@ -215,6 +284,12 @@ export default function Earn() {
                   <SelectValue placeholder="Select chain" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4" />
+                      <span>All Chains</span>
+                    </div>
+                  </SelectItem>
                   {allChains.map(chain => (
                     <SelectItem 
                       key={chain.chainId} 
@@ -222,7 +297,7 @@ export default function Earn() {
                       disabled={!chain.enabled}
                     >
                       <div className="flex items-center gap-2">
-                        <img src={chain.logo} alt={chain.label} className="w-4 h-4 rounded-full" />
+                        <ChainIcon chainId={chain.chainId} size="sm" />
                         <span className={!chain.enabled ? 'text-muted-foreground' : ''}>
                           {chain.label}
                         </span>
@@ -267,30 +342,57 @@ export default function Earn() {
 
           {/* Disclaimer Banner */}
           <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-            <AlertTriangle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+            <Shield className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-xs text-foreground">
-                Non-custodial lending. All actions are executed on-chain via Morpho Blue contracts.
+                <strong>Non-custodial lending.</strong> All actions execute directly on Morpho Blue smart contracts.
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Smart contract risk. APY is variable and not guaranteed. A platform fee applies to supply/borrow.
+                APY is variable and based on market utilization. A platform fee of 0.10% applies to supply/borrow.
               </p>
             </div>
+            <a
+              href="https://docs.morpho.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              Docs
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
+
+          {/* How It Works */}
+          <HowItWorksDiagram />
 
           {/* User Dashboard (if connected and has positions) */}
           {isConnected && positions.length > 0 && (
-            <div className="glass rounded-xl p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="glass rounded-xl p-4"
+            >
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold flex items-center gap-2">
                   <Wallet className="w-4 h-4 text-primary" />
                   Your Dashboard
                 </h2>
-                <Badge variant="outline" className="text-xs">
-                  {positions.length} position{positions.length !== 1 ? 's' : ''}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {positions.length} position{positions.length !== 1 ? 's' : ''}
+                  </Badge>
+                  {netApy !== null && (
+                    <Badge variant="outline" className={cn(
+                      "text-xs",
+                      netApy >= 0 ? "bg-success/10 text-success border-success/30" : "bg-warning/10 text-warning border-warning/30"
+                    )}>
+                      Net: {netApy >= 0 ? '+' : ''}{netApy.toFixed(2)}% APY
+                    </Badge>
+                  )}
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
                   <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
@@ -303,8 +405,31 @@ export default function Earn() {
                   <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
                   <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
                 </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Health Factor</div>
+                  <div className={cn(
+                    "text-lg font-semibold",
+                    aggregateHealthFactor === null ? "text-success" :
+                    aggregateHealthFactor > 1.5 ? "text-success" :
+                    aggregateHealthFactor > 1 ? "text-warning" :
+                    "text-destructive"
+                  )}>
+                    {aggregateHealthFactor === null ? '∞' : aggregateHealthFactor.toFixed(2)}
+                  </div>
+                </div>
               </div>
-            </div>
+
+              {/* Risk bar for aggregate position */}
+              {totalBorrowUsd > 0 && (
+                <div className="mt-4 pt-4 border-t border-border/30">
+                  <RiskBar 
+                    healthFactor={aggregateHealthFactor} 
+                    showLabel 
+                    size="md"
+                  />
+                </div>
+              )}
+            </motion.div>
           )}
 
           {/* Tabs */}
@@ -313,6 +438,11 @@ export default function Earn() {
               <TabsTrigger value="markets" className="gap-2">
                 <LayoutGrid className="w-4 h-4" />
                 Markets
+                {markets.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                    {markets.length}
+                  </Badge>
+                )}
               </TabsTrigger>
               <TabsTrigger value="positions" className="gap-2">
                 <List className="w-4 h-4" />
@@ -339,16 +469,20 @@ export default function Earn() {
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   {isConnected && (
                     <span className="flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 rounded-full bg-success" />
-                      Wallet connected
+                      <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                      Connected
                     </span>
                   )}
                   {lastFetchedDisplay && (
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
-                      Updated {lastFetchedDisplay}
+                      {lastFetchedDisplay}
                     </span>
                   )}
+                  <span className="flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3" />
+                    Auto-refresh 30s
+                  </span>
                 </div>
               </div>
 
@@ -370,13 +504,13 @@ export default function Earn() {
                   <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">Connect Your Wallet</h3>
                   <p className="text-muted-foreground mb-4">
-                    Connect your wallet to view your Morpho positions
+                    Connect your wallet to view your Morpho positions across all chains
                   </p>
                 </div>
               ) : positionsLoading ? (
                 <div className="space-y-3">
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="glass rounded-xl p-4 animate-pulse">
+                    <div key={`pos-skeleton-${i}`} className="glass rounded-xl p-4 animate-pulse">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-muted" />
                         <div className="flex-1 space-y-2">
@@ -415,14 +549,23 @@ export default function Earn() {
           {/* Footer */}
           <div className="text-center text-xs text-muted-foreground pt-4 border-t border-border/30">
             <p>Powered by Morpho Blue protocol. Data via official Morpho API.</p>
-            <p className="mt-1">
+            <p className="mt-1 flex items-center justify-center gap-3">
               <a 
                 href="https://docs.morpho.org" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                Learn more about Morpho →
+                Documentation
+              </a>
+              <span>•</span>
+              <a 
+                href="https://app.morpho.org" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                Official App
               </a>
             </p>
           </div>
