@@ -15,7 +15,7 @@ export interface SwapRecord {
   integratorFeeUSD: string;
 }
 
-const STORAGE_KEY = 'swiftswap_history';
+const STORAGE_KEY = 'cryptodefibridge_history';
 
 export function getSwapHistory(): SwapRecord[] {
   try {

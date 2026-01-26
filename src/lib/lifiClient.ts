@@ -1,6 +1,6 @@
 // LI.FI API Client wrapper
 const LIFI_BASE_URL = import.meta.env.VITE_LIFI_BASE_URL || 'https://li.quest';
-const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'swiftswap';
+const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'cryptodefibridge';
 const FEE = parseFloat(import.meta.env.VITE_LIFI_FEE || '0.001');
 
 export interface Chain {

@@ -20,7 +20,7 @@ export default function Analytics() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `swiftswap-history-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `crypto-defi-bridge-history-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

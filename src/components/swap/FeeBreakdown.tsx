@@ -93,7 +93,7 @@ export function FeeBreakdown({ route }: FeeBreakdownProps) {
         <div className="flex items-center justify-between py-2 border-t border-border bg-primary/5 -mx-4 px-4 rounded-lg">
           <div className="flex items-center gap-2 text-primary">
             <Percent className="w-4 h-4" />
-            <span className="font-medium">SwiftSwap Fee ({formatFeePercentage(integratorFee)})</span>
+            <span className="font-medium">Crypto DeFi Bridge Fee ({formatFeePercentage(integratorFee)})</span>
           </div>
           <span className="font-bold text-primary">${integratorFeeUSD.toFixed(4)}</span>
         </div>

@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 // Get integrator info from environment
-const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'swiftswap';
+const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'cryptodefibridge';
 
 interface IntegratorDebugPanelProps {
   route: Route | null;
@@ -28,7 +28,7 @@ export function IntegratorFeeTooltip() {
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs">
         <p className="text-sm">
-          Integrator fee ({formatFeePercentage(fee)}) is applied on every LI.FI route.
+          Crypto DeFi Bridge fee ({formatFeePercentage(fee)}) is applied on every LI.FI route.
           This helps support the platform.
         </p>
       </TooltipContent>
