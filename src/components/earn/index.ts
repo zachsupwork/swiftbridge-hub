@@ -4,10 +4,13 @@
  * Morpho Blue lending components
  */
 
-// Morpho components
+// Morpho components - New detailed modals
 export { MorphoMarketsTable } from './MorphoMarketsTable';
 export { MorphoPositionCard } from './MorphoPositionCard';
 export { MorphoActionModal } from './MorphoActionModal';
+export { MorphoSupplyModal } from './MorphoSupplyModal';
+export { MorphoBorrowModal } from './MorphoBorrowModal';
+export { MarketDetailsDrawer } from './MarketDetailsDrawer';
 export { HowItWorksDiagram } from './HowItWorksDiagram';
 
 // Legacy Aave components (kept for reference, not used)

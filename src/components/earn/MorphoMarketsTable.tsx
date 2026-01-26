@@ -31,6 +31,7 @@ interface MorphoMarketsTableProps {
   onRefresh: () => void;
   onSupply?: (market: MorphoMarket) => void;
   onBorrow?: (market: MorphoMarket) => void;
+  onMarketDetails?: (market: MorphoMarket) => void;
 }
 
 /**
@@ -53,6 +54,7 @@ export function MorphoMarketsTable({
   onRefresh,
   onSupply,
   onBorrow,
+  onMarketDetails,
 }: MorphoMarketsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('supplyApy');
@@ -363,6 +365,16 @@ export function MorphoMarketsTable({
                   {/* Actions */}
                   <td className="p-4 text-right">
                     <div className="flex items-center gap-2 justify-end">
+                      {/* Info button */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onMarketDetails?.(market)}
+                        className="h-8 w-8 p-0"
+                        title="Market details"
+                      >
+                        <Info className="w-4 h-4" />
+                      </Button>
                       <Button
                         size="sm"
                         onClick={() => handleSupply(market)}

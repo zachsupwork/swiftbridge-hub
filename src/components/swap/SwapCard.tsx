@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet } from 'lucide-react';
-import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
-import { parseUnits, formatUnits } from 'viem';
+import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
+import { useAccount, useSendTransaction, useSwitchChain, useBalance, useReadContract } from 'wagmi';
+import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
 import { ChainSelector } from './ChainSelector';
 import { FeeBreakdown } from './FeeBreakdown';
@@ -11,6 +11,7 @@ import { SimulationSummary } from './SimulationSummary';
 import { IntegratorFeeTooltip, IntegratorDebugPanel } from './IntegratorDebug';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { Badge } from '@/components/ui/badge';
 import { Token, Route, getRoutes, getIntegratorFee, getStepTransaction } from '@/lib/lifiClient';
 import { saveSwap, SwapRecord } from '@/lib/swapStorage';
 import { cn } from '@/lib/utils';
@@ -23,8 +24,17 @@ import {
 } from '@/lib/transactionHelper';
 import { isChainSupported, getChainName, getSupportedChainIds } from '@/lib/wagmiConfig';
 import { useMultiWallet } from '@/lib/wallets';
+import { 
+  validatePreflight, 
+  getQuoteTimeRemaining, 
+  isQuoteExpired,
+  getErrorSuggestions,
+  type PreflightResult,
+} from '@/lib/swapPreflight';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
+
+const QUOTE_MAX_AGE = 45; // seconds
 
 export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
@@ -47,6 +57,42 @@ export function SwapCard() {
   const [swapId, setSwapId] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [txSimulation, setTxSimulation] = useState<TransactionSimulation | null>(null);
+  
+  // Quote tracking
+  const [quoteTimestamp, setQuoteTimestamp] = useState<number>(0);
+  const [quoteTimeRemaining, setQuoteTimeRemaining] = useState<string>('');
+  const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+
+  // Get native balance for gas check
+  const { data: nativeBalanceData } = useBalance({
+    address,
+    chainId: fromChainId,
+    query: { enabled: !!address && isConnected },
+  });
+
+  // Get token balance
+  const isNativeToken = fromToken?.address?.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+                        fromToken?.address?.toLowerCase() === '0x0000000000000000000000000000000000000000';
+  
+  const { data: tokenBalance } = useReadContract({
+    address: fromToken?.address as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    chainId: fromChainId,
+    query: { enabled: !!address && !!fromToken && !isNativeToken },
+  });
+
+  // Get current allowance (for ERC-20)
+  const spenderAddress = route?.steps?.[0]?.estimate?.approvalAddress as `0x${string}` | undefined;
+  const { data: currentAllowance } = useReadContract({
+    address: fromToken?.address as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: address && spenderAddress ? [address, spenderAddress] : undefined,
+    chainId: fromChainId,
+    query: { enabled: !!address && !!fromToken && !!spenderAddress && !isNativeToken },
+  });
 
   // Clear tokens when chain changes
   useEffect(() => {
@@ -63,7 +109,54 @@ export function SwapCard() {
     setState('idle');
     setError(null);
     setTxSimulation(null);
+    setQuoteTimestamp(0);
+    setPreflightResult(null);
   }, [fromChainId, toChainId, fromToken, toToken, fromAmount]);
+
+  // Quote countdown timer
+  useEffect(() => {
+    if (!quoteTimestamp || state !== 'quoted') {
+      setQuoteTimeRemaining('');
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = getQuoteTimeRemaining(quoteTimestamp, QUOTE_MAX_AGE);
+      setQuoteTimeRemaining(remaining);
+      
+      // Auto-clear expired quotes
+      if (isQuoteExpired(quoteTimestamp, QUOTE_MAX_AGE)) {
+        setError('Quote expired. Please get a new quote.');
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [quoteTimestamp, state]);
+
+  // Run preflight validation when route changes
+  useEffect(() => {
+    if (!route || !address || !fromToken) {
+      setPreflightResult(null);
+      return;
+    }
+
+    const fromTokenBalance = isNativeToken 
+      ? (nativeBalanceData?.value || 0n)
+      : (tokenBalance || 0n);
+
+    const result = validatePreflight({
+      route,
+      walletChainId: walletChainId || 0,
+      walletAddress: address,
+      fromTokenBalance,
+      nativeBalance: nativeBalanceData?.value || 0n,
+      currentAllowance: currentAllowance || 0n,
+      quoteTimestamp,
+      maxQuoteAgeSeconds: QUOTE_MAX_AGE,
+    });
+
+    setPreflightResult(result);
+  }, [route, address, fromToken, walletChainId, nativeBalanceData, tokenBalance, currentAllowance, quoteTimestamp, isNativeToken]);
 
   const handleSwapChains = useCallback(() => {
     const tempChain = fromChainId;
@@ -79,6 +172,7 @@ export function SwapCard() {
   const isFromChainSupported = isChainSupported(fromChainId);
   const isToChainSupported = isChainSupported(toChainId);
   const isRouteChainSupported = route ? isChainSupported(route.fromChainId) : true;
+  const isQuoteValid = route && quoteTimestamp && !isQuoteExpired(quoteTimestamp, QUOTE_MAX_AGE);
 
   // Helper text based on current state
   const helperText = useMemo(() => {
@@ -91,11 +185,14 @@ export function SwapCard() {
     if (state === 'quoting') {
       return 'Finding best route...';
     }
+    if (route && preflightResult?.errors.length) {
+      return preflightResult.errors[0];
+    }
     if (route) {
       return 'Review quote, then click Swap to execute.';
     }
     return 'Click Get Quote to estimate output, fees, and route.';
-  }, [isConnected, hasValidInputs, state, route]);
+  }, [isConnected, hasValidInputs, state, route, preflightResult]);
 
   // Button label based on state
   const buttonLabel = useMemo(() => {
@@ -103,9 +200,10 @@ export function SwapCard() {
     if (state === 'quoting') return 'Finding Route...';
     if (state === 'approving') return 'Approving...';
     if (state === 'swapping') return 'Confirm in Wallet...';
+    if (route && !isQuoteValid) return 'Quote Expired - Refresh';
     if (route) return 'Swap';
     return 'Get Quote';
-  }, [isConnected, state, route]);
+  }, [isConnected, state, route, isQuoteValid]);
 
   const handleQuote = async () => {
     if (!fromToken || !toToken || !fromAmount || parseFloat(fromAmount) <= 0) {
@@ -115,6 +213,7 @@ export function SwapCard() {
 
     setState('quoting');
     setError(null);
+    setPreflightResult(null);
 
     try {
       const fromAmountWei = parseUnits(fromAmount, fromToken.decimals).toString();
@@ -130,10 +229,11 @@ export function SwapCard() {
       });
 
       if (response.routes.length === 0) {
-        throw new Error('No route found');
+        throw new Error('No route found. Try a different token pair, smaller amount, or higher slippage.');
       }
 
       setRoute(response.routes[0]);
+      setQuoteTimestamp(Date.now());
       setState('quoted');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to get quote';
@@ -452,13 +552,29 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Helper text with fee tooltip */}
+        {/* Helper text with fee tooltip and quote countdown */}
         <div className="flex items-center justify-between px-1">
           <div className="flex items-start gap-2 text-xs text-muted-foreground/80">
             <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
             <span>{helperText}</span>
           </div>
-          <IntegratorFeeTooltip />
+          <div className="flex items-center gap-2">
+            {route && quoteTimeRemaining && (
+              <Badge 
+                variant="outline" 
+                className={cn(
+                  "text-xs gap-1",
+                  quoteTimeRemaining === 'Expired' 
+                    ? "bg-destructive/10 text-destructive border-destructive/30"
+                    : "bg-success/10 text-success border-success/30"
+                )}
+              >
+                <Clock className="w-3 h-3" />
+                {quoteTimeRemaining}
+              </Badge>
+            )}
+            <IntegratorFeeTooltip />
+          </div>
         </div>
 
         {/* Error message */}
