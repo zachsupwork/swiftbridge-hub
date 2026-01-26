@@ -12,7 +12,7 @@ export function SecurityBanner() {
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <Shield className="w-3 h-3 text-success" />
           <span>
-            <span className="text-success font-medium">Non-custodial:</span> You sign transactions with your own wallet. SwiftSwap never holds your funds.
+            <span className="text-success font-medium">Non-custodial:</span> You sign transactions with your own wallet. Crypto DeFi Bridge never holds your funds.
           </span>
           <a
             href="https://docs.li.fi"

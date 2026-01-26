@@ -88,137 +88,152 @@ export function MultiWalletButton() {
       </button>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="sm:max-w-[420px] max-h-[90vh] p-0 gap-0 overflow-hidden">
-          <DialogHeader className="px-5 pt-5 pb-3 border-b border-border">
-            <DialogTitle className="text-lg font-semibold">Connect Wallets</DialogTitle>
-          </DialogHeader>
+        <DialogContent 
+          className="fixed left-[50%] top-[50%] z-50 w-[95vw] max-w-[420px] translate-x-[-50%] translate-y-[-50%] gap-0 rounded-2xl border border-border bg-background p-0 shadow-2xl sm:w-full"
+          style={{ maxHeight: 'min(85vh, 680px)' }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="flex flex-col h-full overflow-hidden rounded-2xl"
+          >
+            <DialogHeader className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
+              <DialogTitle className="text-lg font-semibold">Connect Wallets</DialogTitle>
+            </DialogHeader>
 
-          <ScrollArea className="max-h-[calc(90vh-80px)]">
-            <div className="p-5 space-y-4">
-              {/* Connected wallets summary */}
-              {wallets.anyWalletConnected && (
-                <div className="flex flex-wrap gap-1.5">
-                  <WalletStatusPill type="evm" address={wallets.evm.address} connected={wallets.evm.connected} />
-                  <WalletStatusPill type="solana" address={wallets.solana.address} connected={wallets.solana.connected} />
-                  <WalletStatusPill type="bitcoin" address={wallets.bitcoin.address} connected={wallets.bitcoin.connected} />
-                  <WalletStatusPill type="sui" address={wallets.sui.address} connected={wallets.sui.connected} />
-                </div>
-              )}
+            <ScrollArea className="flex-1 overflow-y-auto" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+              <div className="p-5 space-y-4 pb-safe">
+                {/* Connected wallets summary */}
+                {wallets.anyWalletConnected && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-wrap gap-1.5"
+                  >
+                    <WalletStatusPill type="evm" address={wallets.evm.address} connected={wallets.evm.connected} />
+                    <WalletStatusPill type="solana" address={wallets.solana.address} connected={wallets.solana.connected} />
+                    <WalletStatusPill type="bitcoin" address={wallets.bitcoin.address} connected={wallets.bitcoin.connected} />
+                    <WalletStatusPill type="sui" address={wallets.sui.address} connected={wallets.sui.connected} />
+                  </motion.div>
+                )}
 
-              {/* Wallet sections */}
-              <div className="space-y-4">
-                {/* EVM Wallet (RainbowKit) */}
-                <WalletSection
-                  title="EVM Chains"
-                  titleColor={WALLET_CONFIG.evm.color}
-                  connected={wallets.evm.connected}
-                >
-                  <ConnectButton.Custom>
-                    {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
-                      const connected = mounted && account && chain;
-                      return (
-                        <div className="space-y-2">
-                          {!connected ? (
-                            <WalletConnectButton onClick={openConnectModal}>
-                              Connect EVM Wallet
-                            </WalletConnectButton>
-                          ) : (
-                            <div className="flex gap-2">
-                              <WalletConnectButton onClick={openChainModal} variant="secondary" className="flex-1">
-                                {chain.name}
+                {/* Wallet sections */}
+                <div className="space-y-4">
+                  {/* EVM Wallet (RainbowKit) */}
+                  <WalletSection
+                    title="EVM Chains"
+                    titleColor={WALLET_CONFIG.evm.color}
+                    connected={wallets.evm.connected}
+                  >
+                    <ConnectButton.Custom>
+                      {({ account, chain, openAccountModal, openChainModal, openConnectModal, mounted }) => {
+                        const connected = mounted && account && chain;
+                        return (
+                          <div className="space-y-2">
+                            {!connected ? (
+                              <WalletConnectButton onClick={openConnectModal}>
+                                Connect EVM Wallet
                               </WalletConnectButton>
-                              <Button 
-                                onClick={openAccountModal} 
-                                variant="ghost" 
-                                className="h-12 px-4 text-sm"
-                              >
-                                Disconnect
-                              </Button>
-                            </div>
-                          )}
+                            ) : (
+                              <div className="flex gap-2">
+                                <WalletConnectButton onClick={openChainModal} variant="secondary" className="flex-1">
+                                  {chain.name}
+                                </WalletConnectButton>
+                                <Button 
+                                  onClick={openAccountModal} 
+                                  variant="ghost" 
+                                  className="h-12 px-4 text-sm"
+                                >
+                                  Disconnect
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }}
+                    </ConnectButton.Custom>
+                  </WalletSection>
+
+                  {/* Solana Wallet */}
+                  <WalletSection
+                    title="Solana"
+                    titleColor={WALLET_CONFIG.solana.color}
+                    connected={wallets.solana.connected}
+                  >
+                    <div className="wallet-button-wrapper">
+                      <WalletMultiButton />
+                    </div>
+                  </WalletSection>
+
+                  {/* Bitcoin Wallet */}
+                  <WalletSection
+                    title="Bitcoin"
+                    titleColor={WALLET_CONFIG.bitcoin.color}
+                    connected={wallets.bitcoin.connected}
+                  >
+                    {!btcAvailable ? (
+                      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/50 text-sm text-muted-foreground">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span className="leading-relaxed">
+                          Install UniSat, Xverse, or Leather wallet extension to use Bitcoin routes.
+                        </span>
+                      </div>
+                    ) : wallets.bitcoin.connected ? (
+                      <div className="flex gap-2">
+                        <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
+                          {btcProvider}: {wallets.bitcoin.shortAddress}
                         </div>
-                      );
-                    }}
-                  </ConnectButton.Custom>
-                </WalletSection>
-
-                {/* Solana Wallet */}
-                <WalletSection
-                  title="Solana"
-                  titleColor={WALLET_CONFIG.solana.color}
-                  connected={wallets.solana.connected}
-                >
-                  <div className="wallet-button-wrapper">
-                    <WalletMultiButton />
-                  </div>
-                </WalletSection>
-
-                {/* Bitcoin Wallet */}
-                <WalletSection
-                  title="Bitcoin"
-                  titleColor={WALLET_CONFIG.bitcoin.color}
-                  connected={wallets.bitcoin.connected}
-                >
-                  {!btcAvailable ? (
-                    <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/50 text-sm text-muted-foreground">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                      <span className="leading-relaxed">
-                        Install UniSat, Xverse, or Leather wallet extension to use Bitcoin routes.
-                      </span>
-                    </div>
-                  ) : wallets.bitcoin.connected ? (
-                    <div className="flex gap-2">
-                      <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
-                        {btcProvider}: {wallets.bitcoin.shortAddress}
+                        <Button 
+                          onClick={disconnectBitcoin} 
+                          variant="ghost" 
+                          className="h-12 px-4 text-sm"
+                        >
+                          Disconnect
+                        </Button>
                       </div>
-                      <Button 
-                        onClick={disconnectBitcoin} 
-                        variant="ghost" 
-                        className="h-12 px-4 text-sm"
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
-                  ) : (
-                    <WalletConnectButton onClick={handleBitcoinConnect}>
-                      Connect {btcProvider || 'Bitcoin'} Wallet
-                    </WalletConnectButton>
-                  )}
-                </WalletSection>
+                    ) : (
+                      <WalletConnectButton onClick={handleBitcoinConnect}>
+                        Connect {btcProvider || 'Bitcoin'} Wallet
+                      </WalletConnectButton>
+                    )}
+                  </WalletSection>
 
-                {/* Sui Wallet */}
-                <WalletSection
-                  title="Sui"
-                  titleColor={WALLET_CONFIG.sui.color}
-                  connected={wallets.sui.connected}
-                >
-                  {wallets.sui.connected ? (
-                    <div className="flex gap-2">
-                      <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
-                        {wallets.sui.shortAddress}
+                  {/* Sui Wallet */}
+                  <WalletSection
+                    title="Sui"
+                    titleColor={WALLET_CONFIG.sui.color}
+                    connected={wallets.sui.connected}
+                  >
+                    {wallets.sui.connected ? (
+                      <div className="flex gap-2">
+                        <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/50 text-sm font-medium truncate">
+                          {wallets.sui.shortAddress}
+                        </div>
+                        <Button 
+                          onClick={() => disconnectSui()} 
+                          variant="ghost" 
+                          className="h-12 px-4 text-sm"
+                        >
+                          Disconnect
+                        </Button>
                       </div>
-                      <Button 
-                        onClick={() => disconnectSui()} 
-                        variant="ghost" 
-                        className="h-12 px-4 text-sm"
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
-                  ) : (
-                    <WalletConnectButton onClick={() => connectSui({ wallet: null as any })}>
-                      Connect Sui Wallet
-                    </WalletConnectButton>
-                  )}
-                </WalletSection>
+                    ) : (
+                      <WalletConnectButton onClick={() => connectSui({ wallet: null as any })}>
+                        Connect Sui Wallet
+                      </WalletConnectButton>
+                    )}
+                  </WalletSection>
+                </div>
+
+                {/* Footer helper text */}
+                <p className="text-xs text-muted-foreground/60 text-center pt-2">
+                  Connect wallets for the chains you want to use
+                </p>
               </div>
-
-              {/* Footer helper text */}
-              <p className="text-xs text-muted-foreground/60 text-center pt-2">
-                Connect wallets for the chains you want to use
-              </p>
-            </div>
-          </ScrollArea>
+            </ScrollArea>
+          </motion.div>
         </DialogContent>
       </Dialog>
     </>

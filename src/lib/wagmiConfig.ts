@@ -65,8 +65,8 @@ export function getSupportedChainIds(): number[] {
 }
 
 export const config = getDefaultConfig({
-  appName: 'SwiftSwap Aggregator',
-  projectId: 'swiftswap-demo', // For demo purposes - replace with real WalletConnect project ID
+  appName: 'Crypto DeFi Bridge',
+  projectId: 'crypto-defi-bridge', // For demo purposes - replace with real WalletConnect project ID
   chains: SUPPORTED_CHAINS,
   transports: {
     [mainnet.id]: http(MAINNET_RPC),
