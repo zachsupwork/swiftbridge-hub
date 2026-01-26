@@ -45,7 +45,9 @@ import {
 import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
 import { MorphoPositionCard } from '@/components/earn/MorphoPositionCard';
 import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
-import { MorphoActionModal } from '@/components/earn/MorphoActionModal';
+import { MorphoSupplyModal } from '@/components/earn/MorphoSupplyModal';
+import { MorphoBorrowModal } from '@/components/earn/MorphoBorrowModal';
+import { MarketDetailsDrawer } from '@/components/earn/MarketDetailsDrawer';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
 import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
 import { getAllMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
@@ -67,11 +69,12 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState('markets');
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Modal state
+  // Modal state - separate for supply, borrow, and details
   const [selectedMarket, setSelectedMarket] = useState<MorphoMarket | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<MorphoPositionWithHealth | null>(null);
-  const [actionType, setActionType] = useState<ActionType>('supply');
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
+  const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+  const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
 
   // Fetch Morpho markets
   const { 
@@ -180,8 +183,7 @@ export default function Earn() {
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
-    setActionType('supply');
-    setIsModalOpen(true);
+    setIsSupplyModalOpen(true);
   }, [isConnected]);
 
   // Handle borrow action
@@ -196,30 +198,38 @@ export default function Earn() {
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
-    setActionType('borrow');
-    setIsModalOpen(true);
+    setIsBorrowModalOpen(true);
   }, [isConnected]);
 
-  // Handle manage position
+  // Handle market details
+  const handleMarketDetails = useCallback((market: MorphoMarket) => {
+    setSelectedMarket(market);
+    setIsDetailsDrawerOpen(true);
+  }, []);
+
+  // Handle manage position (from positions tab)
   const handleManagePosition = useCallback((position: MorphoPositionWithHealth, action?: ActionType) => {
     setSelectedPosition(position);
     if (position.market) {
       setSelectedMarket(position.market);
     }
     // Use provided action or default based on position
-    if (action) {
-      setActionType(action);
+    if (action === 'supply' || action === 'withdraw') {
+      setIsSupplyModalOpen(true);
+    } else if (action === 'borrow' || action === 'repay') {
+      setIsBorrowModalOpen(true);
     } else if (position.borrowAssetsUsd > 0) {
-      setActionType('repay');
+      setIsBorrowModalOpen(true);
     } else {
-      setActionType('withdraw');
+      setIsSupplyModalOpen(true);
     }
-    setIsModalOpen(true);
   }, []);
 
-  // Close modal and refresh
+  // Close modals and refresh
   const handleCloseModal = useCallback(() => {
-    setIsModalOpen(false);
+    setIsSupplyModalOpen(false);
+    setIsBorrowModalOpen(false);
+    setIsDetailsDrawerOpen(false);
     setSelectedMarket(null);
     setSelectedPosition(null);
     // Refresh data after action
@@ -492,6 +502,7 @@ export default function Earn() {
                 onRefresh={refreshMarkets}
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
+                onMarketDetails={handleMarketDetails}
               />
             </TabsContent>
 
@@ -570,15 +581,44 @@ export default function Earn() {
         </motion.div>
       </div>
 
-      {/* Action Modal */}
-      <MorphoActionModal
-        isOpen={isModalOpen}
+      {/* Supply Modal */}
+      <MorphoSupplyModal
+        isOpen={isSupplyModalOpen}
         onClose={handleCloseModal}
         market={selectedMarket}
-        actionType={actionType}
         existingSupply={selectedPosition?.supplyAssets}
-        existingBorrow={selectedPosition?.borrowAssets}
+        onSuccess={handleCloseModal}
+      />
+
+      {/* Borrow Modal */}
+      <MorphoBorrowModal
+        isOpen={isBorrowModalOpen}
+        onClose={handleCloseModal}
+        market={selectedMarket}
         existingCollateral={selectedPosition?.collateral}
+        existingCollateralUsd={selectedPosition?.collateralUsd}
+        existingBorrow={selectedPosition?.borrowAssets}
+        existingBorrowUsd={selectedPosition?.borrowAssetsUsd}
+        onSupplyCollateral={() => {
+          setIsBorrowModalOpen(false);
+          setIsSupplyModalOpen(true);
+        }}
+        onSuccess={handleCloseModal}
+      />
+
+      {/* Market Details Drawer */}
+      <MarketDetailsDrawer
+        isOpen={isDetailsDrawerOpen}
+        onClose={() => setIsDetailsDrawerOpen(false)}
+        market={selectedMarket}
+        onSupply={() => {
+          setIsDetailsDrawerOpen(false);
+          handleSupply(selectedMarket!);
+        }}
+        onBorrow={() => {
+          setIsDetailsDrawerOpen(false);
+          handleBorrow(selectedMarket!);
+        }}
       />
     </Layout>
   );
