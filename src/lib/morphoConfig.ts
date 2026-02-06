@@ -17,18 +17,18 @@ export const MORPHO_API_URL = 'https://api.morpho.org/graphql';
 
 export const MORPHO_CHAINS: MorphoChainConfig[] = [
   {
-    chainId: 8453,
-    label: 'Base',
-    logo: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
-    enabled: true,
-    morphoAppUrl: 'https://app.morpho.org/?network=base',
-  },
-  {
     chainId: 1,
     label: 'Ethereum',
     logo: 'https://icons.llamao.fi/icons/chains/rsz_ethereum.jpg',
-    enabled: false,
+    enabled: true,
     morphoAppUrl: 'https://app.morpho.org/?network=mainnet',
+  },
+  {
+    chainId: 8453,
+    label: 'Base',
+    logo: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
+    enabled: false,
+    morphoAppUrl: 'https://app.morpho.org/?network=base',
   },
 ];
 

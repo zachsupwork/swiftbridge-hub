@@ -26,14 +26,14 @@ export const MORPHO_CHAINS: MorphoChainConfig[] = [
     chainId: 8453,
     label: 'Base',
     logo: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
-    enabled: true,
+    enabled: false,
     morphoBlue: MORPHO_BLUE_ADDRESS,
   },
   {
     chainId: 42161,
     label: 'Arbitrum',
     logo: 'https://icons.llamao.fi/icons/chains/rsz_arbitrum.jpg',
-    enabled: true,
+    enabled: false,
     morphoBlue: MORPHO_BLUE_ADDRESS,
   },
   {

@@ -50,7 +50,7 @@ import { MorphoBorrowModal } from '@/components/earn/MorphoBorrowModal';
 import { MarketDetailsDrawer } from '@/components/earn/MarketDetailsDrawer';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
 import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
-import { getAllMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
+import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import type { MorphoMarket } from '@/lib/morpho/types';
@@ -100,8 +100,8 @@ export default function Earn() {
     totalCollateralUsd,
   } = useMorphoPositions();
 
-  // Get all chains for dropdown (including disabled ones with tooltips)
-  const allChains = getAllMorphoChains();
+  // Get only enabled chains
+  const enabledChains = availableChains;
 
   // Calculate aggregate health factor
   const aggregateHealthFactor = positions.reduce((acc, pos) => {
@@ -285,40 +285,41 @@ export default function Earn() {
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Chain selector */}
-              <Select
-                value={selectedChainId?.toString() || 'all'}
-                onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
-              >
-                <SelectTrigger className="w-[160px] h-10">
-                  <SelectValue placeholder="Select chain" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <div className="flex items-center gap-2">
-                      <LayoutGrid className="w-4 h-4" />
-                      <span>All Chains</span>
-                    </div>
-                  </SelectItem>
-                  {allChains.map(chain => (
-                    <SelectItem 
-                      key={chain.chainId} 
-                      value={chain.chainId.toString()}
-                      disabled={!chain.enabled}
-                    >
+              {/* Chain badge (single chain) or selector */}
+              {enabledChains.length === 1 ? (
+                <Badge variant="outline" className="h-10 px-3 gap-2 text-sm font-medium">
+                  <ChainIcon chainId={enabledChains[0].chainId} size="sm" />
+                  {enabledChains[0].label}
+                </Badge>
+              ) : (
+                <Select
+                  value={selectedChainId?.toString() || 'all'}
+                  onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
+                >
+                  <SelectTrigger className="w-[160px] h-10">
+                    <SelectValue placeholder="Select chain" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
                       <div className="flex items-center gap-2">
-                        <ChainIcon chainId={chain.chainId} size="sm" />
-                        <span className={!chain.enabled ? 'text-muted-foreground' : ''}>
-                          {chain.label}
-                        </span>
-                        {!chain.enabled && (
-                          <span className="text-xs text-muted-foreground">(Soon)</span>
-                        )}
+                        <LayoutGrid className="w-4 h-4" />
+                        <span>All Chains</span>
                       </div>
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    {enabledChains.map(chain => (
+                      <SelectItem 
+                        key={chain.chainId} 
+                        value={chain.chainId.toString()}
+                      >
+                        <div className="flex items-center gap-2">
+                          <ChainIcon chainId={chain.chainId} size="sm" />
+                          <span>{chain.label}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               <Button
                 variant="outline"
