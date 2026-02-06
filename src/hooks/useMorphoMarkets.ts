@@ -10,20 +10,62 @@ import { fetchMorphoMarkets } from '@/lib/morpho/apiClient';
 import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket, MorphoChainConfig } from '@/lib/morpho/types';
 
-// Trusted asset symbols – markets with BOTH assets in this list sort first
+// Trusted asset symbols – markets with BOTH assets in this list are "verified"
 const TRUSTED_SYMBOLS = new Set([
   'ETH', 'WETH', 'wstETH', 'stETH', 'rETH', 'cbETH',
   'USDC', 'USDT', 'DAI', 'FRAX', 'LUSD', 'PYUSD',
   'WBTC', 'tBTC',
   'AAVE', 'LINK', 'CRV',
-  // common wrapped/derivative variants
   'sDAI', 'GHO', 'USDe', 'sUSDe', 'weETH', 'ezETH', 'osETH', 'COMP', 'MKR', 'UNI',
 ]);
+
+// Popular / blue-chip assets get a small TVL boost in sorting
+const POPULAR_SYMBOLS = new Set(['ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'WBTC']);
+const POPULARITY_BOOST_USD = 50_000_000; // $50M virtual boost for sorting only
 
 export function isMarketTrusted(market: MorphoMarket): boolean {
   const loanOk = TRUSTED_SYMBOLS.has(market.loanAsset.symbol);
   const collateralOk = !market.collateralAsset || TRUSTED_SYMBOLS.has(market.collateralAsset.symbol);
   return loanOk && collateralOk;
+}
+
+/** Clamp APY to a sane max (300%) to prevent API glitches dominating sort */
+function clampApy(apy: number): number {
+  if (!Number.isFinite(apy) || apy < 0) return 0;
+  const normalized = apy > 0 && apy <= 1.5 ? apy * 100 : apy;
+  return Math.min(normalized, 300);
+}
+
+/** Get effective TVL for sorting (with popularity boost for verified markets) */
+function getSortTvl(market: MorphoMarket, trusted: boolean): number {
+  const tvl = Number.isFinite(market.totalSupplyUsd) ? market.totalSupplyUsd : 0;
+  if (!trusted) return tvl;
+  const hasPopular = POPULAR_SYMBOLS.has(market.loanAsset.symbol) ||
+    (market.collateralAsset && POPULAR_SYMBOLS.has(market.collateralAsset.symbol));
+  return hasPopular ? tvl + POPULARITY_BOOST_USD : tvl;
+}
+
+/**
+ * Sort markets: Verified first (by TVL desc, then APY desc), Unverified last.
+ * Stable alphabetical tiebreaker.
+ */
+export function sortMarkets(markets: MorphoMarket[]): MorphoMarket[] {
+  return [...markets].sort((a, b) => {
+    const aTrusted = isMarketTrusted(a);
+    const bTrusted = isMarketTrusted(b);
+    // 1) Verified before unverified
+    if (aTrusted !== bTrusted) return aTrusted ? -1 : 1;
+    // 2) TVL descending (with popularity boost for verified)
+    const aTvl = getSortTvl(a, aTrusted);
+    const bTvl = getSortTvl(b, bTrusted);
+    if (bTvl !== aTvl) return bTvl - aTvl;
+    // 3) APY descending
+    const aApy = clampApy(a.supplyApy);
+    const bApy = clampApy(b.supplyApy);
+    if (bApy !== aApy) return bApy - aApy;
+    // 4) Alphabetical tiebreaker
+    return a.loanAsset.symbol.localeCompare(b.loanAsset.symbol);
+  });
 }
 
 export interface DebugReport {
@@ -135,20 +177,8 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
       // Only update state if this is the latest fetch and component is still mounted
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
-        // Sort: trusted first, then by APY desc, then by TVL desc
-        allMarkets.sort((a, b) => {
-          const aTrusted = isMarketTrusted(a);
-          const bTrusted = isMarketTrusted(b);
-          if (aTrusted !== bTrusted) return aTrusted ? -1 : 1;
-          // Primary: APY descending (normalize small decimals)
-          const aApy = a.supplyApy > 0 && a.supplyApy <= 1.5 ? a.supplyApy * 100 : a.supplyApy;
-          const bApy = b.supplyApy > 0 && b.supplyApy <= 1.5 ? b.supplyApy * 100 : b.supplyApy;
-          if (bApy !== aApy) return bApy - aApy;
-          // Secondary: TVL descending
-          return b.totalSupplyUsd - a.totalSupplyUsd;
-        });
-
-        setMarkets(allMarkets);
+        const sorted = sortMarkets(allMarkets);
+        setMarkets(sorted);
         setLastFetched(Date.now());
         setFetchDurationMs(Date.now() - startTime);
         setError(null);
