@@ -120,11 +120,47 @@ export function MultiWalletButton() {
     }
   }, [evmAddr]);
 
+  // Force-clear all wallet-related localStorage/sessionStorage keys
+  const clearWalletStorage = useCallback(() => {
+    const walletKeyPatterns = ['wagmi', 'rk-', 'rainbowkit', 'walletconnect', 'wc@2'];
+    const clearFromStorage = (storage: Storage) => {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (key && walletKeyPatterns.some(p => key.toLowerCase().includes(p))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => storage.removeItem(k));
+    };
+    try { clearFromStorage(localStorage); } catch {}
+    try { clearFromStorage(sessionStorage); } catch {}
+  }, []);
+
   const handleDisconnect = useCallback(() => {
+    // 1. Call wagmi disconnect
     disconnectEvm();
+    // 2. Clear cached wallet sessions
+    clearWalletStorage();
+    // 3. Close dropdown immediately
     setShowDropdown(false);
-    toast.success('Wallet disconnected');
-  }, [disconnectEvm]);
+    // 4. Toast with hard-reset fallback
+    toast.success('Wallet disconnected', {
+      action: {
+        label: 'Hard Reset',
+        onClick: () => {
+          clearWalletStorage();
+          window.location.reload();
+        },
+      },
+    });
+    // 5. Defensive re-disconnect after 250ms if still connected
+    setTimeout(() => {
+      // This runs in next tick — if wagmi still reports connected, force again
+      disconnectEvm();
+      clearWalletStorage();
+    }, 250);
+  }, [disconnectEvm, clearWalletStorage]);
 
   const isConnecting = connectingType !== null;
 
