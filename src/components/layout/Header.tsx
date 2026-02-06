@@ -5,6 +5,7 @@ import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp, Coins } from 'l
 import { cn } from '@/lib/utils';
 import logoImage from '@/assets/cdb-logo.png';
 import { MultiWalletButton } from '@/components/wallets/MultiWalletButton';
+import { useMultiWallet } from '@/lib/wallets';
 
 const navItems = [
   { path: '/', label: 'Swap', icon: ArrowLeftRight, matchExact: true },
@@ -13,6 +14,33 @@ const navItems = [
   { path: '/portfolio', label: 'Portfolio', icon: Wallet },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
+
+function WalletStatusIndicator() {
+  const wallets = useMultiWallet();
+  const connected = wallets.anyWalletConnected;
+  const primaryAddress = wallets.evm.address || wallets.solana.address || wallets.sui.address || wallets.bitcoin.address;
+
+  return (
+    <div className={cn(
+      'hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border',
+      connected
+        ? 'border-green-500/30 bg-green-500/10 text-green-400'
+        : 'border-destructive/30 bg-destructive/10 text-destructive'
+    )}>
+      <span className={cn(
+        'w-2 h-2 rounded-full flex-shrink-0',
+        connected ? 'bg-green-500 animate-pulse' : 'bg-destructive'
+      )} />
+      {connected ? (
+        <span className="truncate max-w-[100px]">
+          {primaryAddress ? `${primaryAddress.slice(0, 6)}…${primaryAddress.slice(-4)}` : 'Connected'}
+        </span>
+      ) : (
+        <span>Not Connected</span>
+      )}
+    </div>
+  );
+}
 
 export function Header() {
   const location = useLocation();
@@ -29,17 +57,11 @@ export function Header() {
     <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 gap-2">
-          {/* Logo - properly constrained for mobile */}
           <Link to="/" className="flex items-center gap-2 flex-shrink-0" aria-label="Crypto DeFi Bridge Home">
-            <img 
-              src={logoImage} 
-              alt="Crypto DeFi Bridge Logo" 
-              className="w-8 h-8 rounded-lg flex-shrink-0"
-            />
+            <img src={logoImage} alt="Crypto DeFi Bridge Logo" className="w-8 h-8 rounded-lg flex-shrink-0" />
             <span className="text-xs sm:text-base font-bold text-gradient whitespace-nowrap">Crypto DeFi Bridge</span>
           </Link>
 
-          {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const active = isActive(item);
@@ -49,9 +71,7 @@ export function Header() {
                   to={item.path}
                   className={cn(
                     "relative px-4 py-2 rounded-lg text-sm font-medium transition-colors",
-                    active 
-                      ? "text-primary" 
-                      : "text-muted-foreground hover:text-foreground"
+                    active ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <span className="flex items-center gap-2">
@@ -70,13 +90,11 @@ export function Header() {
             })}
           </nav>
 
-          {/* Right side */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Multi-Chain Wallet Connect */}
+            <WalletStatusIndicator />
             <MultiWalletButton />
-
-            {/* Mobile menu button */}
             <button
+              type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="md:hidden p-2 rounded-lg hover:bg-muted/50 transition-colors"
             >
@@ -86,7 +104,6 @@ export function Header() {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
       <AnimatePresence>
         {mobileMenuOpen && (
           <motion.div
@@ -105,8 +122,8 @@ export function Header() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={cn(
                       "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
-                      active 
-                        ? "bg-primary/10 text-primary" 
+                      active
+                        ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     )}
                   >
