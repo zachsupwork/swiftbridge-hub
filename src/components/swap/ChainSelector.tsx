@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, AlertCircle, Wallet, X } from 'lucide-react';
+import { ChevronDown, X, Search, AlertCircle, Wallet, Globe } from 'lucide-react';
 import { Chain, getChains } from '@/lib/lifiClient';
 import { useMultiWallet, getWalletTypeForChain, WalletType } from '@/lib/wallets';
 import { SUPPORTED_CHAIN_IDS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 
-// Local fallback chain icons
 const CHAIN_ICON_FALLBACKS: Record<number, string> = {
   1: '/icons/chains/ethereum.svg',
   10: '/icons/chains/optimism.svg',
@@ -23,6 +22,8 @@ const CHAIN_ICON_FALLBACKS: Record<number, string> = {
   5000: '/icons/chains/mantle.svg',
 };
 
+const POPULAR_CHAIN_IDS = [1, 42161, 10, 137, 8453];
+
 interface ChainSelectorProps {
   selectedChainId: number;
   onSelect: (chain: Chain) => void;
@@ -30,12 +31,10 @@ interface ChainSelectorProps {
   excludeChainId?: number;
 }
 
-// Extended chain type from LI.FI that may include chainType
 interface ExtendedChain extends Chain {
   chainType?: string;
 }
 
-// Wallet type labels for UI
 const WALLET_LABELS: Record<WalletType, string> = {
   evm: 'EVM wallet',
   solana: 'Solana wallet',
@@ -46,7 +45,7 @@ const WALLET_LABELS: Record<WalletType, string> = {
 export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId }: ChainSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [chains, setChains] = useState<ExtendedChain[]>([]);
-  const [showMoreChains, setShowMoreChains] = useState(false);
+  const [search, setSearch] = useState('');
   const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
   const wallets = useMultiWallet();
 
@@ -54,186 +53,221 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
     getChains().then(setChains);
   }, []);
 
-  // Filter to only LiFi-supported chains that are also in our wagmi config
   const supportedChains = useMemo(() => {
-    return chains.filter(c => SUPPORTED_CHAIN_IDS.has(c.id));
-  }, [chains]);
+    return chains.filter(c => SUPPORTED_CHAIN_IDS.has(c.id) && c.id !== excludeChainId);
+  }, [chains, excludeChainId]);
 
-  const selectedChain = supportedChains.find(c => c.id === selectedChainId);
-  const filteredChains = supportedChains.filter(c => c.id !== excludeChainId);
+  const selectedChain = chains.find(c => c.id === selectedChainId);
 
-  // Categorize chains by wallet type and availability
-  const { availableChains, unavailableChains } = useMemo(() => {
-    const available: ExtendedChain[] = [];
-    const unavailable: { chain: ExtendedChain; walletType: WalletType }[] = [];
+  const { popular, other, unavailable } = useMemo(() => {
+    const pop: ExtendedChain[] = [];
+    const oth: ExtendedChain[] = [];
+    const unav: { chain: ExtendedChain; walletType: WalletType }[] = [];
 
-    for (const chain of filteredChains) {
+    const q = search.toLowerCase();
+    const filtered = search
+      ? supportedChains.filter(c => c.name.toLowerCase().includes(q))
+      : supportedChains;
+
+    for (const chain of filtered) {
       const walletType = getWalletTypeForChain(chain.id, chain.chainType);
       const isConnected = wallets.isWalletConnected(walletType);
 
-      if (isConnected) {
-        available.push(chain);
+      if (!isConnected) {
+        unav.push({ chain, walletType });
+      } else if (POPULAR_CHAIN_IDS.includes(chain.id) && !search) {
+        pop.push(chain);
       } else {
-        unavailable.push({ chain, walletType });
+        oth.push(chain);
       }
     }
 
-    return { availableChains: available, unavailableChains: unavailable };
-  }, [filteredChains, wallets]);
+    return { popular: pop, other: oth, unavailable: unav };
+  }, [supportedChains, wallets, search]);
 
-  const handleChainSelect = (chain: ExtendedChain) => {
-    const walletType = getWalletTypeForChain(chain.id, chain.chainType);
-    const isConnected = wallets.isWalletConnected(walletType);
-
-    if (!isConnected) {
-      // Don't allow selection of chains without connected wallet
-      return;
-    }
-
-    onSelect(chain);
-    setIsOpen(false);
-  };
-
-  const getChainIcon = (chain: ExtendedChain, hasError: boolean) => {
-    if (hasError && CHAIN_ICON_FALLBACKS[chain.id]) {
+  const getChainIcon = (chain: ExtendedChain) => {
+    if (imageErrors.has(chain.id) && CHAIN_ICON_FALLBACKS[chain.id]) {
       return CHAIN_ICON_FALLBACKS[chain.id];
     }
     return chain.logoURI;
   };
 
-  const handleImageError = (chainId: number) => {
-    setImageErrors(prev => new Set(prev).add(chainId));
+  const handleSelect = (chain: ExtendedChain) => {
+    onSelect(chain);
+    setIsOpen(false);
+    setSearch('');
   };
+
+  const ChainRow = ({ chain, disabled, hint }: { chain: ExtendedChain; disabled?: boolean; hint?: string }) => (
+    <button
+      onClick={() => !disabled && handleSelect(chain)}
+      disabled={disabled}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all",
+        disabled
+          ? "opacity-40 cursor-not-allowed"
+          : selectedChainId === chain.id
+            ? "bg-primary/10 ring-1 ring-primary/20"
+            : "hover:bg-muted/40"
+      )}
+    >
+      <img
+        src={getChainIcon(chain)}
+        alt={chain.name}
+        className={cn("w-7 h-7 rounded-full bg-muted ring-1 ring-border/20", disabled && "grayscale")}
+        onError={() => setImageErrors(prev => new Set(prev).add(chain.id))}
+      />
+      <div className="flex-1 text-left min-w-0">
+        <span className="font-medium text-sm">{chain.name}</span>
+        {hint && (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <AlertCircle className="w-3 h-3" />
+            <span>{hint}</span>
+          </div>
+        )}
+      </div>
+      {chain.id === 11155111 && (
+        <span className="text-[10px] bg-warning/20 text-warning px-2 py-0.5 rounded-full font-medium">
+          Testnet
+        </span>
+      )}
+    </button>
+  );
 
   return (
     <div className="relative">
       <label className="text-xs text-muted-foreground mb-1 block">{label}</label>
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center gap-3 p-3 rounded-xl glass hover:bg-muted/30 transition-colors"
+        onClick={() => setIsOpen(true)}
+        className="w-full flex items-center gap-2.5 p-3 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/40 transition-all group"
       >
         {selectedChain ? (
           <>
             <img
-              src={getChainIcon(selectedChain, imageErrors.has(selectedChain.id))}
+              src={getChainIcon(selectedChain as ExtendedChain)}
               alt={selectedChain.name}
-              className="w-6 h-6 rounded-full bg-muted"
-              onError={() => handleImageError(selectedChain.id)}
+              className="w-6 h-6 rounded-full bg-muted ring-1 ring-border/30"
+              onError={() => setImageErrors(prev => new Set(prev).add(selectedChain.id))}
             />
-            <span className="flex-1 text-left font-medium">{selectedChain.name}</span>
+            <span className="flex-1 text-left font-semibold text-sm">{selectedChain.name}</span>
           </>
         ) : (
-          <span className="text-muted-foreground">Select chain</span>
+          <span className="text-muted-foreground text-sm">Select chain</span>
         )}
-        <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+        <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
       </button>
 
       <AnimatePresence>
         {isOpen && (
           <>
-            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-background/60 backdrop-blur-sm z-[60]"
-              onClick={() => setIsOpen(false)}
+              className="fixed inset-0 bg-background/70 backdrop-blur-md z-[60]"
+              onClick={() => { setIsOpen(false); setSearch(''); }}
             />
-            {/* Modal – centered on desktop, bottom-sheet on mobile */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 40 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:inset-auto sm:w-full sm:max-w-sm bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[75vh] sm:max-h-[60vh] flex flex-col"
+              exit={{ opacity: 0, y: 40 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:inset-auto sm:w-full sm:max-w-[420px] bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col"
+              style={{ maxHeight: '80vh' }}
             >
               {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
-                <h3 className="font-semibold text-sm">Select Chain</h3>
-                <button onClick={() => setIsOpen(false)} className="p-1 rounded-lg hover:bg-muted">
-                  <X className="w-4 h-4" />
-                </button>
+              <div className="flex-shrink-0 p-4 border-b border-border/50">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-base flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    Select Chain
+                  </h3>
+                  <button
+                    onClick={() => { setIsOpen(false); setSearch(''); }}
+                    className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/50 border border-border/30 rounded-xl focus-within:ring-2 focus-within:ring-primary/30 transition-all">
+                  <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Search networks..."
+                    className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-muted-foreground/60"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    autoFocus
+                  />
+                  {search && (
+                    <button onClick={() => setSearch('')} className="p-0.5 hover:bg-muted rounded">
+                      <X className="w-3.5 h-3.5 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Popular chips */}
+                {!search && popular.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {popular.map(chain => (
+                      <button
+                        key={chain.id}
+                        onClick={() => handleSelect(chain)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-all",
+                          selectedChainId === chain.id
+                            ? "border-primary/50 bg-primary/10 text-primary"
+                            : "border-border/50 bg-muted/30 hover:bg-muted/60 text-foreground"
+                        )}
+                      >
+                        <img
+                          src={getChainIcon(chain)}
+                          alt={chain.name}
+                          className="w-4 h-4 rounded-full"
+                          onError={() => setImageErrors(prev => new Set(prev).add(chain.id))}
+                        />
+                        {chain.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="overflow-y-auto flex-1 p-2">
-                {/* Available chains (wallet connected) */}
-                {availableChains.length > 0 ? (
-                  availableChains.map((chain) => (
-                    <button
-                      key={chain.id}
-                      onClick={() => handleChainSelect(chain)}
-                      className={cn(
-                        "w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors",
-                        selectedChainId === chain.id && "bg-primary/10"
-                      )}
-                    >
-                      <img
-                        src={getChainIcon(chain, imageErrors.has(chain.id))}
-                        alt={chain.name}
-                        className="w-6 h-6 rounded-full bg-muted"
-                        onError={() => handleImageError(chain.id)}
-                      />
-                      <span className="font-medium">{chain.name}</span>
-                      {chain.id === 11155111 && (
-                        <span className="ml-auto text-xs bg-warning/20 text-warning px-2 py-0.5 rounded-full">
-                          Testnet
-                        </span>
-                      )}
-                    </button>
-                  ))
+              {/* Chain list */}
+              <div className="overflow-y-auto flex-1 py-1 px-1">
+                {(popular.length === 0 && other.length === 0 && unavailable.length === 0) ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Wallet className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">No chains found</p>
+                  </div>
                 ) : (
-                  <div className="p-4 text-center text-muted-foreground text-sm">
-                    <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p>Connect a wallet to see available chains</p>
-                  </div>
-                )}
+                  <>
+                    {other.map(chain => (
+                      <ChainRow key={chain.id} chain={chain} />
+                    ))}
 
-                {/* Unavailable chains (need different wallet) */}
-                {unavailableChains.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <button
-                      onClick={() => setShowMoreChains(!showMoreChains)}
-                      className="w-full flex items-center gap-2 p-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <ChevronRight className={cn("w-4 h-4 transition-transform", showMoreChains && "rotate-90")} />
-                      <span>More chains (connect wallet)</span>
-                      <span className="ml-auto bg-muted px-1.5 py-0.5 rounded text-[10px]">
-                        {unavailableChains.length}
-                      </span>
-                    </button>
-
-                    <AnimatePresence>
-                      {showMoreChains && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="overflow-hidden"
-                        >
-                          {unavailableChains.map(({ chain, walletType }) => (
-                            <div
-                              key={chain.id}
-                              className="w-full flex items-center gap-3 p-3 rounded-lg opacity-50 cursor-not-allowed"
-                            >
-                              <img
-                                src={getChainIcon(chain, imageErrors.has(chain.id))}
-                                alt={chain.name}
-                                className="w-6 h-6 rounded-full grayscale bg-muted"
-                                onError={() => handleImageError(chain.id)}
-                              />
-                              <div className="flex-1 text-left">
-                                <span className="font-medium text-sm">{chain.name}</span>
-                                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                  <AlertCircle className="w-3 h-3" />
-                                  <span>Connect {WALLET_LABELS[walletType]}</span>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                    {unavailable.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-border/30">
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                          Requires wallet connection
+                        </div>
+                        {unavailable.map(({ chain, walletType }) => (
+                          <ChainRow
+                            key={chain.id}
+                            chain={chain}
+                            disabled
+                            hint={`Connect ${WALLET_LABELS[walletType]}`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
+              </div>
+
+              <div className="flex-shrink-0 px-4 py-2 border-t border-border/30 text-xs text-muted-foreground text-center">
+                {popular.length + other.length} network{popular.length + other.length !== 1 ? 's' : ''} available
               </div>
             </motion.div>
           </>

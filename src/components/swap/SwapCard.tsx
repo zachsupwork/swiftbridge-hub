@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { useAccount, useSendTransaction, useSwitchChain, useBalance, useReadContract } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
@@ -34,7 +34,7 @@ import {
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
-const QUOTE_MAX_AGE = 45; // seconds
+const QUOTE_MAX_AGE = 45;
 
 export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
@@ -57,20 +57,18 @@ export function SwapCard() {
   const [swapId, setSwapId] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [txSimulation, setTxSimulation] = useState<TransactionSimulation | null>(null);
+  const [showRouteDetails, setShowRouteDetails] = useState(false);
   
-  // Quote tracking
   const [quoteTimestamp, setQuoteTimestamp] = useState<number>(0);
   const [quoteTimeRemaining, setQuoteTimeRemaining] = useState<string>('');
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
 
-  // Get native balance for gas check
   const { data: nativeBalanceData } = useBalance({
     address,
     chainId: fromChainId,
     query: { enabled: !!address && isConnected },
   });
 
-  // Get token balance
   const isNativeToken = fromToken?.address?.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
                         fromToken?.address?.toLowerCase() === '0x0000000000000000000000000000000000000000';
   
@@ -83,7 +81,6 @@ export function SwapCard() {
     query: { enabled: !!address && !!fromToken && !isNativeToken },
   });
 
-  // Get current allowance (for ERC-20)
   const spenderAddress = route?.steps?.[0]?.estimate?.approvalAddress as `0x${string}` | undefined;
   const { data: currentAllowance } = useReadContract({
     address: fromToken?.address as `0x${string}`,
@@ -94,16 +91,9 @@ export function SwapCard() {
     query: { enabled: !!address && !!fromToken && !!spenderAddress && !isNativeToken },
   });
 
-  // Clear tokens when chain changes
-  useEffect(() => {
-    setFromToken(null);
-  }, [fromChainId]);
+  useEffect(() => { setFromToken(null); }, [fromChainId]);
+  useEffect(() => { setToToken(null); }, [toChainId]);
 
-  useEffect(() => {
-    setToToken(null);
-  }, [toChainId]);
-
-  // Clear route when inputs change
   useEffect(() => {
     setRoute(null);
     setState('idle');
@@ -111,35 +101,29 @@ export function SwapCard() {
     setTxSimulation(null);
     setQuoteTimestamp(0);
     setPreflightResult(null);
+    setShowRouteDetails(false);
   }, [fromChainId, toChainId, fromToken, toToken, fromAmount]);
 
-  // Quote countdown timer
   useEffect(() => {
     if (!quoteTimestamp || state !== 'quoted') {
       setQuoteTimeRemaining('');
       return;
     }
-
     const interval = setInterval(() => {
       const remaining = getQuoteTimeRemaining(quoteTimestamp, QUOTE_MAX_AGE);
       setQuoteTimeRemaining(remaining);
-      
-      // Auto-clear expired quotes
       if (isQuoteExpired(quoteTimestamp, QUOTE_MAX_AGE)) {
         setError('Quote expired. Please get a new quote.');
       }
     }, 1000);
-
     return () => clearInterval(interval);
   }, [quoteTimestamp, state]);
 
-  // Run preflight validation when route changes
   useEffect(() => {
     if (!route || !address || !fromToken) {
       setPreflightResult(null);
       return;
     }
-
     const fromTokenBalance = isNativeToken 
       ? (nativeBalanceData?.value || 0n)
       : (tokenBalance || 0n);
@@ -154,7 +138,6 @@ export function SwapCard() {
       quoteTimestamp,
       maxQuoteAgeSeconds: QUOTE_MAX_AGE,
     });
-
     setPreflightResult(result);
   }, [route, address, fromToken, walletChainId, nativeBalanceData, tokenBalance, currentAllowance, quoteTimestamp, isNativeToken]);
 
@@ -167,34 +150,29 @@ export function SwapCard() {
     setToToken(tempToken);
   }, [fromChainId, toChainId, fromToken, toToken]);
 
-  // Validation states
+  // Compute max amount
+  const maxFromAmount = useMemo(() => {
+    if (!fromToken) return '';
+    const bal = isNativeToken ? nativeBalanceData?.value : tokenBalance;
+    if (!bal) return '';
+    return formatUnits(bal, fromToken.decimals);
+  }, [fromToken, isNativeToken, nativeBalanceData, tokenBalance]);
+
   const hasValidInputs = fromToken && toToken && fromAmount && parseFloat(fromAmount) > 0;
   const isFromChainSupported = isChainSupported(fromChainId);
   const isToChainSupported = isChainSupported(toChainId);
   const isRouteChainSupported = route ? isChainSupported(route.fromChainId) : true;
   const isQuoteValid = route && quoteTimestamp && !isQuoteExpired(quoteTimestamp, QUOTE_MAX_AGE);
 
-  // Helper text based on current state
   const helperText = useMemo(() => {
-    if (!isConnected) {
-      return 'Connect wallet to get a quote.';
-    }
-    if (!hasValidInputs) {
-      return 'Select tokens and enter an amount.';
-    }
-    if (state === 'quoting') {
-      return 'Finding best route...';
-    }
-    if (route && preflightResult?.errors.length) {
-      return preflightResult.errors[0];
-    }
-    if (route) {
-      return 'Review quote, then click Swap to execute.';
-    }
+    if (!isConnected) return 'Connect wallet to get a quote.';
+    if (!hasValidInputs) return 'Select tokens and enter an amount.';
+    if (state === 'quoting') return 'Finding best route...';
+    if (route && preflightResult?.errors.length) return preflightResult.errors[0];
+    if (route) return 'Review quote, then click Swap to execute.';
     return 'Click Get Quote to estimate output, fees, and route.';
   }, [isConnected, hasValidInputs, state, route, preflightResult]);
 
-  // Button label based on state
   const buttonLabel = useMemo(() => {
     if (!isConnected) return 'Connect Wallet';
     if (state === 'quoting') return 'Finding Route...';
@@ -210,14 +188,11 @@ export function SwapCard() {
       setError('Please fill in all fields');
       return;
     }
-
     setState('quoting');
     setError(null);
     setPreflightResult(null);
-
     try {
       const fromAmountWei = parseUnits(fromAmount, fromToken.decimals).toString();
-      
       const response = await getRoutes({
         fromChainId,
         toChainId,
@@ -227,83 +202,48 @@ export function SwapCard() {
         fromAddress: address,
         slippage: slippage / 100,
       });
-
       if (response.routes.length === 0) {
         throw new Error('No route found. Try a different token pair, smaller amount, or higher slippage.');
       }
-
       setRoute(response.routes[0]);
       setQuoteTimestamp(Date.now());
       setState('quoted');
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to get quote';
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : 'Failed to get quote');
       setState('idle');
     }
   };
 
   const handleExecute = async () => {
     if (!route || !address || !fromToken || !toToken) return;
-
     setState('swapping');
     setError(null);
     setTxSimulation(null);
-
     try {
-      // Validate chain is supported before attempting switch
       if (!isChainSupported(fromChainId)) {
         throw new TransactionValidationError(
-          `Chain "${getChainName(fromChainId)}" (ID: ${fromChainId}) is not supported yet. Supported chains: ${getSupportedChainIds().join(', ')}`
+          `Chain "${getChainName(fromChainId)}" (ID: ${fromChainId}) is not supported yet.`
         );
       }
-
-      // Debug logging for chain info
-      console.log('🔗 Route chain info:', {
-        fromChainId: route.fromChainId,
-        toChainId: route.toChainId,
-        walletChainId,
-        fromChainSupported: isChainSupported(route.fromChainId),
-        toChainSupported: isChainSupported(route.toChainId),
-        configuredChains: getSupportedChainIds(),
-      });
-
-      // Switch chain only if needed and chain is supported
       if (walletChainId !== fromChainId) {
-        console.log(`🔄 Switching wallet from chain ${walletChainId} to ${fromChainId}`);
         await switchChainAsync({ chainId: fromChainId });
       }
-
-      // Get transaction data for the first step
       const stepWithTx = await getStepTransaction(route.steps[0]);
-      
       if (!stepWithTx.transactionRequest) {
         throw new TransactionValidationError('No transaction data received');
       }
-
       const tx = stepWithTx.transactionRequest;
-
-      // Generate simulation for debug display
       const simulation = getTransactionSimulation(tx, fromToken.address, fromToken.symbol);
       setTxSimulation(simulation);
-
-      // Normalize the transaction request with proper value handling
-      // This ensures ERC-20 swaps have value=0 and native swaps use LI.FI's value
       const normalizedTx = normalizeTxRequest(tx, fromToken.address);
-
-      // Log transaction details for debugging
       logTransactionDetails(fromChainId, normalizedTx, simulation);
-
-      // Send the normalized transaction
       const hash = await sendTransactionAsync({
         to: normalizedTx.to,
         data: normalizedTx.data,
         value: normalizedTx.value,
         gas: normalizedTx.gas,
       });
-
       setTxHash(hash);
-
-      // Save swap record
       const integratorFee = getIntegratorFee();
       const fromAmountUSD = parseFloat(route.fromAmountUSD) || 0;
       const swapRecord: SwapRecord = {
@@ -322,19 +262,14 @@ export function SwapCard() {
         integratorFee: (parseFloat(fromAmount) * integratorFee).toFixed(6),
         integratorFeeUSD: (fromAmountUSD * integratorFee).toFixed(4),
       };
-
       saveSwap(swapRecord);
       setSwapId(swapRecord.id);
       setState('tracking');
     } catch (err) {
-      console.error('Swap failed:', err);
-      
-      // Handle validation errors with specific messages
       if (err instanceof TransactionValidationError) {
         setError(err.message);
       } else {
-        const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
-        setError(errorMessage);
+        setError(err instanceof Error ? err.message : 'Transaction failed');
       }
       setState('quoted');
     }
@@ -354,20 +289,9 @@ export function SwapCard() {
 
   if (state === 'tracking' && txHash && route && swapId) {
     return (
-      <div className="w-full max-w-md mx-auto space-y-4">
-        <TransactionTracker
-          txHash={txHash}
-          route={route}
-          swapId={swapId}
-          onComplete={() => {}}
-        />
-        <Button
-          onClick={handleReset}
-          variant="outline"
-          className="w-full"
-        >
-          New Swap
-        </Button>
+      <div className="w-full max-w-lg mx-auto space-y-4">
+        <TransactionTracker txHash={txHash} route={route} swapId={swapId} onComplete={() => {}} />
+        <Button onClick={handleReset} variant="outline" className="w-full">New Swap</Button>
       </div>
     );
   }
@@ -376,174 +300,139 @@ export function SwapCard() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-md mx-auto"
+      className="w-full max-w-lg mx-auto"
     >
-      <div className="glass rounded-2xl p-6 space-y-4">
+      <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl p-5 sm:p-6 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <Zap className="w-5 h-5 text-primary" />
-            Swap
+            Swap & Bridge
           </h2>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowDebug(!showDebug)}
               className={cn(
                 "p-2 rounded-lg transition-colors",
-                showDebug ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                showDebug ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground"
               )}
               title="Debug panel"
             >
-              <Bug className="w-5 h-5" />
+              <Bug className="w-4 h-4" />
             </button>
             <button
               onClick={() => setShowSettings(!showSettings)}
               className={cn(
                 "p-2 rounded-lg transition-colors",
-                showSettings ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                showSettings ? "bg-primary/10 text-primary" : "hover:bg-muted text-muted-foreground"
               )}
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-4 h-4" />
             </button>
           </div>
         </div>
 
         {/* Settings */}
-        {showSettings && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-muted/50 rounded-xl p-4"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Slippage Tolerance</span>
-              <span className="text-sm font-medium">{slippage}%</span>
-            </div>
-            <Slider
-              value={[slippage]}
-              onValueChange={([v]) => setSlippage(v)}
-              min={0.1}
-              max={5}
-              step={0.1}
-              className="mb-2"
-            />
-            <div className="flex gap-2">
-              {[0.1, 0.5, 1, 3].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setSlippage(v)}
-                  className={cn(
-                    "flex-1 py-1 rounded text-xs font-medium transition-colors",
-                    slippage === v ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
-                  )}
-                >
-                  {v}%
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
+        <AnimatePresence>
+          {showSettings && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-muted/30 rounded-xl p-4 border border-border/30">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-muted-foreground">Slippage Tolerance</span>
+                  <span className="text-sm font-semibold">{slippage}%</span>
+                </div>
+                <Slider value={[slippage]} onValueChange={([v]) => setSlippage(v)} min={0.1} max={5} step={0.1} className="mb-2" />
+                <div className="flex gap-2">
+                  {[0.1, 0.5, 1, 3].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setSlippage(v)}
+                      className={cn(
+                        "flex-1 py-1 rounded-lg text-xs font-medium transition-colors",
+                        slippage === v ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/80"
+                      )}
+                    >
+                      {v}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Testnet warning */}
         {isTestnet && (
-          <div className="bg-warning/10 text-warning text-xs p-3 rounded-lg flex items-center gap-2">
+          <div className="bg-warning/10 text-warning text-xs p-3 rounded-lg flex items-center gap-2 border border-warning/20">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>Testnet routes may be limited. Some swaps might not be available.</span>
+            <span>Testnet routes may be limited.</span>
           </div>
         )}
 
-        {/* From section */}
-        <div className="bg-muted/30 rounded-xl p-4 space-y-3">
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <ChainSelector
-                selectedChainId={fromChainId}
-                onSelect={(chain) => setFromChainId(chain.id)}
-                label="From Chain"
-              />
-            </div>
-            <div className="flex-1">
-              <TokenSelector
-                chainId={fromChainId}
-                selectedToken={fromToken}
-                onSelect={setFromToken}
-                label="From Token"
-              />
-            </div>
+        {/* FROM section */}
+        <div className="bg-muted/20 rounded-xl p-4 space-y-3 border border-border/30">
+          <div className="grid grid-cols-2 gap-3">
+            <ChainSelector selectedChainId={fromChainId} onSelect={(chain) => setFromChainId(chain.id)} label="From Chain" />
+            <TokenSelector chainId={fromChainId} selectedToken={fromToken} onSelect={setFromToken} label="From Token" />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Amount</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-muted-foreground">Amount</label>
+              {maxFromAmount && (
+                <button
+                  onClick={() => setFromAmount(maxFromAmount)}
+                  className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                >
+                  MAX
+                </button>
+              )}
+            </div>
             <input
               type="number"
               placeholder="0.00"
               value={fromAmount}
               onChange={(e) => setFromAmount(e.target.value)}
-              className="w-full p-3 rounded-xl glass text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-primary bg-transparent"
+              className="w-full p-3 rounded-xl border border-border/30 bg-muted/10 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all"
             />
           </div>
         </div>
 
-        {/* Swap button */}
+        {/* Switch button */}
         <div className="flex justify-center -my-2 relative z-10">
           <button
             onClick={handleSwapChains}
-            className="w-10 h-10 rounded-full bg-primary flex items-center justify-center hover:scale-110 transition-transform shadow-lg glow"
+            className="w-10 h-10 rounded-full bg-primary flex items-center justify-center hover:scale-110 active:scale-95 transition-transform shadow-lg ring-4 ring-card"
           >
-            <ArrowDown className="w-5 h-5 text-primary-foreground" />
+            <ArrowUpDown className="w-4 h-4 text-primary-foreground" />
           </button>
         </div>
 
-        {/* To section */}
-        <div className="bg-muted/30 rounded-xl p-4 space-y-3">
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <ChainSelector
-                selectedChainId={toChainId}
-                onSelect={(chain) => setToChainId(chain.id)}
-                label="To Chain"
-              />
-            </div>
-            <div className="flex-1">
-              <TokenSelector
-                chainId={toChainId}
-                selectedToken={toToken}
-                onSelect={setToToken}
-                label="To Token"
-              />
-            </div>
+        {/* TO section */}
+        <div className="bg-muted/20 rounded-xl p-4 space-y-3 border border-border/30">
+          <div className="grid grid-cols-2 gap-3">
+            <ChainSelector selectedChainId={toChainId} onSelect={(chain) => setToChainId(chain.id)} label="To Chain" />
+            <TokenSelector chainId={toChainId} selectedToken={toToken} onSelect={setToToken} label="To Token" />
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">You receive</label>
-            <div className="w-full p-3 rounded-xl glass text-2xl font-bold">
+            <div className="w-full p-3 rounded-xl border border-border/30 bg-muted/10 text-2xl font-bold min-h-[52px] flex items-center">
               <AnimatePresence mode="wait">
                 {state === 'quoting' ? (
-                  <motion.span
-                    key="loading"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center gap-2 text-muted-foreground"
-                  >
+                  <motion.span key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    <span className="text-base">Finding best route…</span>
+                    <span className="text-base font-medium">Finding best route…</span>
                   </motion.span>
                 ) : route ? (
-                  <motion.span
-                    key="result"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="text-foreground"
-                  >
+                  <motion.span key="result" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-foreground">
                     {formatUnits(BigInt(route.toAmount), toToken?.decimals || 18).slice(0, 10)}
                   </motion.span>
                 ) : (
-                  <motion.span
-                    key="placeholder"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-sm text-muted-foreground/70 font-normal"
-                  >
+                  <motion.span key="placeholder" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-muted-foreground/50 font-normal">
                     —
                   </motion.span>
                 )}
@@ -552,7 +441,7 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Helper text with fee tooltip and quote countdown */}
+        {/* Helper text */}
         <div className="flex items-center justify-between px-1">
           <div className="flex items-start gap-2 text-xs text-muted-foreground/80">
             <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
@@ -577,31 +466,45 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error */}
         {error && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg flex items-center gap-2"
+            className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg flex items-center gap-2 border border-destructive/20"
           >
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
             <span>{error}</span>
           </motion.div>
         )}
 
-        {/* Fee breakdown */}
-        {route && <FeeBreakdown route={route} />}
-
-        {/* Developer debug panel */}
-        {showDebug && (
-          <IntegratorDebugPanel 
-            route={route} 
-            fromChainId={fromChainId} 
-            toChainId={toChainId} 
-          />
+        {/* Route details accordion */}
+        {route && (
+          <div className="rounded-xl border border-border/30 overflow-hidden">
+            <button
+              onClick={() => setShowRouteDetails(!showRouteDetails)}
+              className="w-full flex items-center justify-between p-3 text-sm hover:bg-muted/20 transition-colors"
+            >
+              <span className="text-muted-foreground font-medium">Route Details & Fees</span>
+              <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", showRouteDetails && "rotate-180")} />
+            </button>
+            <AnimatePresence>
+              {showRouteDetails && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <FeeBreakdown route={route} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         )}
 
-        {/* Debug: Simulation Summary */}
+        {/* Debug panels */}
+        {showDebug && <IntegratorDebugPanel route={route} fromChainId={fromChainId} toChainId={toChainId} />}
         {showDebug && txSimulation && (
           <SimulationSummary
             to={txSimulation.to}
@@ -615,10 +518,7 @@ export function SwapCard() {
 
         {/* Action button */}
         {!isConnected ? (
-          <Button 
-            disabled 
-            className="w-full py-6 text-lg gap-2"
-          >
+          <Button disabled className="w-full py-6 text-lg gap-2">
             <Wallet className="w-5 h-5" />
             Connect Wallet
           </Button>
@@ -640,7 +540,7 @@ export function SwapCard() {
         ) : route ? (
           <Button
             onClick={handleExecute}
-            className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90"
+            className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90 transition-opacity"
           >
             Swap
           </Button>
@@ -648,7 +548,7 @@ export function SwapCard() {
           <Button
             onClick={handleQuote}
             disabled={!hasValidInputs}
-            className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="w-full py-6 text-lg gradient-primary text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             Get Quote
           </Button>
