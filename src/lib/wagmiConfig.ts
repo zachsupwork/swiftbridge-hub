@@ -65,7 +65,7 @@ export function getSupportedChainIds(): number[] {
 }
 
 // WalletConnect requires a real projectId from https://cloud.walletconnect.com
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'demo-project-id';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'cef337411d95995b3eefb18c6780234a';
 
 if (import.meta.env.DEV && !import.meta.env.VITE_WALLETCONNECT_PROJECT_ID) {
   console.warn('[WagmiConfig] VITE_WALLETCONNECT_PROJECT_ID not set — WalletConnect may not work. Get one at https://cloud.walletconnect.com');

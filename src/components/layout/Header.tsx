@@ -5,7 +5,8 @@ import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp, Coins } from 'l
 import { cn } from '@/lib/utils';
 import logoImage from '@/assets/cdb-logo.png';
 import { MultiWalletButton } from '@/components/wallets/MultiWalletButton';
-import { useMultiWallet } from '@/lib/wallets';
+import { useAccount } from 'wagmi';
+import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 
 const navItems = [
   { path: '/', label: 'Swap', icon: ArrowLeftRight, matchExact: true },
@@ -15,29 +16,32 @@ const navItems = [
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
-function WalletStatusIndicator() {
-  const wallets = useMultiWallet();
-  const connected = wallets.anyWalletConnected;
-  const primaryAddress = wallets.evm.address || wallets.solana.address || wallets.sui.address || wallets.bitcoin.address;
+function EVMStatusIndicator() {
+  const { isConnected, chainId } = useAccount();
+  const unsupported = isConnected && chainId && !isChainSupported(chainId);
 
   return (
     <div className={cn(
       'hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border',
-      connected
-        ? 'border-green-500/30 bg-green-500/10 text-green-400'
+      isConnected
+        ? unsupported
+          ? 'border-warning/30 bg-warning/10 text-warning'
+          : 'border-green-500/30 bg-green-500/10 text-green-400'
         : 'border-destructive/30 bg-destructive/10 text-destructive'
     )}>
       <span className={cn(
         'w-2 h-2 rounded-full flex-shrink-0',
-        connected ? 'bg-green-500 animate-pulse' : 'bg-destructive'
+        isConnected
+          ? unsupported ? 'bg-warning' : 'bg-green-500 animate-pulse'
+          : 'bg-destructive'
       )} />
-      {connected ? (
-        <span className="truncate max-w-[100px]">
-          {primaryAddress ? `${primaryAddress.slice(0, 6)}…${primaryAddress.slice(-4)}` : 'Connected'}
-        </span>
-      ) : (
-        <span>Not Connected</span>
-      )}
+      <span>
+        {isConnected
+          ? unsupported
+            ? 'Wrong Network'
+            : 'EVM Connected'
+          : 'EVM Not Connected'}
+      </span>
     </div>
   );
 }
@@ -91,7 +95,7 @@ export function Header() {
           </nav>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <WalletStatusIndicator />
+            <EVMStatusIndicator />
             <MultiWalletButton />
             <button
               type="button"
