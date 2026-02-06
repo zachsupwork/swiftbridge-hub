@@ -44,7 +44,7 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<number | null>(null);
-  const [selectedChainId, setSelectedChainId] = useState<number | undefined>(8453); // Default to Base
+  const [selectedChainId, setSelectedChainId] = useState<number | undefined>(1); // Default to Ethereum
   const [fetchDurationMs, setFetchDurationMs] = useState<number | null>(null);
   
   const isMountedRef = useRef(true);

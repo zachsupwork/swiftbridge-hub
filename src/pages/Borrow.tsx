@@ -28,11 +28,11 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { cn } from '@/lib/utils';
 import { getEnabledMorphoChains } from '@/lib/morpho/config';
 
-// Get available chains for the selector
+// Get available chains for the selector (only enabled)
 const MORPHO_CHAINS = getEnabledMorphoChains().map(c => ({
   id: c.chainId,
   name: c.label,
-  logo: `https://icons.llamao.fi/icons/chains/rsz_${c.label.toLowerCase()}.jpg`,
+  logo: c.logo,
   supported: true,
 }));
 
@@ -96,21 +96,28 @@ export default function Borrow() {
                 How it works
               </Button>
               
-              {/* Chain Selector */}
-              <div className="flex gap-1">
-                {MORPHO_CHAINS.map((chain) => (
-                  <Button
-                    key={chain.id}
-                    variant={selectedChainId === chain.id ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedChainId(chain.id)}
-                    className="gap-1.5 px-2"
-                  >
-                    <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
-                    <span className="hidden sm:inline text-xs">{chain.name}</span>
-                  </Button>
-                ))}
-              </div>
+              {/* Chain indicator */}
+              {MORPHO_CHAINS.length === 1 ? (
+                <Badge variant="outline" className="h-8 px-3 gap-1.5 text-xs font-medium">
+                  <img src={MORPHO_CHAINS[0].logo} alt={MORPHO_CHAINS[0].name} className="w-4 h-4 rounded-full" />
+                  {MORPHO_CHAINS[0].name}
+                </Badge>
+              ) : (
+                <div className="flex gap-1">
+                  {MORPHO_CHAINS.map((chain) => (
+                    <Button
+                      key={chain.id}
+                      variant={selectedChainId === chain.id ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setSelectedChainId(chain.id)}
+                      className="gap-1.5 px-2"
+                    >
+                      <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
+                      <span className="hidden sm:inline text-xs">{chain.name}</span>
+                    </Button>
+                  ))}
+                </div>
+              )}
 
               <Button
                 variant="outline"
