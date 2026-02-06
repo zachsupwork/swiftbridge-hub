@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Wallet,
   Info,
+  ShieldAlert,
 } from 'lucide-react';
 import { useState, useMemo, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import { TokenIcon } from '@/components/common/TokenIcon';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { isMarketTrusted } from '@/hooks/useMorphoMarkets';
 
 interface MorphoMarketsTableProps {
   markets: MorphoMarket[];
@@ -318,6 +320,12 @@ export function MorphoMarketsTable({
                               / {market.collateralAsset.symbol}
                             </span>
                           )}
+                          {!isMarketTrusted(market) && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
+                              <ShieldAlert className="w-2.5 h-2.5" />
+                              Unverified
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           LLTV: {market.lltv.toFixed(0)}%
@@ -440,12 +448,18 @@ export function MorphoMarketsTable({
                   />
                 </div>
                 <div>
-                  <div className="font-medium">
+                  <div className="font-medium flex items-center gap-1.5 flex-wrap">
                     {market.loanAsset.symbol}
                     {market.collateralAsset && (
                       <span className="text-muted-foreground font-normal">
-                        {' '}/ {market.collateralAsset.symbol}
+                        / {market.collateralAsset.symbol}
                       </span>
+                    )}
+                    {!isMarketTrusted(market) && (
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
+                        <ShieldAlert className="w-2.5 h-2.5" />
+                        Unverified
+                      </Badge>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">

@@ -2,12 +2,29 @@
  * Morpho Markets Hook
  * 
  * Fetches Morpho Blue markets from API with caching and error handling.
+ * Trusted asset allowlist sorts unknown/spam tokens to the bottom.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { fetchMorphoMarkets } from '@/lib/morpho/apiClient';
 import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket, MorphoChainConfig } from '@/lib/morpho/types';
+
+// Trusted asset symbols – markets with BOTH assets in this list sort first
+const TRUSTED_SYMBOLS = new Set([
+  'ETH', 'WETH', 'wstETH', 'stETH', 'rETH', 'cbETH',
+  'USDC', 'USDT', 'DAI', 'FRAX', 'LUSD', 'PYUSD',
+  'WBTC', 'tBTC',
+  'AAVE', 'LINK', 'CRV',
+  // common wrapped/derivative variants
+  'sDAI', 'GHO', 'USDe', 'sUSDe', 'weETH', 'ezETH', 'osETH', 'COMP', 'MKR', 'UNI',
+]);
+
+export function isMarketTrusted(market: MorphoMarket): boolean {
+  const loanOk = TRUSTED_SYMBOLS.has(market.loanAsset.symbol);
+  const collateralOk = !market.collateralAsset || TRUSTED_SYMBOLS.has(market.collateralAsset.symbol);
+  return loanOk && collateralOk;
+}
 
 export interface DebugReport {
   timestamp: string;
@@ -118,8 +135,13 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
       // Only update state if this is the latest fetch and component is still mounted
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
-        // Sort by TVL (total supply) descending
-        allMarkets.sort((a, b) => b.totalSupplyUsd - a.totalSupplyUsd);
+        // Sort: trusted markets first (by TVL desc), then untrusted (by TVL desc)
+        allMarkets.sort((a, b) => {
+          const aTrusted = isMarketTrusted(a);
+          const bTrusted = isMarketTrusted(b);
+          if (aTrusted !== bTrusted) return aTrusted ? -1 : 1;
+          return b.totalSupplyUsd - a.totalSupplyUsd;
+        });
 
         setMarkets(allMarkets);
         setLastFetched(Date.now());

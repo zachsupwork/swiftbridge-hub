@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, ChevronRight, AlertCircle, Wallet } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertCircle, Wallet, X } from 'lucide-react';
 import { Chain, getChains } from '@/lib/lifiClient';
 import { useMultiWallet, getWalletTypeForChain, WalletType } from '@/lib/wallets';
 import { SUPPORTED_CHAIN_IDS } from '@/lib/wagmiConfig';
@@ -131,20 +131,30 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
       <AnimatePresence>
         {isOpen && (
           <>
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40"
+              className="fixed inset-0 bg-background/60 backdrop-blur-sm z-[60]"
               onClick={() => setIsOpen(false)}
             />
+            {/* Modal – centered on desktop, bottom-sheet on mobile */}
             <motion.div
-              initial={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="absolute top-full left-0 right-0 mt-2 z-50 glass rounded-xl border border-border shadow-xl overflow-hidden"
+              exit={{ opacity: 0, y: 20 }}
+              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:inset-auto sm:w-full sm:max-w-sm bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[75vh] sm:max-h-[60vh] flex flex-col"
             >
-              <div className="max-h-80 overflow-y-auto p-2">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-border flex-shrink-0">
+                <h3 className="font-semibold text-sm">Select Chain</h3>
+                <button onClick={() => setIsOpen(false)} className="p-1 rounded-lg hover:bg-muted">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 p-2">
                 {/* Available chains (wallet connected) */}
                 {availableChains.length > 0 ? (
                   availableChains.map((chain) => (
