@@ -135,11 +135,16 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
       // Only update state if this is the latest fetch and component is still mounted
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
-        // Sort: trusted markets first (by TVL desc), then untrusted (by TVL desc)
+        // Sort: trusted first, then by APY desc, then by TVL desc
         allMarkets.sort((a, b) => {
           const aTrusted = isMarketTrusted(a);
           const bTrusted = isMarketTrusted(b);
           if (aTrusted !== bTrusted) return aTrusted ? -1 : 1;
+          // Primary: APY descending (normalize small decimals)
+          const aApy = a.supplyApy > 0 && a.supplyApy <= 1.5 ? a.supplyApy * 100 : a.supplyApy;
+          const bApy = b.supplyApy > 0 && b.supplyApy <= 1.5 ? b.supplyApy * 100 : b.supplyApy;
+          if (bApy !== aApy) return bApy - aApy;
+          // Secondary: TVL descending
           return b.totalSupplyUsd - a.totalSupplyUsd;
         });
 

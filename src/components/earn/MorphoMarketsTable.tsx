@@ -60,7 +60,7 @@ export function MorphoMarketsTable({
 }: MorphoMarketsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('supplyApy');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc'); // Default: low to high APY
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc'); // Default: high APY first
 
   // Filter and sort markets with normalized APY
   const filteredMarkets = useMemo(() => {
@@ -221,9 +221,9 @@ export function MorphoMarketsTable({
             className="pl-10 h-10 bg-muted/30 border-border/50"
           />
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Info className="w-3.5 h-3.5" />
-          <span>Rates source: Morpho API</span>
+          <span>Sorted by: {sortBy === 'supplyApy' ? 'APY' : sortBy === 'tvl' ? 'TVL' : sortBy === 'borrowApy' ? 'Borrow APR' : 'Utilization'} {sortDirection === 'desc' ? '↓' : '↑'}</span>
         </div>
       </div>
 
