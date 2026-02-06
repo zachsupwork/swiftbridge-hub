@@ -24,7 +24,7 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import { TokenIcon } from '@/components/common/TokenIcon';
 import { ChainIcon } from '@/components/common/ChainIcon';
-import { isMarketTrusted } from '@/hooks/useMorphoMarkets';
+import { isMarketTrusted, sortMarkets } from '@/hooks/useMorphoMarkets';
 
 interface MorphoMarketsTableProps {
   markets: MorphoMarket[];
@@ -59,12 +59,13 @@ export function MorphoMarketsTable({
   onMarketDetails,
 }: MorphoMarketsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('supplyApy');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc'); // Default: high APY first
+  const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('tvl');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Filter and sort markets with normalized APY
   const filteredMarkets = useMemo(() => {
-    let result = markets.map(m => ({
+    // Start with trust-sorted markets
+    let result = sortMarkets(markets).map(m => ({
       ...m,
       normalizedSupplyApy: normalizeAPY(m.supplyApy),
       normalizedBorrowApy: normalizeAPY(m.borrowApy),
@@ -80,25 +81,26 @@ export function MorphoMarketsTable({
       );
     }
 
-    // Sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      switch (sortBy) {
-        case 'supplyApy':
-          comparison = a.normalizedSupplyApy - b.normalizedSupplyApy;
-          break;
-        case 'borrowApy':
-          comparison = a.normalizedBorrowApy - b.normalizedBorrowApy;
-          break;
-        case 'tvl':
-          comparison = a.totalSupplyUsd - b.totalSupplyUsd;
-          break;
-        case 'utilization':
-          comparison = a.utilization - b.utilization;
-          break;
-      }
-      return sortDirection === 'desc' ? -comparison : comparison;
-    });
+    // If user explicitly sorts by a column, apply that within verified/unverified groups
+    if (sortBy !== 'tvl' || sortDirection !== 'desc') {
+      const verified = result.filter(m => isMarketTrusted(m));
+      const unverified = result.filter(m => !isMarketTrusted(m));
+      
+      const sorter = (a: typeof result[0], b: typeof result[0]) => {
+        let comparison = 0;
+        switch (sortBy) {
+          case 'supplyApy': comparison = a.normalizedSupplyApy - b.normalizedSupplyApy; break;
+          case 'borrowApy': comparison = a.normalizedBorrowApy - b.normalizedBorrowApy; break;
+          case 'tvl': comparison = a.totalSupplyUsd - b.totalSupplyUsd; break;
+          case 'utilization': comparison = a.utilization - b.utilization; break;
+        }
+        return sortDirection === 'desc' ? -comparison : comparison;
+      };
+      
+      verified.sort(sorter);
+      unverified.sort(sorter);
+      result = [...verified, ...unverified];
+    }
 
     return result;
   }, [markets, searchQuery, sortBy, sortDirection]);
@@ -222,8 +224,8 @@ export function MorphoMarketsTable({
           />
         </div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Info className="w-3.5 h-3.5" />
-          <span>Sorted by: {sortBy === 'supplyApy' ? 'APY' : sortBy === 'tvl' ? 'TVL' : sortBy === 'borrowApy' ? 'Borrow APR' : 'Utilization'} {sortDirection === 'desc' ? '↓' : '↑'}</span>
+          <ShieldAlert className="w-3.5 h-3.5 text-success" />
+          <span>Verified markets prioritized • Sorted by TVL &amp; APY</span>
         </div>
       </div>
 
@@ -276,14 +278,34 @@ export function MorphoMarketsTable({
               </tr>
             </thead>
             <tbody>
-              {filteredMarkets.map((market, index) => (
-                <motion.tr
-                  key={`${market.chainId}-${market.id}`}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(index * 0.02, 0.3) }}
-                  className="border-b border-border/30 hover:bg-muted/20 transition-colors"
-                >
+              {filteredMarkets.map((market, index) => {
+                const trusted = isMarketTrusted(market);
+                // Show divider before first unverified market
+                const prevTrusted = index > 0 ? isMarketTrusted(filteredMarkets[index - 1]) : true;
+                const showDivider = !trusted && prevTrusted;
+                
+                return (
+                  <>
+                    {showDivider && (
+                      <tr key="unverified-divider">
+                        <td colSpan={6} className="px-4 py-3 bg-muted/20 border-y border-border/40">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <ShieldAlert className="w-3.5 h-3.5 text-warning" />
+                            <span className="font-medium">Unverified / Higher Risk Markets</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    <motion.tr
+                      key={`${market.chainId}-${market.id}`}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(index * 0.02, 0.3) }}
+                      className={cn(
+                        "border-b border-border/30 hover:bg-muted/20 transition-colors",
+                        !trusted && "opacity-60"
+                      )}
+                    >
                   {/* Market pair */}
                   <td className="p-4">
                     <div className="flex items-center gap-3">
@@ -404,7 +426,10 @@ export function MorphoMarketsTable({
                     </div>
                   </td>
                 </motion.tr>
-              ))}
+                  </>
+                );
+              })}
+
             </tbody>
           </table>
         </div>
@@ -412,14 +437,25 @@ export function MorphoMarketsTable({
 
       {/* Mobile Cards */}
       <div className="md:hidden space-y-2">
-        {filteredMarkets.map((market, index) => (
-          <motion.div
-            key={`mobile-${market.chainId}-${market.id}`}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: Math.min(index * 0.02, 0.3) }}
-            className="glass rounded-xl p-4"
-          >
+        {filteredMarkets.map((market, index) => {
+          const trusted = isMarketTrusted(market);
+          const prevTrusted = index > 0 ? isMarketTrusted(filteredMarkets[index - 1]) : true;
+          const showDivider = !trusted && prevTrusted;
+          
+          return (
+            <div key={`mobile-${market.chainId}-${market.id}`}>
+              {showDivider && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground px-2 py-3 mt-2">
+                  <ShieldAlert className="w-3.5 h-3.5 text-warning" />
+                  <span className="font-medium">Unverified / Higher Risk Markets</span>
+                </div>
+              )}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(index * 0.02, 0.3) }}
+                className={cn("glass rounded-xl p-4", !trusted && "opacity-60")}
+              >
             <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-3">
                 <div className="relative flex-shrink-0">
@@ -519,7 +555,9 @@ export function MorphoMarketsTable({
               </Button>
             </div>
           </motion.div>
-        ))}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
