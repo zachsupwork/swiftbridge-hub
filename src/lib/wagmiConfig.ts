@@ -64,9 +64,16 @@ export function getSupportedChainIds(): number[] {
   return Array.from(SUPPORTED_CHAIN_IDS);
 }
 
+// WalletConnect requires a real projectId from https://cloud.walletconnect.com
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || 'demo-project-id';
+
+if (import.meta.env.DEV && !import.meta.env.VITE_WALLETCONNECT_PROJECT_ID) {
+  console.warn('[WagmiConfig] VITE_WALLETCONNECT_PROJECT_ID not set — WalletConnect may not work. Get one at https://cloud.walletconnect.com');
+}
+
 export const config = getDefaultConfig({
   appName: 'Crypto DeFi Bridge',
-  projectId: 'crypto-defi-bridge', // For demo purposes - replace with real WalletConnect project ID
+  projectId: WALLETCONNECT_PROJECT_ID,
   chains: SUPPORTED_CHAINS,
   transports: {
     [mainnet.id]: http(MAINNET_RPC),

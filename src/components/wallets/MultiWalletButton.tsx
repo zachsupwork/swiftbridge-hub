@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, ChevronDown, Check, Copy, AlertCircle, X, Loader2 } from 'lucide-react';
+import { Wallet, ChevronDown, Check, Copy, AlertCircle, X, Loader2, AlertTriangle } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useConnectWallet, useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
+import { useAccount, useSwitchChain } from 'wagmi';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
+import { isChainSupported, SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -50,14 +52,26 @@ export function MultiWalletButton() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wallets = useMultiWallet();
 
+  const { address: evmAddr, chainId: currentChainId } = useAccount();
+  const { switchChain } = useSwitchChain();
   const { connect: connectBitcoin, disconnect: disconnectBitcoin, isAvailable: btcAvailable, providerName: btcProvider } = useBitcoinWallet();
   const { disconnect: disconnectSolana } = useSolanaWallet();
   const { mutate: connectSui } = useConnectWallet();
   const { mutate: disconnectSui } = useDisconnectWallet();
 
-  const connectedCount = [wallets.evm.connected, wallets.solana.connected, wallets.bitcoin.connected, wallets.sui.connected].filter(Boolean).length;
+  const isUnsupportedNetwork = wallets.evm.connected && currentChainId && !isChainSupported(currentChainId);
 
-  // Clear connecting state when wallet actually connects
+  const handleSwitchNetwork = useCallback(() => {
+    try {
+      switchChain({ chainId: 1 }); // default to Ethereum mainnet
+      toast.success('Switching to Ethereum Mainnet…');
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('[Wallet] Network switch error:', err);
+      toast.error('Failed to switch network. Please switch manually in your wallet.');
+    }
+  }, [switchChain]);
+
+  const connectedCount = [wallets.evm.connected, wallets.solana.connected, wallets.bitcoin.connected, wallets.sui.connected].filter(Boolean).length;
   useEffect(() => {
     if (connectingType === 'evm' && wallets.evm.connected) setConnectingType(null);
     if (connectingType === 'bitcoin' && wallets.bitcoin.connected) setConnectingType(null);
@@ -212,6 +226,20 @@ export function MultiWalletButton() {
                               <Button type="button" onClick={openAccountModal} variant="ghost" className="h-12 px-4 text-sm">
                                 Disconnect
                               </Button>
+                            </div>
+                          )}
+                          {/* Unsupported network warning */}
+                          {connected && isUnsupportedNetwork && (
+                            <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-sm">
+                              <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
+                              <span className="text-destructive flex-1">Unsupported network detected</span>
+                              <button
+                                type="button"
+                                onClick={handleSwitchNetwork}
+                                className="px-3 py-1 rounded-lg bg-destructive text-destructive-foreground text-xs font-medium hover:bg-destructive/90"
+                              >
+                                Switch
+                              </button>
                             </div>
                           )}
                         </div>
