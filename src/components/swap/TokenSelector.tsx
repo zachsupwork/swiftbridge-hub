@@ -4,6 +4,7 @@ import { Search, ChevronDown, X, Loader2, Coins } from 'lucide-react';
 import { Token, getTokens } from '@/lib/lifiClient';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 interface TokenSelectorProps {
   chainId: number;
@@ -82,14 +83,7 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
       >
         {selectedToken ? (
           <>
-            <img
-              src={selectedToken.logoURI || `https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/${selectedToken.symbol.toLowerCase()}.svg`}
-              alt={selectedToken.symbol}
-              className="w-7 h-7 rounded-full bg-muted ring-1 ring-border/30"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-              }}
-            />
+            <TokenIconStable symbol={selectedToken.symbol} logoURI={selectedToken.logoURI} size="md" />
             <div className="flex-1 text-left min-w-0">
               <div className="font-semibold text-sm leading-tight">{selectedToken.symbol}</div>
               <div className="text-[11px] text-muted-foreground truncate">{selectedToken.name}</div>
@@ -134,7 +128,6 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                   </button>
                 </div>
 
-                {/* Search */}
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/50 border border-border/30 rounded-xl focus-within:ring-2 focus-within:ring-primary/30 transition-all">
                   <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                   <input
@@ -172,14 +165,7 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                             : "border-border/50 bg-muted/30 hover:bg-muted/60 text-foreground"
                         )}
                       >
-                        <img
-                          src={token.logoURI || `https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/${token.symbol.toLowerCase()}.svg`}
-                          alt={token.symbol}
-                          className="w-4 h-4 rounded-full"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                          }}
-                        />
+                        <TokenIconStable symbol={token.symbol} logoURI={token.logoURI} size="sm" />
                         {token.symbol}
                       </button>
                     ))}
@@ -229,14 +215,7 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                             : "hover:bg-muted/40"
                         )}
                       >
-                        <img
-                          src={token.logoURI || `https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/${token.symbol.toLowerCase()}.svg`}
-                          alt={token.symbol}
-                          className="w-8 h-8 rounded-full bg-muted ring-1 ring-border/20"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                          }}
-                        />
+                        <TokenIconStable symbol={token.symbol} logoURI={token.logoURI} size="lg" />
                         <div className="flex-1 text-left min-w-0">
                           <div className="font-semibold text-sm">{token.symbol}</div>
                           <div className="text-xs text-muted-foreground truncate">{token.name}</div>
@@ -257,7 +236,6 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                 )}
               </div>
 
-              {/* Footer count */}
               <div className="flex-shrink-0 px-4 py-2 border-t border-border/30 text-xs text-muted-foreground text-center">
                 {filteredTokens.length} token{filteredTokens.length !== 1 ? 's' : ''} available
               </div>

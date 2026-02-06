@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useSendTransaction, useSwitchChain, useBalance, useReadContract } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
@@ -518,10 +519,17 @@ export function SwapCard() {
 
         {/* Action button */}
         {!isConnected ? (
-          <Button disabled className="w-full py-6 text-lg gap-2">
-            <Wallet className="w-5 h-5" />
-            Connect Wallet
-          </Button>
+          <ConnectButton.Custom>
+            {({ openConnectModal, mounted }) => (
+              <Button
+                onClick={() => mounted && openConnectModal()}
+                className="w-full py-6 text-lg gap-2 gradient-primary text-primary-foreground hover:opacity-90"
+              >
+                <Wallet className="w-5 h-5" />
+                Connect Wallet
+              </Button>
+            )}
+          </ConnectButton.Custom>
         ) : !isFromChainSupported || !isToChainSupported ? (
           <Button disabled className="w-full py-6 text-lg bg-destructive/20 text-destructive">
             <AlertTriangle className="w-5 h-5 mr-2" />
