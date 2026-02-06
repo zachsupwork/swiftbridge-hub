@@ -73,20 +73,29 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
       <AnimatePresence>
         {isOpen && (
           <>
+            {/* Backdrop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50"
+              className="fixed inset-0 bg-background/60 backdrop-blur-sm z-[60]"
               onClick={() => setIsOpen(false)}
             />
+            {/* Modal – bottom sheet on mobile, centered dialog on desktop */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed inset-x-4 top-1/2 -translate-y-1/2 md:absolute md:inset-auto md:top-full md:left-0 md:right-0 md:translate-y-2 z-50 glass rounded-2xl border border-border shadow-2xl max-h-[70vh] md:max-h-96 overflow-hidden"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:inset-auto sm:w-full sm:max-w-sm bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[80vh] sm:max-h-[60vh] flex flex-col"
             >
-              <div className="p-3 border-b border-border">
+              {/* Sticky header */}
+              <div className="flex-shrink-0 p-3 border-b border-border">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-sm">Select Token</h3>
+                  <button onClick={() => setIsOpen(false)} className="p-1 rounded-lg hover:bg-muted">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg">
                   <Search className="w-4 h-4 text-muted-foreground" />
                   <input
@@ -105,7 +114,7 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                 </div>
               </div>
 
-              <div className="overflow-y-auto max-h-64 p-2">
+              <div className="overflow-y-auto flex-1 p-2">
                 {loading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />

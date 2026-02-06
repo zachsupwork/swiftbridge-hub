@@ -30,15 +30,13 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 gap-2">
           {/* Logo - properly constrained for mobile */}
-          <Link to="/" className="flex items-center gap-2 min-w-0 flex-shrink-0 max-w-[140px] sm:max-w-none" aria-label="Crypto DeFi Bridge Home">
+          <Link to="/" className="flex items-center gap-2 flex-shrink-0" aria-label="Crypto DeFi Bridge Home">
             <img 
               src={logoImage} 
               alt="Crypto DeFi Bridge Logo" 
               className="w-8 h-8 rounded-lg flex-shrink-0"
             />
-            <div className="flex flex-col leading-tight min-w-0">
-              <span className="text-xs sm:text-base font-bold text-gradient truncate">Crypto DeFi Bridge</span>
-            </div>
+            <span className="text-xs sm:text-base font-bold text-gradient whitespace-nowrap">Crypto DeFi Bridge</span>
           </Link>
 
           {/* Desktop Navigation */}
