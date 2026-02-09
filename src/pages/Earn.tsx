@@ -591,7 +591,7 @@ export default function Earn() {
         onSuccess={handleCloseModal}
       />
 
-      {/* Borrow Modal */}
+      {/* Borrow Modal (handles collateral supply inline) */}
       <MorphoBorrowModal
         isOpen={isBorrowModalOpen}
         onClose={handleCloseModal}
@@ -600,11 +600,10 @@ export default function Earn() {
         existingCollateralUsd={selectedPosition?.collateralUsd}
         existingBorrow={selectedPosition?.borrowAssets}
         existingBorrowUsd={selectedPosition?.borrowAssetsUsd}
-        onSupplyCollateral={() => {
-          setIsBorrowModalOpen(false);
-          setIsSupplyModalOpen(true);
+        onSuccess={() => {
+          refreshMarkets();
+          refreshPositions();
         }}
-        onSuccess={handleCloseModal}
       />
 
       {/* Market Details Drawer */}

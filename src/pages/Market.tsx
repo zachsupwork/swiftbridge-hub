@@ -473,7 +473,7 @@ export default function Market() {
         existingCollateralUsd={position?.collateralUsd}
         existingBorrow={position?.borrowAssets}
         existingBorrowUsd={position?.borrowAssetsUsd}
-        onSupplyCollateral={handleSupplyCollateral}
+        
         onSuccess={handleCloseModal}
       />
     </Layout>

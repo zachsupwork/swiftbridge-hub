@@ -1,12 +1,13 @@
 /**
  * Morpho Borrow Modal
  * 
- * Detailed modal for borrowing the LOAN TOKEN from a Morpho Blue market.
- * Shows collateral requirements, max borrow, health factor, and liquidation risk.
+ * Two-step modal:
+ * Step 1: Supply collateral (supplyCollateral) if user has none
+ * Step 2: Borrow the loan token
+ * Advanced users can skip Step 1 if they already have collateral.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { 
   AlertTriangle, 
   Loader2, 
@@ -19,6 +20,7 @@ import {
   AlertCircle,
   Zap,
   TrendingUp,
+  ChevronRight,
 } from 'lucide-react';
 import { 
   useAccount, 
@@ -27,6 +29,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
+  useBalance,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
 import { Button } from '@/components/ui/button';
@@ -51,7 +54,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { 
@@ -67,6 +69,8 @@ import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
 
+type BorrowStep = 'collateral' | 'borrow';
+
 interface MorphoBorrowModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -75,7 +79,6 @@ interface MorphoBorrowModalProps {
   existingCollateralUsd?: number;
   existingBorrow?: bigint;
   existingBorrowUsd?: number;
-  onSupplyCollateral?: () => void;
   onSuccess?: () => void;
 }
 
@@ -87,7 +90,6 @@ export function MorphoBorrowModal({
   existingCollateralUsd = 0,
   existingBorrow = 0n,
   existingBorrowUsd = 0,
-  onSupplyCollateral,
   onSuccess,
 }: MorphoBorrowModalProps) {
   const { address, isConnected } = useAccount();
@@ -95,47 +97,71 @@ export function MorphoBorrowModal({
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
-  const [amount, setAmount] = useState('');
+  // ---- State ----
+  const [borrowStep, setBorrowStep] = useState<BorrowStep>('collateral');
+  const [collateralAmount, setCollateralAmount] = useState('');
+  const [borrowAmount, setBorrowAmount] = useState('');
   const [step, setStep] = useState<ActionStep>('idle');
   const [error, setError] = useState<string | null>(null);
   const [actionTxHash, setActionTxHash] = useState<Hash | undefined>();
-  const [showExplanation, setShowExplanation] = useState(true);
+  const [approvalTxHash, setApprovalTxHash] = useState<Hash | undefined>();
+  // Track collateral supplied in this session (for the step transition)
+  const [sessionCollateralUsd, setSessionCollateralUsd] = useState(0);
 
   const loanToken = market?.loanAsset;
   const collateralToken = market?.collateralAsset;
   const loanDecimals = loanToken?.decimals || 18;
+  const collateralDecimals = collateralToken?.decimals || 18;
   const chainConfig = market ? getMorphoChainConfig(market.chainId) : null;
 
-  // Wait for transaction
-  const { isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({
-    hash: actionTxHash,
+  const hasCollateral = existingCollateralUsd > 0 || sessionCollateralUsd > 0;
+
+  // Read collateral token balance
+  const { data: collateralBalance } = useBalance({
+    address,
+    token: collateralToken?.address as `0x${string}` | undefined,
+    chainId: market?.chainId,
+    query: { enabled: !!address && !!collateralToken?.address && isOpen },
   });
 
-  // Parse amount
-  const parsedAmount = useMemo(() => {
-    try {
-      return parseUnits(amount || '0', loanDecimals);
-    } catch {
-      return 0n;
-    }
-  }, [amount, loanDecimals]);
+  // Read collateral token allowance for Morpho Blue
+  const { data: collateralAllowance, refetch: refetchAllowance } = useReadContract({
+    address: collateralToken?.address as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: address ? [address, MORPHO_BLUE_ADDRESS] : undefined,
+    chainId: market?.chainId,
+    query: { enabled: !!address && !!collateralToken?.address && isOpen },
+  });
 
-  // Calculate max borrow based on collateral and LLTV
+  // Wait for tx receipts
+  const { isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({ hash: actionTxHash });
+  const { isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({ hash: approvalTxHash });
+
+  // Parse amounts
+  const parsedCollateral = useMemo(() => {
+    try { return parseUnits(collateralAmount || '0', collateralDecimals); } catch { return 0n; }
+  }, [collateralAmount, collateralDecimals]);
+
+  const parsedBorrow = useMemo(() => {
+    try { return parseUnits(borrowAmount || '0', loanDecimals); } catch { return 0n; }
+  }, [borrowAmount, loanDecimals]);
+
+  // Effective collateral for borrow calculations
+  const effectiveCollateralUsd = existingCollateralUsd + sessionCollateralUsd;
+
   const maxBorrowUsd = useMemo(() => {
-    if (existingCollateralUsd <= 0 || !market) return 0;
-    return existingCollateralUsd * (market.lltv / 100);
-  }, [existingCollateralUsd, market]);
+    if (effectiveCollateralUsd <= 0 || !market) return 0;
+    return effectiveCollateralUsd * (market.lltv / 100);
+  }, [effectiveCollateralUsd, market]);
 
   const availableToBorrowUsd = useMemo(() => {
     return Math.max(0, maxBorrowUsd - existingBorrowUsd);
   }, [maxBorrowUsd, existingBorrowUsd]);
 
-  // Calculate health factor after borrow
   const projectedBorrowUsd = useMemo(() => {
-    // Simple estimate: assume 1:1 USD value for amount (in production, use oracle price)
-    const amountFloat = parseFloat(amount || '0');
-    return existingBorrowUsd + amountFloat;
-  }, [amount, existingBorrowUsd]);
+    return existingBorrowUsd + parseFloat(borrowAmount || '0');
+  }, [borrowAmount, existingBorrowUsd]);
 
   const projectedHealthFactor = useMemo(() => {
     if (projectedBorrowUsd <= 0) return null;
@@ -154,7 +180,6 @@ export function MorphoBorrowModal({
     return (projectedBorrowUsd / maxBorrowUsd) * 100;
   }, [projectedBorrowUsd, maxBorrowUsd]);
 
-  // Risk level
   const riskLevel = useMemo(() => {
     if (projectedHealthFactor === null) return 'safe';
     if (projectedHealthFactor > 1.5) return 'safe';
@@ -163,79 +188,159 @@ export function MorphoBorrowModal({
     return 'liquidation';
   }, [projectedHealthFactor]);
 
-  // Reset state
+  // Needs approval?
+  const needsApproval = useMemo(() => {
+    if (!collateralAllowance || parsedCollateral === 0n) return false;
+    return (collateralAllowance as bigint) < parsedCollateral;
+  }, [collateralAllowance, parsedCollateral]);
+
+  // Reset state on open
   useEffect(() => {
     if (isOpen) {
-      setAmount('');
+      setCollateralAmount('');
+      setBorrowAmount('');
       setStep('idle');
       setError(null);
       setActionTxHash(undefined);
+      setApprovalTxHash(undefined);
+      setSessionCollateralUsd(0);
+      // Auto-select step based on existing collateral
+      setBorrowStep(existingCollateralUsd > 0 ? 'borrow' : 'collateral');
     }
-  }, [isOpen]);
+  }, [isOpen, existingCollateralUsd]);
 
   const isWrongChain = market && walletChainId !== market.chainId;
-  const hasCollateral = existingCollateralUsd > 0;
 
-  // Handle chain switch
   const handleSwitchChain = useCallback(async () => {
     if (!market) return;
-    try {
-      await switchChain({ chainId: market.chainId });
-    } catch (err) {
+    try { await switchChain({ chainId: market.chainId }); } catch (err) {
       console.error('Failed to switch chain:', err);
     }
   }, [market, switchChain]);
 
-  // Set percentage of available borrow
-  const handleSetPercentage = useCallback((percent: number) => {
-    if (availableToBorrowUsd <= 0) return;
-    const borrowAmount = (availableToBorrowUsd * percent) / 100;
-    setAmount(borrowAmount.toFixed(4));
-  }, [availableToBorrowUsd]);
+  // ---- Approve collateral token ----
+  const executeApproveCollateral = useCallback(async () => {
+    if (!collateralToken?.address || !address || parsedCollateral === 0n) return;
+    try {
+      setError(null);
+      setStep('approval');
+      const txHash = await writeContractAsync({
+        address: collateralToken.address as `0x${string}`,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [MORPHO_BLUE_ADDRESS, parsedCollateral],
+      } as any);
+      setApprovalTxHash(txHash);
+      setStep('approval_pending');
+    } catch (err: unknown) {
+      console.error('Approval failed:', err);
+      setError(err instanceof Error ? err.message : 'Approval failed');
+      setStep('error');
+    }
+  }, [collateralToken, address, parsedCollateral, writeContractAsync]);
 
-  // Execute borrow
-  const executeBorrow = useCallback(async () => {
-    if (!market || !address || parsedAmount === 0n) return;
+  // After approval confirms, execute supply collateral
+  useEffect(() => {
+    if (isApprovalConfirmed && step === 'approval_pending') {
+      refetchAllowance();
+      executeSupplyCollateral();
+    }
+  }, [isApprovalConfirmed, step]);
 
+  // ---- Supply Collateral ----
+  const executeSupplyCollateral = useCallback(async () => {
+    if (!market || !address || parsedCollateral === 0n) return;
     try {
       setError(null);
       const marketParams = marketToParams(market);
+      setStep('action');
+      const txHash = await writeContractAsync({
+        address: MORPHO_BLUE_ADDRESS,
+        abi: MORPHO_BLUE_ABI,
+        functionName: 'supplyCollateral',
+        args: [marketParams, parsedCollateral, address, '0x'],
+      } as any);
+      setActionTxHash(txHash);
+      setStep('action_pending');
+    } catch (err: unknown) {
+      console.error('Supply collateral failed:', err);
+      setError(err instanceof Error ? err.message : 'Transaction failed');
+      setStep('error');
+    }
+  }, [market, address, parsedCollateral, writeContractAsync]);
 
+  // Handle collateral supply confirmation → advance to borrow step
+  useEffect(() => {
+    if (isActionConfirmed && step === 'action_pending' && borrowStep === 'collateral') {
+      const collateralAmountFloat = parseFloat(collateralAmount || '0');
+      setSessionCollateralUsd(collateralAmountFloat); // rough USD estimate
+      toast({
+        title: 'Collateral Supplied',
+        description: `You supplied ${collateralAmount} ${collateralToken?.symbol}. You can now borrow.`,
+      });
+      // Reset for borrow step
+      setStep('idle');
+      setActionTxHash(undefined);
+      setApprovalTxHash(undefined);
+      setError(null);
+      setBorrowStep('borrow');
+      onSuccess?.(); // trigger position refresh
+    }
+  }, [isActionConfirmed, step, borrowStep, collateralAmount, collateralToken?.symbol, onSuccess]);
+
+  // ---- Execute Borrow ----
+  const executeBorrow = useCallback(async () => {
+    if (!market || !address || parsedBorrow === 0n) return;
+    try {
+      setError(null);
+      const marketParams = marketToParams(market);
       setStep('action');
       const txHash = await writeContractAsync({
         address: MORPHO_BLUE_ADDRESS,
         abi: MORPHO_BLUE_ABI,
         functionName: 'borrow',
-        args: [marketParams, parsedAmount, 0n, address, address],
+        args: [marketParams, parsedBorrow, 0n, address, address],
       } as any);
-
       setActionTxHash(txHash);
       setStep('action_pending');
-
     } catch (err: unknown) {
       console.error('Borrow failed:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
-      setError(errorMessage);
+      setError(err instanceof Error ? err.message : 'Transaction failed');
       setStep('error');
     }
-  }, [market, address, parsedAmount, writeContractAsync]);
+  }, [market, address, parsedBorrow, writeContractAsync]);
 
-  // Handle confirmations
+  // Handle borrow confirmation
   useEffect(() => {
-    if (isActionConfirmed && step === 'action_pending') {
+    if (isActionConfirmed && step === 'action_pending' && borrowStep === 'borrow') {
       setStep('success');
       toast({
         title: 'Borrow Successful',
-        description: `You borrowed ${amount} ${loanToken?.symbol}.`,
+        description: `You borrowed ${borrowAmount} ${loanToken?.symbol}.`,
       });
       onSuccess?.();
     }
-  }, [isActionConfirmed, step, amount, loanToken?.symbol, onSuccess]);
+  }, [isActionConfirmed, step, borrowStep, borrowAmount, loanToken?.symbol, onSuccess]);
+
+  // ---- Collateral step: handle approve or supply ----
+  const handleCollateralAction = useCallback(() => {
+    if (needsApproval) {
+      executeApproveCollateral();
+    } else {
+      executeSupplyCollateral();
+    }
+  }, [needsApproval, executeApproveCollateral, executeSupplyCollateral]);
+
+  const handleSetBorrowPercentage = useCallback((percent: number) => {
+    if (availableToBorrowUsd <= 0) return;
+    const amount = (availableToBorrowUsd * percent) / 100;
+    setBorrowAmount(amount.toFixed(4));
+  }, [availableToBorrowUsd]);
 
   const isLoading = step !== 'idle' && step !== 'success' && step !== 'error';
-  const canExecute = parsedAmount > 0n && !isLoading && !isWrongChain && isConnected && hasCollateral && riskLevel !== 'liquidation';
+  const canBorrow = parsedBorrow > 0n && !isLoading && !isWrongChain && isConnected && hasCollateral && riskLevel !== 'liquidation';
+  const canSupplyCollateral = parsedCollateral > 0n && !isLoading && !isWrongChain && isConnected;
 
-  // Format helpers
   const formatAPY = (apy: number) => {
     if (!Number.isFinite(apy) || apy === 0) return '—';
     const normalized = apy <= 1.5 ? apy * 100 : apy;
@@ -269,6 +374,48 @@ export function MorphoBorrowModal({
               </DialogDescription>
             </DialogHeader>
 
+            {/* Step Indicator */}
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+              <div className={cn(
+                "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold",
+                borrowStep === 'collateral' 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-success text-success-foreground"
+              )}>
+                {borrowStep === 'collateral' ? '1' : <Check className="w-3 h-3" />}
+              </div>
+              <span className={cn(
+                "text-sm font-medium",
+                borrowStep === 'collateral' ? "text-foreground" : "text-success"
+              )}>
+                Supply Collateral
+              </span>
+              <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              <div className={cn(
+                "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold",
+                borrowStep === 'borrow' 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-muted text-muted-foreground"
+              )}>
+                2
+              </div>
+              <span className={cn(
+                "text-sm font-medium",
+                borrowStep === 'borrow' ? "text-foreground" : "text-muted-foreground"
+              )}>
+                Borrow
+              </span>
+              {/* Skip link if already has collateral and on step 1 */}
+              {hasCollateral && borrowStep === 'collateral' && (
+                <button
+                  onClick={() => setBorrowStep('borrow')}
+                  className="ml-auto text-xs text-primary hover:underline"
+                >
+                  Skip →
+                </button>
+              )}
+            </div>
+
             {/* Wrong chain warning */}
             {isWrongChain && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
@@ -283,119 +430,149 @@ export function MorphoBorrowModal({
               </div>
             )}
 
-            {/* No Collateral Warning */}
-            {!hasCollateral && (
-              <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30 space-y-3">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-destructive">Collateral Required</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      You must supply <strong>{collateralToken?.symbol || 'collateral'}</strong> before you can borrow {loanToken.symbol}.
-                    </p>
+            {/* ========== STEP 1: Supply Collateral ========== */}
+            {borrowStep === 'collateral' && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg bg-primary/10 border border-primary/20 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-sm">Collateral Required</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        To borrow <strong>{loanToken.symbol}</strong>, you must supply{' '}
+                        <strong>{collateralToken?.symbol || 'collateral'}</strong> first. 
+                        Your collateral secures the loan and determines your borrow limit.
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <Button 
-                  variant="outline" 
+
+                {/* Collateral Input */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium flex items-center gap-1.5">
+                      <TokenIconStable symbol={collateralToken?.symbol || '?'} size="sm" />
+                      Supply {collateralToken?.symbol || 'Collateral'}
+                    </label>
+                    <span className="text-xs text-muted-foreground">
+                      Balance: {collateralBalance 
+                        ? parseFloat(formatUnits(collateralBalance.value, collateralDecimals)).toFixed(4)
+                        : '0'
+                      } {collateralToken?.symbol}
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      value={collateralAmount}
+                      onChange={(e) => setCollateralAmount(e.target.value)}
+                      placeholder="0.00"
+                      disabled={isLoading}
+                      className="text-lg font-mono pr-20"
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                      <span className="text-sm font-medium">{collateralToken?.symbol}</span>
+                    </div>
+                  </div>
+                  {/* Quick amount buttons */}
+                  <div className="flex gap-2">
+                    {[25, 50, 75, 100].map((percent) => (
+                      <button
+                        key={percent}
+                        onClick={() => {
+                          if (!collateralBalance) return;
+                          const val = (collateralBalance.value * BigInt(percent)) / 100n;
+                          setCollateralAmount(formatUnits(val, collateralDecimals));
+                        }}
+                        className="flex-1 py-1.5 rounded text-xs font-medium transition-colors bg-muted hover:bg-muted/80"
+                      >
+                        {percent}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Info: LLTV and what this means */}
+                <div className="p-3 rounded-lg bg-muted/30 border border-border/50 text-xs text-muted-foreground space-y-1">
+                  <p>• <strong>LLTV {market.lltv.toFixed(0)}%</strong>: You can borrow up to {market.lltv.toFixed(0)}% of your collateral value.</p>
+                  <p>• If your health factor drops below 1.0, your collateral may be liquidated.</p>
+                  <p>• <strong>Supply (Earn)</strong> deposits the loan asset and does NOT give borrow power.</p>
+                  <p>• <strong>Borrow requires collateral deposit</strong> in this specific market.</p>
+                </div>
+
+                {/* Collateral Action Button */}
+                <Button
+                  onClick={handleCollateralAction}
+                  disabled={!canSupplyCollateral}
                   className="w-full gap-2"
-                  onClick={() => {
-                    onClose();
-                    onSupplyCollateral?.();
-                  }}
+                  size="lg"
                 >
-                  <TrendingUp className="w-4 h-4" />
-                  Supply {collateralToken?.symbol || 'Collateral'} First
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {step === 'approval' || step === 'approval_pending'
+                        ? `Approving ${collateralToken?.symbol}...`
+                        : `Supplying ${collateralToken?.symbol}...`}
+                    </>
+                  ) : needsApproval ? (
+                    <>
+                      <Shield className="w-4 h-4" />
+                      Approve {collateralToken?.symbol}
+                    </>
+                  ) : (
+                    <>
+                      <TrendingUp className="w-4 h-4" />
+                      Supply {collateralToken?.symbol} as Collateral
+                    </>
+                  )}
                 </Button>
               </div>
             )}
 
-            {/* Educational Explanation */}
-            {hasCollateral && (
-              <Collapsible open={showExplanation} onOpenChange={setShowExplanation}>
-                <CollapsibleTrigger asChild>
-                  <button className="w-full flex items-center justify-between p-3 rounded-lg bg-primary/10 border border-primary/20 hover:bg-primary/15 transition-colors">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <Info className="w-4 h-4 text-primary" />
-                      How borrowing works in this market
+            {/* ========== STEP 2: Borrow ========== */}
+            {borrowStep === 'borrow' && (
+              <div className="space-y-4">
+                {/* Position Overview */}
+                <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Shield className="w-4 h-4 text-primary" />
+                    Your Position
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Collateral</div>
+                      <div className="font-medium text-success">{formatUsd(effectiveCollateralUsd)}</div>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {showExplanation ? 'Hide' : 'Show'}
-                    </span>
-                  </button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-2">
-                  <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-3">
-                    <div className="text-sm space-y-2">
-                      <p className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">Loan Asset</Badge>
-                        <TokenIconStable symbol={loanToken.symbol} size="sm" />
-                        <span className="font-medium">{loanToken.symbol}</span>
-                        <span className="text-muted-foreground">← You borrow this</span>
-                      </p>
-                      <p className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">Collateral</Badge>
-                        {collateralToken && (
-                          <TokenIconStable symbol={collateralToken.symbol} size="sm" />
-                        )}
-                        <span className="font-medium">{collateralToken?.symbol || '—'}</span>
-                        <span className="text-muted-foreground">← You deposited this</span>
-                      </p>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Max Borrow</div>
+                      <div className="font-medium">{formatUsd(maxBorrowUsd)}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground space-y-1 pt-2 border-t border-border/30">
-                      <p>• <strong>LLTV {market.lltv.toFixed(0)}%</strong>: You can borrow up to {market.lltv.toFixed(0)}% of your collateral value.</p>
-                      <p>• <strong>Health Factor</strong>: If it drops below 1.0, your collateral can be liquidated.</p>
-                      <p>• <strong>Interest accrues</strong> on your borrowed amount at the Borrow APR.</p>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Current Borrow</div>
+                      <div className="font-medium text-warning">{formatUsd(existingBorrowUsd)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground">Available</div>
+                      <div className="font-medium text-primary">{formatUsd(availableToBorrowUsd)}</div>
                     </div>
                   </div>
-                </CollapsibleContent>
-              </Collapsible>
-            )}
+                  <div className="pt-2 border-t border-border/30">
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-muted-foreground">Health Factor</span>
+                      <span className={cn(
+                        "font-medium",
+                        currentHealthFactor === null ? "text-success" :
+                        currentHealthFactor > 1.5 ? "text-success" :
+                        currentHealthFactor > 1 ? "text-warning" :
+                        "text-destructive"
+                      )}>
+                        {currentHealthFactor === null ? '∞ (Safe)' : currentHealthFactor.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Position Overview (if has collateral) */}
-            {hasCollateral && (
-              <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  <Shield className="w-4 h-4 text-primary" />
-                  Your Position
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs text-muted-foreground">Collateral</div>
-                    <div className="font-medium text-success">{formatUsd(existingCollateralUsd)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Max Borrow</div>
-                    <div className="font-medium">{formatUsd(maxBorrowUsd)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Current Borrow</div>
-                    <div className="font-medium text-warning">{formatUsd(existingBorrowUsd)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Available</div>
-                    <div className="font-medium text-primary">{formatUsd(availableToBorrowUsd)}</div>
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-border/30">
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-muted-foreground">Health Factor</span>
-                    <span className={cn(
-                      "font-medium",
-                      currentHealthFactor === null ? "text-success" :
-                      currentHealthFactor > 1.5 ? "text-success" :
-                      currentHealthFactor > 1 ? "text-warning" :
-                      "text-destructive"
-                    )}>
-                      {currentHealthFactor === null ? '∞ (Safe)' : currentHealthFactor.toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Amount Input */}
-            {hasCollateral && (
-              <>
+                {/* Borrow Amount Input */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium flex items-center gap-1.5">
@@ -407,7 +584,7 @@ export function MorphoBorrowModal({
                           </TooltipTrigger>
                           <TooltipContent>
                             <p className="text-xs max-w-[200px]">
-                              You can only borrow the loan asset ({loanToken.symbol}) in this market.
+                              You borrow the loan asset ({loanToken.symbol}) against your deposited collateral.
                             </p>
                           </TooltipContent>
                         </Tooltip>
@@ -420,8 +597,8 @@ export function MorphoBorrowModal({
                   <div className="relative">
                     <Input
                       type="number"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      value={borrowAmount}
+                      onChange={(e) => setBorrowAmount(e.target.value)}
                       placeholder="0.00"
                       disabled={isLoading}
                       className="text-lg font-mono pr-20"
@@ -431,17 +608,12 @@ export function MorphoBorrowModal({
                       <span className="text-sm font-medium">{loanToken.symbol}</span>
                     </div>
                   </div>
-                  
-                  {/* Quick amount buttons */}
                   <div className="flex gap-2">
                     {[25, 50, 75, 90].map((percent) => (
                       <button
                         key={percent}
-                        onClick={() => handleSetPercentage(percent)}
-                        className={cn(
-                          "flex-1 py-1.5 rounded text-xs font-medium transition-colors",
-                          "bg-muted hover:bg-muted/80"
-                        )}
+                        onClick={() => handleSetBorrowPercentage(percent)}
+                        className="flex-1 py-1.5 rounded text-xs font-medium transition-colors bg-muted hover:bg-muted/80"
                       >
                         {percent}%
                       </button>
@@ -477,9 +649,7 @@ export function MorphoBorrowModal({
                     <span>Risky</span>
                     <span>Liquidation</span>
                   </div>
-
-                  {/* Projected Health Factor */}
-                  {parsedAmount > 0n && (
+                  {parsedBorrow > 0n && (
                     <div className="pt-3 border-t border-border/30">
                       <div className="flex items-center justify-between">
                         <span className="text-sm">Projected Health Factor</span>
@@ -500,33 +670,46 @@ export function MorphoBorrowModal({
                   )}
                 </div>
 
-                {/* Transaction Preview */}
-                <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Zap className="w-4 h-4 text-primary" />
-                    Transaction Preview
-                  </div>
-                  
-                  <div className="flex items-center gap-3 p-2 rounded bg-primary/10">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-primary/20 text-primary">
-                      1
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm">Borrow {amount || '0'} {loanToken.symbol}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Borrow APR: {formatAPY(market.borrowApy)}
-                      </p>
-                    </div>
-                  </div>
+                {/* Borrow Button */}
+                <Button
+                  onClick={executeBorrow}
+                  disabled={!canBorrow}
+                  className="w-full gap-2"
+                  size="lg"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {getStepDescription(step, 'borrow')}
+                    </>
+                  ) : step === 'success' ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Borrow Complete
+                    </>
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      Borrow {loanToken.symbol}
+                    </>
+                  )}
+                </Button>
 
-                  <div className="pt-2 border-t border-border/30 text-xs text-muted-foreground">
-                    No platform fee on Earn actions.
-                  </div>
-                </div>
-              </>
+                {/* Go back to add more collateral */}
+                <button
+                  onClick={() => {
+                    setStep('idle');
+                    setError(null);
+                    setBorrowStep('collateral');
+                  }}
+                  className="w-full text-xs text-muted-foreground hover:text-foreground text-center"
+                >
+                  ← Add more collateral
+                </button>
+              </div>
             )}
 
-            {/* Transaction Status */}
+            {/* Transaction Status (shared) */}
             {step !== 'idle' && (
               <div className="p-3 rounded-lg bg-muted/30 space-y-2">
                 <div className="flex items-center gap-2">
@@ -538,13 +721,12 @@ export function MorphoBorrowModal({
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
                   )}
                   <span className="text-sm font-medium">
-                    {getStepDescription(step, 'borrow')}
+                    {getStepDescription(step, borrowStep === 'collateral' ? 'supply collateral' : 'borrow')}
                   </span>
                 </div>
-                
-                {actionTxHash && (
+                {(actionTxHash || approvalTxHash) && (
                   <a
-                    href={`${CHAIN_EXPLORERS[market.chainId] || 'https://etherscan.io/tx/'}${actionTxHash}`}
+                    href={`${CHAIN_EXPLORERS[market.chainId] || 'https://etherscan.io/tx/'}${actionTxHash || approvalTxHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-xs text-primary hover:underline"
@@ -563,33 +745,6 @@ export function MorphoBorrowModal({
               </div>
             )}
 
-            {/* Action Button */}
-            {hasCollateral && (
-              <Button
-                onClick={executeBorrow}
-                disabled={!canExecute}
-                className="w-full gap-2"
-                size="lg"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {getStepDescription(step, 'borrow')}
-                  </>
-                ) : step === 'success' ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    Borrow Complete
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="w-4 h-4" />
-                    Borrow {loanToken.symbol}
-                  </>
-                )}
-              </Button>
-            )}
-
             {/* Definitions */}
             <Collapsible>
               <CollapsibleTrigger asChild>
@@ -605,11 +760,11 @@ export function MorphoBorrowModal({
                 <p><strong>LLTV (Liquidation LTV):</strong> The maximum loan-to-value ratio. If your borrow exceeds this, you can be liquidated.</p>
                 <p><strong>Health Factor:</strong> A safety metric. Above 1.0 = safe. Below 1.0 = at risk of liquidation.</p>
                 <p><strong>Borrow APR:</strong> The annual interest rate you pay on borrowed funds (variable).</p>
-                <p><strong>Liquidation:</strong> If health factor drops below 1.0, anyone can repay your debt and take your collateral at a discount.</p>
+                <p><strong>Collateral:</strong> The asset you deposit to secure your loan. It is NOT the asset you borrow.</p>
+                <p><strong>Supply (Earn):</strong> Deposits the loan asset to earn interest. Does NOT give borrow power.</p>
               </CollapsibleContent>
             </Collapsible>
 
-            {/* Disclaimer */}
             <p className="text-xs text-muted-foreground text-center">
               Non-custodial. Smart contract risk. APR is variable. Liquidation risk applies.
             </p>
