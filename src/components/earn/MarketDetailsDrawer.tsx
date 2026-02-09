@@ -42,8 +42,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
-import { TokenIcon } from '@/components/common/TokenIcon';
-import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 
 interface MarketDetailsDrawerProps {
@@ -90,31 +89,7 @@ export function MarketDetailsDrawer({
           <div className="p-6 space-y-6">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="flex -space-x-2">
-                    <TokenIcon 
-                      address={market.loanAsset.address}
-                      symbol={market.loanAsset.symbol}
-                      logoUrl={market.loanAsset.logoUrl}
-                      size="lg"
-                      className="ring-2 ring-background"
-                    />
-                    {market.collateralAsset && (
-                      <TokenIcon 
-                        address={market.collateralAsset.address}
-                        symbol={market.collateralAsset.symbol}
-                        logoUrl={market.collateralAsset.logoUrl}
-                        size="lg"
-                        className="ring-2 ring-background"
-                      />
-                    )}
-                  </div>
-                  <ChainIcon 
-                    chainId={market.chainId}
-                    size="sm"
-                    className="absolute -bottom-1 -right-1 ring-2 ring-background"
-                  />
-                </div>
+                <TokenIconStable symbol={market.loanAsset.symbol} size="lg" />
                 <div>
                   <div className="font-bold text-lg">
                     {market.loanAsset.symbol}
@@ -159,12 +134,7 @@ export function MarketDetailsDrawer({
                 {/* Loan Token */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <TokenIcon 
-                      address={market.loanAsset.address}
-                      symbol={market.loanAsset.symbol}
-                      logoUrl={market.loanAsset.logoUrl}
-                      size="md"
-                    />
+                    <TokenIconStable symbol={market.loanAsset.symbol} size="md" />
                     <div>
                       <div className="font-medium">{market.loanAsset.symbol}</div>
                       <div className="text-xs text-muted-foreground">{market.loanAsset.name}</div>
@@ -186,12 +156,7 @@ export function MarketDetailsDrawer({
                   <>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <TokenIcon 
-                          address={market.collateralAsset.address}
-                          symbol={market.collateralAsset.symbol}
-                          logoUrl={market.collateralAsset.logoUrl}
-                          size="md"
-                        />
+                        <TokenIconStable symbol={market.collateralAsset.symbol} size="md" />
                         <div>
                           <div className="font-medium">{market.collateralAsset.symbol}</div>
                           <div className="text-xs text-muted-foreground">{market.collateralAsset.name}</div>

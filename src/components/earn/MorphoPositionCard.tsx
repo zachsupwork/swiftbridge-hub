@@ -19,8 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
-import { TokenIcon } from '@/components/common/TokenIcon';
-import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { RiskBar } from '@/components/common/RiskBar';
 import type { MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
 import type { ActionType } from './EnhancedActionModal';
@@ -82,31 +81,10 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative flex-shrink-0">
-              <div className="flex -space-x-2">
-                <TokenIcon 
-                  address={market.loanAsset.address}
-                  symbol={market.loanAsset.symbol}
-                  logoUrl={market.loanAsset.logoUrl}
-                  size="md"
-                  className="ring-2 ring-card"
-                />
-                {market.collateralAsset && (
-                  <TokenIcon 
-                    address={market.collateralAsset.address}
-                    symbol={market.collateralAsset.symbol}
-                    logoUrl={market.collateralAsset.logoUrl}
-                    size="md"
-                    className="ring-2 ring-card"
-                  />
-                )}
-              </div>
-              <ChainIcon 
-                chainId={position.chainId}
-                size="xs"
-                className="absolute -bottom-1 -right-1 ring-2 ring-card"
-              />
-            </div>
+            <TokenIconStable
+              symbol={market.loanAsset.symbol}
+              size="md"
+            />
             <div>
               <div className="font-medium flex items-center gap-1.5">
                 {market.loanAsset.symbol}

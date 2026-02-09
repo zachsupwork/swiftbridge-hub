@@ -65,8 +65,7 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
-import { TokenIcon } from '@/components/common/TokenIcon';
-import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 interface MorphoBorrowModalProps {
   isOpen: boolean;
@@ -263,7 +262,7 @@ export function MorphoBorrowModal({
                 Borrow {loanToken.symbol}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-2 flex-wrap">
-                <ChainIcon chainId={market.chainId} size="sm" />
+                <TokenIconStable symbol={loanToken.symbol} size="sm" />
                 <span>{chainConfig?.label}</span>
                 <span className="text-muted-foreground">•</span>
                 <span className="text-warning font-medium">{formatAPY(market.borrowApy)} APR</span>
@@ -329,14 +328,14 @@ export function MorphoBorrowModal({
                     <div className="text-sm space-y-2">
                       <p className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">Loan Asset</Badge>
-                        <TokenIcon address={loanToken.address} symbol={loanToken.symbol} size="sm" />
+                        <TokenIconStable symbol={loanToken.symbol} size="sm" />
                         <span className="font-medium">{loanToken.symbol}</span>
                         <span className="text-muted-foreground">← You borrow this</span>
                       </p>
                       <p className="flex items-center gap-2">
                         <Badge variant="outline" className="text-xs">Collateral</Badge>
                         {collateralToken && (
-                          <TokenIcon address={collateralToken.address} symbol={collateralToken.symbol} size="sm" />
+                          <TokenIconStable symbol={collateralToken.symbol} size="sm" />
                         )}
                         <span className="font-medium">{collateralToken?.symbol || '—'}</span>
                         <span className="text-muted-foreground">← You deposited this</span>
@@ -428,7 +427,7 @@ export function MorphoBorrowModal({
                       className="text-lg font-mono pr-20"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <TokenIcon address={loanToken.address} symbol={loanToken.symbol} size="sm" />
+                      <TokenIconStable symbol={loanToken.symbol} size="sm" />
                       <span className="text-sm font-medium">{loanToken.symbol}</span>
                     </div>
                   </div>

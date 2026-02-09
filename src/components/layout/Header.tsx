@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp, Coins } from 'lucide-react';
+import { Wallet, BarChart3, Menu, X, ArrowLeftRight, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import logoImage from '@/assets/cdb-logo.png';
 import { MultiWalletButton } from '@/components/wallets/MultiWalletButton';
@@ -10,8 +10,7 @@ import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 
 const navItems = [
   { path: '/', label: 'Swap', icon: ArrowLeftRight, matchExact: true },
-  { path: '/earn', label: 'Earn', icon: TrendingUp },
-  { path: '/borrow', label: 'Borrow', icon: Coins },
+  { path: '/earn', label: 'Markets', icon: TrendingUp },
   { path: '/portfolio', label: 'Portfolio', icon: Wallet },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];

@@ -2,6 +2,7 @@
  * Enhanced Markets Table with TokenIcon, stable keys, and fixed APY normalization
  */
 
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   ArrowUpDown, 
@@ -22,8 +23,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
-import { TokenIcon } from '@/components/common/TokenIcon';
-import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { isMarketTrusted, sortMarkets } from '@/hooks/useMorphoMarkets';
 
 interface MorphoMarketsTableProps {
@@ -58,6 +58,7 @@ export function MorphoMarketsTable({
   onBorrow,
   onMarketDetails,
 }: MorphoMarketsTableProps) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'supplyApy' | 'tvl' | 'utilization' | 'borrowApy'>('tvl');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -309,32 +310,14 @@ export function MorphoMarketsTable({
                   {/* Market pair */}
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className="relative flex-shrink-0">
-                        <div className="flex -space-x-2">
-                          <TokenIcon 
-                            address={market.loanAsset.address}
-                            symbol={market.loanAsset.symbol}
-                            logoUrl={market.loanAsset.logoUrl}
-                            size="md"
-                            className="ring-2 ring-card"
-                          />
-                          {market.collateralAsset && (
-                            <TokenIcon 
-                              address={market.collateralAsset.address}
-                              symbol={market.collateralAsset.symbol}
-                              logoUrl={market.collateralAsset.logoUrl}
-                              size="md"
-                              className="ring-2 ring-card"
-                            />
-                          )}
-                        </div>
-                        <ChainIcon 
-                          chainId={market.chainId}
-                          size="xs"
-                          className="absolute -bottom-1 -right-1 ring-2 ring-card"
-                        />
-                      </div>
-                      <div>
+                      <TokenIconStable
+                        symbol={market.loanAsset.symbol}
+                        size="md"
+                      />
+                      <div
+                        className="cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => navigate(`/market/${market.uniqueKey || market.id}`)}
+                      >
                         <div className="font-medium flex items-center gap-1.5">
                           {market.loanAsset.symbol}
                           {market.collateralAsset && (
@@ -456,105 +439,87 @@ export function MorphoMarketsTable({
                 transition={{ delay: Math.min(index * 0.02, 0.3) }}
                 className={cn("glass rounded-xl p-4", !trusted && "opacity-60")}
               >
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div className="flex items-center gap-3">
-                <div className="relative flex-shrink-0">
-                  <div className="flex -space-x-2">
-                    <TokenIcon 
-                      address={market.loanAsset.address}
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <TokenIconStable
                       symbol={market.loanAsset.symbol}
-                      logoUrl={market.loanAsset.logoUrl}
                       size="lg"
-                      className="ring-2 ring-card"
                     />
-                    {market.collateralAsset && (
-                      <TokenIcon 
-                        address={market.collateralAsset.address}
-                        symbol={market.collateralAsset.symbol}
-                        logoUrl={market.collateralAsset.logoUrl}
-                        size="lg"
-                        className="ring-2 ring-card"
-                      />
-                    )}
+                    <div
+                      className="cursor-pointer hover:text-primary transition-colors"
+                      onClick={() => navigate(`/market/${market.uniqueKey || market.id}`)}
+                    >
+                      <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                        {market.loanAsset.symbol}
+                        {market.collateralAsset && (
+                          <span className="text-muted-foreground font-normal">
+                            / {market.collateralAsset.symbol}
+                          </span>
+                        )}
+                        {!isMarketTrusted(market) && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
+                            <ShieldAlert className="w-2.5 h-2.5" />
+                            Unverified
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        LLTV: {market.lltv.toFixed(0)}%
+                      </div>
+                    </div>
                   </div>
-                  <ChainIcon 
-                    chainId={market.chainId}
-                    size="xs"
-                    className="absolute -bottom-1 -right-1 ring-2 ring-card"
-                  />
+                  <div className="text-right">
+                    <div className="font-semibold text-lg text-success">
+                      {formatAPY(market.supplyApy)}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Supply APY</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium flex items-center gap-1.5 flex-wrap">
-                    {market.loanAsset.symbol}
-                    {market.collateralAsset && (
-                      <span className="text-muted-foreground font-normal">
-                        / {market.collateralAsset.symbol}
-                      </span>
-                    )}
-                    {!isMarketTrusted(market) && (
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
-                        <ShieldAlert className="w-2.5 h-2.5" />
-                        Unverified
+
+                <div className="flex items-center justify-between pt-3 border-t border-border/30">
+                  <div className="grid grid-cols-2 gap-4 text-sm flex-1">
+                    <div>
+                      <span className="text-muted-foreground">TVL: </span>
+                      <span className="font-medium">{formatTVL(market.totalSupplyUsd)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Util: </span>
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-xs h-5",
+                          market.utilization > 90 ? "bg-destructive/10 text-destructive border-destructive/30" :
+                          market.utilization > 70 ? "bg-warning/10 text-warning border-warning/30" :
+                          "bg-muted/50"
+                        )}
+                      >
+                        {formatUtilization(market.utilization)}
                       </Badge>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    LLTV: {market.lltv.toFixed(0)}%
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="text-right">
-                <div className="font-semibold text-lg text-success">
-                  {formatAPY(market.supplyApy)}
-                </div>
-                <div className="text-[10px] text-muted-foreground">Supply APY</div>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-border/30">
-              <div className="grid grid-cols-2 gap-4 text-sm flex-1">
-                <div>
-                  <span className="text-muted-foreground">TVL: </span>
-                  <span className="font-medium">{formatTVL(market.totalSupplyUsd)}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Util: </span>
-                  <Badge 
-                    variant="outline" 
-                    className={cn(
-                      "text-xs h-5",
-                      market.utilization > 90 ? "bg-destructive/10 text-destructive border-destructive/30" :
-                      market.utilization > 70 ? "bg-warning/10 text-warning border-warning/30" :
-                      "bg-muted/50"
-                    )}
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    onClick={() => handleSupply(market)}
+                    className="flex-1 h-9 gap-1"
                   >
-                    {formatUtilization(market.utilization)}
-                  </Badge>
+                    <TrendingUp className="w-3 h-3" />
+                    Supply
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleBorrow(market)}
+                    className="flex-1 h-9 gap-1"
+                    disabled={!market.collateralAsset}
+                  >
+                    <Wallet className="w-3 h-3" />
+                    Borrow
+                  </Button>
                 </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                onClick={() => handleSupply(market)}
-                className="flex-1 h-9 gap-1"
-              >
-                <TrendingUp className="w-3 h-3" />
-                Supply
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleBorrow(market)}
-                className="flex-1 h-9 gap-1"
-                disabled={!market.collateralAsset}
-              >
-                <Wallet className="w-3 h-3" />
-                Borrow
-              </Button>
-            </div>
-          </motion.div>
+              </motion.div>
             </div>
           );
         })}
