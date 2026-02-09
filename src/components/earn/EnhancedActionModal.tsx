@@ -48,8 +48,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { RiskBar } from '@/components/common/RiskBar';
-import { TokenIcon } from '@/components/common/TokenIcon';
-import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { 
   MORPHO_BLUE_ABI, 
   MORPHO_BLUE_ADDRESS,
@@ -505,16 +504,11 @@ export function MorphoActionModal({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <TokenIcon 
-              address={token.address} 
-              symbol={token.symbol} 
-              logoUrl={token.logoUrl}
-              size="sm"
-            />
+            <TokenIconStable symbol={token.symbol} size="sm" />
             {getActionLabel()} {token.symbol}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
-            <ChainIcon chainId={market.chainId} size="xs" />
+            <TokenIconStable symbol={market.loanAsset.symbol} size="sm" />
             {market.loanAsset.symbol}
             {market.collateralAsset && ` / ${market.collateralAsset.symbol}`}
             {' • LLTV: '}{market.lltv.toFixed(0)}%
