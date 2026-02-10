@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useSendTransaction, useSwitchChain, useBalance, useReadContract } from 'wagmi';
+import { useAccount, useSendTransaction, useBalance, useReadContract } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
 import { ChainSelector } from './ChainSelector';
@@ -40,7 +40,8 @@ const QUOTE_MAX_AGE = 45;
 export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
-  const { switchChainAsync } = useSwitchChain();
+  // Removed useSwitchChain — causes "getChainId is not a function" on MetaMask.
+  // Chain mismatch is handled via UI prompt below.
   const wallets = useMultiWallet();
 
   const [fromChainId, setFromChainId] = useState(1);
@@ -227,13 +228,9 @@ export function SwapCard() {
         );
       }
       if (walletChainId !== fromChainId) {
-        try {
-          await switchChainAsync({ chainId: fromChainId });
-        } catch (switchErr) {
-          throw new TransactionValidationError(
-            `Please switch to ${getChainName(fromChainId)} in your wallet before swapping.`
-          );
-        }
+        throw new TransactionValidationError(
+          `Wrong network. Please switch to ${getChainName(fromChainId)} in your wallet before swapping.`
+        );
       }
       const stepWithTx = await getStepTransaction(route.steps[0]);
       if (!stepWithTx.transactionRequest) {
