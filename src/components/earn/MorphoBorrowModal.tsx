@@ -135,8 +135,8 @@ export function MorphoBorrowModal({
   });
 
   // Wait for tx receipts
-  const { isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({ hash: actionTxHash });
-  const { isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({ hash: approvalTxHash });
+  const { isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({ hash: actionTxHash, chainId: market?.chainId });
+  const { isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({ hash: approvalTxHash, chainId: market?.chainId });
 
   // Parse amounts
   const parsedCollateral = useMemo(() => {
@@ -229,6 +229,7 @@ export function MorphoBorrowModal({
         abi: erc20Abi,
         functionName: 'approve',
         args: [MORPHO_BLUE_ADDRESS, parsedCollateral],
+        chainId: market?.chainId,
       } as any);
       setApprovalTxHash(txHash);
       setStep('approval_pending');
@@ -259,6 +260,7 @@ export function MorphoBorrowModal({
         abi: MORPHO_BLUE_ABI,
         functionName: 'supplyCollateral',
         args: [marketParams, parsedCollateral, address, '0x'],
+        chainId: market.chainId,
       } as any);
       setActionTxHash(txHash);
       setStep('action_pending');
@@ -300,6 +302,7 @@ export function MorphoBorrowModal({
         abi: MORPHO_BLUE_ABI,
         functionName: 'borrow',
         args: [marketParams, parsedBorrow, 0n, address, address],
+        chainId: market.chainId,
       } as any);
       setActionTxHash(txHash);
       setStep('action_pending');

@@ -102,6 +102,7 @@ export function MorphoSupplyModal({
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
+    chainId: market?.chainId,
     query: { enabled: !!address && !!tokenAddress && isOpen },
   });
 
@@ -111,16 +112,19 @@ export function MorphoSupplyModal({
     abi: erc20Abi,
     functionName: 'allowance',
     args: address ? [address, MORPHO_BLUE_ADDRESS] : undefined,
+    chainId: market?.chainId,
     query: { enabled: !!address && !!tokenAddress && isOpen },
   });
 
   // Wait for transactions
   const { isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: approvalTxHash,
+    chainId: market?.chainId,
   });
 
   const { isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({
     hash: actionTxHash,
+    chainId: market?.chainId,
   });
 
   // Parse amount
@@ -185,6 +189,7 @@ export function MorphoSupplyModal({
           abi: erc20Abi,
           functionName: 'approve',
           args: [MORPHO_BLUE_ADDRESS, parsedAmount],
+          chainId: market.chainId,
         } as any);
         setApprovalTxHash(approvalTx);
         setStep('approval_pending');
@@ -199,6 +204,7 @@ export function MorphoSupplyModal({
         abi: MORPHO_BLUE_ABI,
         functionName: 'supply',
         args: [marketParams, parsedAmount, 0n, address, '0x'],
+        chainId: market.chainId,
       } as any);
 
       setActionTxHash(txHash);
