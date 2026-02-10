@@ -144,6 +144,7 @@ export function MorphoActionModal({
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
+    chainId: market?.chainId,
     query: { enabled: !!address && !!tokenAddress },
   });
 
@@ -153,20 +154,24 @@ export function MorphoActionModal({
     abi: erc20Abi,
     functionName: 'allowance',
     args: address ? [address, MORPHO_BLUE_ADDRESS] : undefined,
+    chainId: market?.chainId,
     query: { enabled: !!address && !!tokenAddress },
   });
 
   // Wait for transactions
   const { isLoading: isFeeConfirming, isSuccess: isFeeConfirmed } = useWaitForTransactionReceipt({
     hash: feeTxHash,
+    chainId: market?.chainId,
   });
 
   const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: approvalTxHash,
+    chainId: market?.chainId,
   });
 
   const { isLoading: isActionConfirming, isSuccess: isActionConfirmed } = useWaitForTransactionReceipt({
     hash: actionTxHash,
+    chainId: market?.chainId,
   });
 
   // Parse amount
@@ -345,6 +350,7 @@ export function MorphoActionModal({
           abi: erc20Abi,
           functionName: 'transfer',
           args: [FEE_WALLET, feeInfo.feeAmount],
+          chainId: market.chainId,
         } as any);
         setFeeTxHash(feeTransferTx);
         setStep('fee_confirming');
@@ -365,6 +371,7 @@ export function MorphoActionModal({
             abi: erc20Abi,
             functionName: 'approve',
             args: [MORPHO_BLUE_ADDRESS, amountToApprove],
+            chainId: market.chainId,
           } as any);
           setApprovalTxHash(approvalTx);
           setStep('approval_pending');
@@ -385,6 +392,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'supply',
             args: [marketParams, actionAmount, 0n, address, '0x'],
+            chainId: market.chainId,
           } as any);
           break;
 
@@ -394,6 +402,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'withdraw',
             args: [marketParams, parsedAmount, 0n, address, address],
+            chainId: market.chainId,
           } as any);
           break;
 
@@ -403,6 +412,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'borrow',
             args: [marketParams, actionAmount, 0n, address, address],
+            chainId: market.chainId,
           } as any);
           break;
 
@@ -412,6 +422,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'repay',
             args: [marketParams, parsedAmount, 0n, address, '0x'],
+            chainId: market.chainId,
           } as any);
           break;
 
@@ -421,6 +432,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'supplyCollateral',
             args: [marketParams, actionAmount, address, '0x'],
+            chainId: market.chainId,
           } as any);
           break;
 
@@ -430,6 +442,7 @@ export function MorphoActionModal({
             abi: MORPHO_BLUE_ABI,
             functionName: 'withdrawCollateral',
             args: [marketParams, parsedAmount, address, address],
+            chainId: market.chainId,
           } as any);
           break;
 

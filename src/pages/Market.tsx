@@ -95,9 +95,8 @@ export default function Market() {
   }, [refreshPositions]);
 
   const handleSupplyCollateral = useCallback(() => {
-    setIsBorrowModalOpen(false);
-    setSupplyCollateralMode(true);
-    setIsSupplyModalOpen(true);
+    // Open the borrow modal which handles collateral supply inline in step 1
+    setIsBorrowModalOpen(true);
   }, []);
 
   // Loading / not found
@@ -151,7 +150,7 @@ export default function Market() {
           <div className="glass rounded-xl p-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
               <div className="flex items-center gap-4 flex-1">
-                <TokenIconStable symbol={market.loanAsset.symbol} size="lg" />
+                <TokenIconStable symbol={market.loanAsset.symbol} logoURI={market.loanAsset.logoUrl} size="lg" />
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h1 className="text-2xl font-bold">
@@ -344,12 +343,12 @@ export default function Market() {
                     {/* Visual flow */}
                     <div className="flex items-center justify-center gap-3 py-2 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/20">
-                        <TokenIconStable symbol={market.collateralAsset.symbol} size="sm" />
+                        <TokenIconStable symbol={market.collateralAsset.symbol} logoURI={market.collateralAsset.logoUrl} size="sm" />
                         <span className="font-medium text-foreground">Supply {market.collateralAsset.symbol}</span>
                       </div>
                       <span className="text-lg">→</span>
                       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/20">
-                        <TokenIconStable symbol={market.loanAsset.symbol} size="sm" />
+                        <TokenIconStable symbol={market.loanAsset.symbol} logoURI={market.loanAsset.logoUrl} size="sm" />
                         <span className="font-medium text-foreground">Borrow {market.loanAsset.symbol}</span>
                       </div>
                     </div>
@@ -362,7 +361,7 @@ export default function Market() {
                     </div>
 
                     <Button
-                      onClick={handleSupplyCollateral}
+                      onClick={() => setIsBorrowModalOpen(true)}
                       className="w-full gap-2"
                       size="lg"
                     >
