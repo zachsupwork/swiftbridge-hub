@@ -67,7 +67,6 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
-import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 type BorrowStep = 'collateral' | 'borrow';
 
@@ -370,7 +369,7 @@ export function MorphoBorrowModal({
                 Borrow {loanToken.symbol}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-2 flex-wrap">
-                <TokenIconStable symbol={loanToken.symbol} logoURI={loanToken.logoUrl} size="sm" />
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-bold">{loanToken.symbol}</Badge>
                 <span>{chainConfig?.label}</span>
                 <span className="text-muted-foreground">•</span>
                 <span className="text-warning font-medium">{formatAPY(market.borrowApy)} APR</span>
@@ -454,7 +453,7 @@ export function MorphoBorrowModal({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium flex items-center gap-1.5">
-                      <TokenIconStable symbol={collateralToken?.symbol || '?'} logoURI={collateralToken?.logoUrl} size="sm" />
+                      <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-bold">{collateralToken?.symbol || '?'}</Badge>
                       Supply {collateralToken?.symbol || 'Collateral'}
                     </label>
                     <span className="text-xs text-muted-foreground">
@@ -607,8 +606,7 @@ export function MorphoBorrowModal({
                       className="text-lg font-mono pr-20"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <TokenIconStable symbol={loanToken.symbol} logoURI={loanToken.logoUrl} size="sm" />
-                      <span className="text-sm font-medium">{loanToken.symbol}</span>
+                      <span className="text-sm font-bold">{loanToken.symbol}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">
