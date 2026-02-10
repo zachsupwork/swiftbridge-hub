@@ -29,7 +29,7 @@ import {
   Shield,
   Info,
 } from 'lucide-react';
-import { useAccount, useChainId } from 'wagmi';
+import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,8 @@ const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
+  const { switchChain, isPending: isSwitchingChain } = useSwitchChain();
+  const isWrongNetwork = isConnected && walletChainId !== 1;
 
   const [copiedDebug, setCopiedDebug] = useState(false);
   const [activeTab, setActiveTab] = useState('markets');
@@ -174,32 +176,32 @@ export default function Earn() {
   // Handle supply action
   const handleSupply = useCallback((market: MorphoMarket) => {
     if (!isConnected) {
-      toast({
-        title: 'Connect Wallet',
-        description: 'Please connect your wallet to supply assets.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Connect Wallet', description: 'Please connect your wallet to supply assets.', variant: 'destructive' });
+      return;
+    }
+    if (isWrongNetwork) {
+      toast({ title: 'Wrong Network', description: 'Please switch to Ethereum mainnet to use Earn.', variant: 'destructive' });
       return;
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
     setIsSupplyModalOpen(true);
-  }, [isConnected]);
+  }, [isConnected, isWrongNetwork]);
 
   // Handle borrow action
   const handleBorrow = useCallback((market: MorphoMarket) => {
     if (!isConnected) {
-      toast({
-        title: 'Connect Wallet',
-        description: 'Please connect your wallet to borrow assets.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Connect Wallet', description: 'Please connect your wallet to borrow assets.', variant: 'destructive' });
+      return;
+    }
+    if (isWrongNetwork) {
+      toast({ title: 'Wrong Network', description: 'Please switch to Ethereum mainnet to use Borrow.', variant: 'destructive' });
       return;
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
     setIsBorrowModalOpen(true);
-  }, [isConnected]);
+  }, [isConnected, isWrongNetwork]);
 
   // Handle market details
   const handleMarketDetails = useCallback((market: MorphoMarket) => {
@@ -350,6 +352,48 @@ export default function Earn() {
               </Button>
             </div>
           </div>
+
+          {/* Ethereum-only badge */}
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="h-7 px-3 gap-1.5 text-sm font-medium border-blue-500/30 bg-blue-500/10 text-blue-400">
+              <svg className="w-4 h-4" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
+                <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
+                <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
+                <path fill="currentColor" d="M127.961 312.187l-1.575 1.92V414.53l1.575 4.6L256 236.587z" opacity=".6"/>
+                <path fill="currentColor" d="M127.962 419.13V312.187L0 236.587z"/>
+              </svg>
+              Ethereum Only
+            </Badge>
+          </div>
+
+          {/* Wrong network warning */}
+          {isWrongNetwork && (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-warning/10 border border-warning/30">
+              <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-warning">Wrong Network</p>
+                <p className="text-xs text-muted-foreground">
+                  Earn is available on Ethereum mainnet only. Switch network to continue.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => switchChain({ chainId: 1 })}
+                disabled={isSwitchingChain}
+                className="gap-1.5"
+              >
+                {isSwitchingChain ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
+                    <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
+                    <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
+                  </svg>
+                )}
+                Switch to Ethereum
+              </Button>
+            </div>
+          )}
 
           {/* Disclaimer Banner */}
           <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">

@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { PairedTokenIcon } from '@/components/common/PairedTokenIcon';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 
 interface MarketDetailsDrawerProps {
@@ -89,7 +90,13 @@ export function MarketDetailsDrawer({
           <div className="p-6 space-y-6">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-3">
-                <TokenIconStable symbol={market.loanAsset.symbol} size="lg" />
+                <PairedTokenIcon
+                  loanSymbol={market.loanAsset.symbol}
+                  loanLogoURI={market.loanAsset.logoUrl}
+                  collateralSymbol={market.collateralAsset?.symbol}
+                  collateralLogoURI={market.collateralAsset?.logoUrl}
+                  size="lg"
+                />
                 <div>
                   <div className="font-bold text-lg">
                     {market.loanAsset.symbol}
@@ -134,7 +141,7 @@ export function MarketDetailsDrawer({
                 {/* Loan Token */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <TokenIconStable symbol={market.loanAsset.symbol} size="md" />
+                    <TokenIconStable symbol={market.loanAsset.symbol} logoURI={market.loanAsset.logoUrl} size="md" />
                     <div>
                       <div className="font-medium">{market.loanAsset.symbol}</div>
                       <div className="text-xs text-muted-foreground">{market.loanAsset.name}</div>
@@ -156,7 +163,7 @@ export function MarketDetailsDrawer({
                   <>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <TokenIconStable symbol={market.collateralAsset.symbol} size="md" />
+                        <TokenIconStable symbol={market.collateralAsset.symbol} logoURI={market.collateralAsset.logoUrl} size="md" />
                         <div>
                           <div className="font-medium">{market.collateralAsset.symbol}</div>
                           <div className="text-xs text-muted-foreground">{market.collateralAsset.name}</div>

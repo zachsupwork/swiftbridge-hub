@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
-import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { PairedTokenIcon } from '@/components/common/PairedTokenIcon';
 import { isMarketTrusted, sortMarkets } from '@/hooks/useMorphoMarkets';
 
 interface MorphoMarketsTableProps {
@@ -310,8 +310,11 @@ export function MorphoMarketsTable({
                   {/* Market pair */}
                   <td className="p-4">
                     <div className="flex items-center gap-3">
-                      <TokenIconStable
-                        symbol={market.loanAsset.symbol}
+                      <PairedTokenIcon
+                        loanSymbol={market.loanAsset.symbol}
+                        loanLogoURI={market.loanAsset.logoUrl}
+                        collateralSymbol={market.collateralAsset?.symbol}
+                        collateralLogoURI={market.collateralAsset?.logoUrl}
                         size="md"
                       />
                       <div
@@ -441,8 +444,11 @@ export function MorphoMarketsTable({
               >
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3">
-                    <TokenIconStable
-                      symbol={market.loanAsset.symbol}
+                    <PairedTokenIcon
+                      loanSymbol={market.loanAsset.symbol}
+                      loanLogoURI={market.loanAsset.logoUrl}
+                      collateralSymbol={market.collateralAsset?.symbol}
+                      collateralLogoURI={market.collateralAsset?.logoUrl}
                       size="lg"
                     />
                     <div
