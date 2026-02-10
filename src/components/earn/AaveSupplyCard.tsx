@@ -16,7 +16,7 @@ import {
   Check,
   Shield,
 } from 'lucide-react';
-import { useAccount, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
 import { formatUnits, parseUnits } from 'viem';
 
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,7 @@ import { cn } from '@/lib/utils';
 export function AaveSupplyCard() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
+  
 
   const [selectedChainId, setSelectedChainId] = useState<number>(1);
   const [selectedMarket, setSelectedMarket] = useState<AaveMarket | null>(null);
@@ -368,9 +368,9 @@ export function AaveSupplyCard() {
               ) : !isChainMatch ? (
                 <Button 
                   className="w-full h-12" 
-                  onClick={() => switchChain?.({ chainId: selectedChainId })}
+                  disabled
                 >
-                  Switch to {EARN_CHAIN_NAMES[selectedChainId]}
+                  Switch to {EARN_CHAIN_NAMES[selectedChainId]} in your wallet
                 </Button>
               ) : (
                 <Button 

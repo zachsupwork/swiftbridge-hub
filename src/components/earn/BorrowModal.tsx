@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle, Loader2, Check, ExternalLink, Info, Wallet, TrendingDown } from 'lucide-react';
-import { useAccount, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -41,7 +41,7 @@ export function BorrowModal({
 }: BorrowModalProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
+  
 
   const [amount, setAmount] = useState('');
   const [rateMode, setRateMode] = useState<'variable' | 'stable'>('variable');
@@ -209,14 +209,8 @@ export function BorrowModal({
                 {isConnected && !isChainMatch && (
                   <div className="glass rounded-xl p-4 text-center">
                     <p className="text-muted-foreground mb-3">
-                      Please switch to {market.chainName} to borrow
+                      Please switch to {market.chainName} in your wallet to borrow.
                     </p>
-                    <Button 
-                      onClick={() => switchChain?.({ chainId: market.chainId })}
-                      className="gap-2"
-                    >
-                      Switch to {market.chainName}
-                    </Button>
                   </div>
                 )}
 

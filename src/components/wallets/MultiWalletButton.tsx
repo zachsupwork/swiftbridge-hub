@@ -5,7 +5,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useConnectWallet, useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
-import { useAccount, useSwitchChain, useDisconnect } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
@@ -29,7 +29,7 @@ export function MultiWalletButton() {
   const wallets = useMultiWallet();
 
   const { address: evmAddr, chainId: currentChainId, isConnected: evmConnected } = useAccount();
-  const { switchChain } = useSwitchChain();
+  
   const { disconnect: disconnectEvm } = useDisconnect();
   const { connect: connectBitcoin, disconnect: disconnectBitcoin, isAvailable: btcAvailable, providerName: btcProvider } = useBitcoinWallet();
   const { disconnect: disconnectSolana } = useSolanaWallet();
@@ -52,24 +52,12 @@ export function MultiWalletButton() {
   }, [showDropdown]);
 
   const handleSwitchNetwork = useCallback(() => {
-    try {
-      switchChain({ chainId: 1 });
-      toast.success('Switching to Ethereum Mainnet…');
-    } catch (err) {
-      if (import.meta.env.DEV) console.error('[Wallet] Network switch error:', err);
-      toast.error('Failed to switch network. Please switch manually in your wallet.');
-    }
-  }, [switchChain]);
+    toast.info('Please switch networks using the chain selector or your wallet app.');
+  }, []);
 
-  const handleSwitchToChain = useCallback((chainId: number) => {
-    try {
-      switchChain({ chainId });
-      toast.success(`Switching network…`);
-    } catch (err) {
-      if (import.meta.env.DEV) console.error('[Wallet] Network switch error:', err);
-      toast.error('Failed to switch network. Please switch manually in your wallet.');
-    }
-  }, [switchChain]);
+  const handleSwitchToChain = useCallback((_chainId: number) => {
+    toast.info('Please switch networks using the chain selector or your wallet app.');
+  }, []);
 
   useEffect(() => {
     if (connectingType === 'evm' && wallets.evm.connected) setConnectingType(null);
@@ -234,8 +222,7 @@ export function MultiWalletButton() {
                         if (mounted && openChainModal) {
                           openChainModal();
                         } else {
-                          // Fallback: direct switch to Ethereum via wagmi
-                          handleSwitchToChain(1);
+                          toast.info('Please switch networks in your wallet app.');
                         }
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-muted/50 transition-colors"

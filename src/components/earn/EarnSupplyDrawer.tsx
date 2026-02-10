@@ -15,7 +15,7 @@ import {
   Wallet,
   ArrowRight,
 } from 'lucide-react';
-import { useAccount, useChainId, useSwitchChain, useReadContract, useWriteContract } from 'wagmi';
+import { useAccount, useChainId, useReadContract, useWriteContract } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,7 +39,7 @@ type SupplyStep = 'idle' | 'approving' | 'transferring_fee' | 'supplying' | 'com
 export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
+  
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
@@ -329,14 +329,8 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
               {isConnected && !isChainMatch && (
                 <div className="glass rounded-xl p-4 text-center">
                   <p className="text-muted-foreground mb-3">
-                    Please switch to {market.chainName} to supply
+                    Please switch to {market.chainName} in your wallet to supply.
                   </p>
-                  <Button 
-                    onClick={() => switchChain?.({ chainId: market.chainId })}
-                    className="gap-2"
-                  >
-                    Switch to {market.chainName}
-                  </Button>
                 </div>
               )}
 

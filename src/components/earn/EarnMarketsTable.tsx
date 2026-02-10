@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import type { LendingMarket, MarketFetchError } from '@/hooks/useLendingMarkets';
 import { LENDING_CHAINS } from '@/hooks/useLendingMarkets';
-import { useSwitchChain } from 'wagmi';
+
 
 interface EarnMarketsTableProps {
   markets: LendingMarket[];
@@ -46,7 +46,7 @@ export function EarnMarketsTable({
   onChainChange,
   partialFailures = [],
 }: EarnMarketsTableProps) {
-  const { switchChain } = useSwitchChain();
+  
 
   const formatAPY = (apy: number) => {
     if (apy < 0.01) return '<0.01%';
@@ -213,7 +213,6 @@ export function EarnMarketsTable({
                   if (onChainChange) {
                     onChainChange(chain.id);
                   }
-                  switchChain?.({ chainId: chain.id });
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-muted/50 hover:bg-muted transition-colors text-xs"
               >

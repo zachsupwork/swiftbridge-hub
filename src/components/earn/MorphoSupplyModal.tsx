@@ -22,7 +22,6 @@ import {
 import { 
   useAccount, 
   useChainId, 
-  useSwitchChain, 
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
@@ -80,7 +79,7 @@ export function MorphoSupplyModal({
 }: MorphoSupplyModalProps) {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
@@ -155,15 +154,7 @@ export function MorphoSupplyModal({
   const isWrongChain = market && walletChainId !== market.chainId;
   const balanceFormatted = tokenBalance ? formatUnits(tokenBalance, decimals) : '0';
 
-  // Handle chain switch
-  const handleSwitchChain = useCallback(async () => {
-    if (!market) return;
-    try {
-      await switchChain({ chainId: market.chainId });
-    } catch (err) {
-      console.error('Failed to switch chain:', err);
-    }
-  }, [market, switchChain]);
+
 
   // Set max amount
   const handleSetMax = useCallback(() => {
@@ -279,11 +270,8 @@ export function MorphoSupplyModal({
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-warning">Wrong Network</p>
-                  <p className="text-muted-foreground text-xs">Switch to {chainConfig?.label}</p>
+                  <p className="text-muted-foreground text-xs">Please switch to {chainConfig?.label} in your wallet to continue.</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={handleSwitchChain} disabled={isSwitching}>
-                  {isSwitching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Switch'}
-                </Button>
               </div>
             )}
 
