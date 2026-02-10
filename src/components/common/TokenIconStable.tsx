@@ -73,16 +73,8 @@ export const TokenIconStable = memo(function TokenIconStable({
       alt=""
       loading="lazy"
       decoding="async"
-      referrerPolicy="no-referrer"
-      crossOrigin="anonymous"
-      title={import.meta.env.DEV ? `logo: ${logoURI}` : undefined}
-      className={cn('rounded-full flex-shrink-0 bg-muted ring-1 ring-border/20 object-cover', sizeClass, className)}
-      onError={(e) => {
-        if (import.meta.env.DEV) {
-          console.warn('Token logo failed', { symbol, logoURI });
-        }
-        handleError();
-      }}
+      className={cn('rounded-full flex-shrink-0 bg-muted ring-1 ring-border/20', sizeClass, className)}
+      onError={handleError}
     />
   );
 });

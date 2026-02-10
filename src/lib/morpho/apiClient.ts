@@ -8,58 +8,25 @@
 import { MORPHO_API_URL, getMorphoChainConfig } from './config';
 import type { MorphoMarket, MorphoAsset } from './types';
 
-// Token logo by symbol (high-quality CDN sources)
+// Token logo fallback mapping
 const TOKEN_LOGOS: Record<string, string> = {
-  ETH: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
-  WETH: 'https://assets.coingecko.com/coins/images/2518/small/weth.png',
-  USDC: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png',
-  USDT: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
-  DAI: 'https://assets.coingecko.com/coins/images/9956/small/Badge_Dai.png',
-  WBTC: 'https://assets.coingecko.com/coins/images/7598/small/wrapped_bitcoin_wbtc.png',
-  CBETH: 'https://assets.coingecko.com/coins/images/27008/small/cbeth.png',
-  WSTETH: 'https://assets.coingecko.com/coins/images/18834/small/wstETH.png',
-  STETH: 'https://assets.coingecko.com/coins/images/13442/small/steth_logo.png',
-  RETH: 'https://assets.coingecko.com/coins/images/20764/small/reth.png',
-  CBBTC: 'https://assets.coingecko.com/coins/images/40143/small/cbbtc.png',
-  LINK: 'https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png',
-  UNI: 'https://assets.coingecko.com/coins/images/12504/small/uni.jpg',
-  AAVE: 'https://assets.coingecko.com/coins/images/12645/small/aave-token-round.png',
-  CRV: 'https://assets.coingecko.com/coins/images/12124/small/Curve.png',
-  COMP: 'https://assets.coingecko.com/coins/images/10775/small/COMP.png',
-  MKR: 'https://assets.coingecko.com/coins/images/1364/small/Mark_Maker.png',
-  SDAI: 'https://assets.coingecko.com/coins/images/32610/small/sdai.png',
-  GHO: 'https://assets.coingecko.com/coins/images/30663/small/gho-token-logo.png',
-  USDE: 'https://assets.coingecko.com/coins/images/33613/small/usde.png',
-  SUSDE: 'https://assets.coingecko.com/coins/images/33669/small/sUSDe.png',
-  WEETH: 'https://assets.coingecko.com/coins/images/33033/small/weETH.png',
-  EZETH: 'https://assets.coingecko.com/coins/images/34753/small/ezeth.png',
-  OSETH: 'https://assets.coingecko.com/coins/images/33117/small/osETH.png',
-  FRAX: 'https://assets.coingecko.com/coins/images/13422/small/FRAX_icon.png',
-  LUSD: 'https://assets.coingecko.com/coins/images/14666/small/lusd.png',
-  PYUSD: 'https://assets.coingecko.com/coins/images/31212/small/PYUSD_Logo_%282%29.png',
-  TBTC: 'https://assets.coingecko.com/coins/images/11224/small/0x18084fba666a33d37592fa2633fd49a74dd93a88.png',
-  MORPHO: 'https://assets.coingecko.com/coins/images/38440/small/morpho.jpg',
-  SWETH: 'https://assets.coingecko.com/coins/images/30326/small/swETH.png',
-  METH: 'https://assets.coingecko.com/coins/images/33345/small/meth.png',
-  RSETH: 'https://assets.coingecko.com/coins/images/35088/small/rsETH.png',
-  PUFETH: 'https://assets.coingecko.com/coins/images/35166/small/pufETH.png',
+  ETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
+  WETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/weth.svg',
+  USDC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
+  USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
+  DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
+  WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
+  CBETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/cbeth.svg',
+  WSTETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
+  RETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/reth.svg',
+  CBBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
 };
 
-// Ethereum mainnet token address → TrustWallet CDN logo
-function getTrustWalletLogo(address: string): string {
-  const checksummed = address; // address is usually checksummed from API
-  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/${checksummed}/logo.png`;
-}
+const GENERIC_TOKEN_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 
-function getTokenLogo(symbol: string, address?: string): string {
+function getTokenLogo(symbol: string): string {
   const normalized = symbol.toUpperCase().replace(/[.\-]/g, '');
-  if (TOKEN_LOGOS[normalized]) return TOKEN_LOGOS[normalized];
-  // Fallback: TrustWallet CDN by address (Ethereum mainnet)
-  if (address && address.startsWith('0x') && address.length === 42) {
-    return getTrustWalletLogo(address);
-  }
-  // Final fallback: CoinGecko generic or empty (let component show letter)
-  return '';
+  return TOKEN_LOGOS[normalized] || GENERIC_TOKEN_LOGO;
 }
 
 // GraphQL query for markets
@@ -217,7 +184,7 @@ function parseAsset(asset: ApiMarket['loanAsset'], chainId: number): MorphoAsset
     symbol: asset.symbol || 'UNKNOWN',
     decimals: asset.decimals || 18,
     name: asset.name || 'Unknown Token',
-    logoUrl: getTokenLogo(asset.symbol || '', asset.address),
+    logoUrl: getTokenLogo(asset.symbol || ''),
   };
 }
 
