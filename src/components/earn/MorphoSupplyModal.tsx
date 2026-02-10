@@ -62,7 +62,6 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
-import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 interface MorphoSupplyModalProps {
   isOpen: boolean;
@@ -267,7 +266,7 @@ export function MorphoSupplyModal({
                 Supply {token.symbol}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-2 flex-wrap">
-                <TokenIconStable symbol={token.symbol} logoURI={token.logoUrl} size="sm" />
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-bold">{token.symbol}</Badge>
                 <span>{chainConfig?.label}</span>
                 <span className="text-muted-foreground">•</span>
                 <span className="text-success font-medium">{formatAPY(market.supplyApy)} APY</span>
@@ -404,8 +403,7 @@ export function MorphoSupplyModal({
                   className="text-lg font-mono pr-20"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <TokenIconStable symbol={token.symbol} logoURI={token.logoUrl} size="sm" />
-                  <span className="text-sm font-medium">{token.symbol}</span>
+                  <span className="text-sm font-bold">{token.symbol}</span>
                 </div>
               </div>
               {parsedAmount > (tokenBalance || 0n) && tokenBalance !== undefined && (

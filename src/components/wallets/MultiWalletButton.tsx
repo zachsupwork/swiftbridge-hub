@@ -61,6 +61,16 @@ export function MultiWalletButton() {
     }
   }, [switchChain]);
 
+  const handleSwitchToChain = useCallback((chainId: number) => {
+    try {
+      switchChain({ chainId });
+      toast.success(`Switching network…`);
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('[Wallet] Network switch error:', err);
+      toast.error('Failed to switch network. Please switch manually in your wallet.');
+    }
+  }, [switchChain]);
+
   useEffect(() => {
     if (connectingType === 'evm' && wallets.evm.connected) setConnectingType(null);
     if (connectingType === 'bitcoin' && wallets.bitcoin.connected) setConnectingType(null);
@@ -221,7 +231,12 @@ export function MultiWalletButton() {
                       type="button"
                       onClick={() => {
                         setShowDropdown(false);
-                        if (mounted && openChainModal) openChainModal();
+                        if (mounted && openChainModal) {
+                          openChainModal();
+                        } else {
+                          // Fallback: direct switch to Ethereum via wagmi
+                          handleSwitchToChain(1);
+                        }
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-muted/50 transition-colors"
                     >

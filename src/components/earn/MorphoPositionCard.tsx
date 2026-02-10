@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
-import { PairedTokenIcon } from '@/components/common/PairedTokenIcon';
 import { RiskBar } from '@/components/common/RiskBar';
 import type { MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
 import type { ActionType } from './EnhancedActionModal';
@@ -81,13 +80,6 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <PairedTokenIcon
-              loanSymbol={market.loanAsset.symbol}
-              loanLogoURI={market.loanAsset.logoUrl}
-              collateralSymbol={market.collateralAsset?.symbol}
-              collateralLogoURI={market.collateralAsset?.logoUrl}
-              size="md"
-            />
             <div>
               <div className="font-medium flex items-center gap-1.5">
                 {market.loanAsset.symbol}
