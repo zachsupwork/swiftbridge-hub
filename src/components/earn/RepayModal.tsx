@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle, Loader2, Check, Wallet } from 'lucide-react';
-import { useAccount, useChainId, useSwitchChain, useReadContract } from 'wagmi';
+import { useAccount, useChainId, useReadContract } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ export function RepayModal({
 }: RepayModalProps) {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { switchChain } = useSwitchChain();
+  
 
   const [amount, setAmount] = useState('');
 
@@ -160,14 +160,8 @@ export function RepayModal({
                 {isConnected && !isChainMatch && (
                   <div className="glass rounded-xl p-4 text-center">
                     <p className="text-muted-foreground mb-3">
-                      Please switch to {position.chainName} to repay
+                      Please switch to {position.chainName} in your wallet to repay.
                     </p>
-                    <Button 
-                      onClick={() => switchChain?.({ chainId: position.chainId })}
-                      className="gap-2"
-                    >
-                      Switch to {position.chainName}
-                    </Button>
                   </div>
                 )}
 

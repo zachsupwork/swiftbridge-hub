@@ -227,7 +227,13 @@ export function SwapCard() {
         );
       }
       if (walletChainId !== fromChainId) {
-        await switchChainAsync({ chainId: fromChainId });
+        try {
+          await switchChainAsync({ chainId: fromChainId });
+        } catch (switchErr) {
+          throw new TransactionValidationError(
+            `Please switch to ${getChainName(fromChainId)} in your wallet before swapping.`
+          );
+        }
       }
       const stepWithTx = await getStepTransaction(route.steps[0]);
       if (!stepWithTx.transactionRequest) {

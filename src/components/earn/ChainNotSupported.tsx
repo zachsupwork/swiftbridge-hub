@@ -6,8 +6,6 @@
  */
 
 import { AlertCircle } from 'lucide-react';
-import { useSwitchChain } from 'wagmi';
-import { Button } from '@/components/ui/button';
 import { EARN_CHAIN_NAMES, EARN_CHAIN_LOGOS, EARN_SUPPORTED_CHAINS } from '@/lib/aaveV3';
 
 interface ChainNotSupportedProps {
@@ -15,8 +13,6 @@ interface ChainNotSupportedProps {
 }
 
 export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
-  const { switchChain, isPending } = useSwitchChain();
-
   return (
     <div className="glass rounded-2xl p-6 sm:p-8 text-center max-w-lg mx-auto">
       <AlertCircle className="w-12 h-12 text-warning mx-auto mb-4" />
@@ -25,16 +21,14 @@ export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
       
       <p className="text-muted-foreground mb-6">
         Aave v3 Earn is only available on Ethereum Mainnet and Sepolia Testnet.
+        Please switch networks in your wallet.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-2 justify-center">
         {EARN_SUPPORTED_CHAINS.map((cId) => (
-          <Button
+          <div
             key={cId}
-            variant="outline"
-            className="h-11 gap-2"
-            onClick={() => switchChain?.({ chainId: cId })}
-            disabled={isPending || cId === currentChainId}
+            className="h-11 gap-2 flex items-center justify-center px-4 rounded-md border border-border text-sm"
           >
             <img 
               src={EARN_CHAIN_LOGOS[cId]} 
@@ -42,7 +36,7 @@ export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
               className="w-5 h-5 rounded-full"
             />
             <span>{EARN_CHAIN_NAMES[cId]}</span>
-          </Button>
+          </div>
         ))}
       </div>
     </div>

@@ -29,7 +29,8 @@ import {
   Shield,
   Info,
 } from 'lucide-react';
-import { useAccount, useChainId, useSwitchChain } from 'wagmi';
+import { useAccount, useChainId } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 import { Layout } from '@/components/layout/Layout';
 import { Button } from '@/components/ui/button';
@@ -64,7 +65,7 @@ const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
-  const { switchChain, isPending: isSwitchingChain } = useSwitchChain();
+
   const isWrongNetwork = isConnected && walletChainId !== 1;
 
   const [copiedDebug, setCopiedDebug] = useState(false);
@@ -376,22 +377,21 @@ export default function Earn() {
                   Earn is available on Ethereum mainnet only. Switch network to continue.
                 </p>
               </div>
-              <Button
-                size="sm"
-                onClick={() => switchChain({ chainId: 1 })}
-                disabled={isSwitchingChain}
-                className="gap-1.5"
-              >
-                {isSwitchingChain ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <svg className="w-3.5 h-3.5" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
-                    <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
-                    <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
-                  </svg>
+              <ConnectButton.Custom>
+                {({ openChainModal, mounted }) => (
+                  <Button
+                    size="sm"
+                    onClick={() => { if (mounted && openChainModal) openChainModal(); }}
+                    className="gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
+                      <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
+                      <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
+                    </svg>
+                    Switch Network
+                  </Button>
                 )}
-                Switch to Ethereum
-              </Button>
+              </ConnectButton.Custom>
             </div>
           )}
 

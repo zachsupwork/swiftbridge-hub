@@ -29,7 +29,6 @@ import {
 import { 
   useAccount, 
   useChainId, 
-  useSwitchChain, 
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
@@ -103,7 +102,7 @@ export function MorphoActionModal({
 }: MorphoActionModalProps) {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
-  const { switchChain, isPending: isSwitching } = useSwitchChain();
+  
   const { writeContractAsync } = useWriteContract();
 
   const [actionType, setActionType] = useState<ActionType>(initialActionType);
@@ -277,15 +276,7 @@ export function MorphoActionModal({
   const isWrongChain = market && walletChainId !== market.chainId;
   const chainConfig = market ? getMorphoChainConfig(market.chainId) : null;
 
-  // Handle chain switch
-  const handleSwitchChain = useCallback(async () => {
-    if (!market) return;
-    try {
-      await switchChain({ chainId: market.chainId });
-    } catch (err) {
-      console.error('Failed to switch chain:', err);
-    }
-  }, [market, switchChain]);
+
 
   // Get max amount
   const maxAmount = useMemo(() => {
@@ -546,17 +537,9 @@ export function MorphoActionModal({
               <div className="flex-1 text-sm">
                 <p className="font-medium text-warning">Wrong Network</p>
                 <p className="text-muted-foreground text-xs">
-                  Switch to {chainConfig?.label}
+                  Please switch to {chainConfig?.label} in your wallet to continue.
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleSwitchChain}
-                disabled={isSwitching}
-              >
-                {isSwitching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Switch'}
-              </Button>
             </div>
           )}
 
