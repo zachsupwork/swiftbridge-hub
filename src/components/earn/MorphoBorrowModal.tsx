@@ -367,7 +367,7 @@ export function MorphoBorrowModal({
                 Borrow {loanToken.symbol}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-2 flex-wrap">
-                <TokenIconStable symbol={loanToken.symbol} size="sm" />
+                <TokenIconStable symbol={loanToken.symbol} logoURI={loanToken.logoUrl} size="sm" />
                 <span>{chainConfig?.label}</span>
                 <span className="text-muted-foreground">•</span>
                 <span className="text-warning font-medium">{formatAPY(market.borrowApy)} APR</span>
@@ -451,7 +451,7 @@ export function MorphoBorrowModal({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-sm font-medium flex items-center gap-1.5">
-                      <TokenIconStable symbol={collateralToken?.symbol || '?'} size="sm" />
+                      <TokenIconStable symbol={collateralToken?.symbol || '?'} logoURI={collateralToken?.logoUrl} size="sm" />
                       Supply {collateralToken?.symbol || 'Collateral'}
                     </label>
                     <span className="text-xs text-muted-foreground">
@@ -604,7 +604,7 @@ export function MorphoBorrowModal({
                       className="text-lg font-mono pr-20"
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                      <TokenIconStable symbol={loanToken.symbol} size="sm" />
+                      <TokenIconStable symbol={loanToken.symbol} logoURI={loanToken.logoUrl} size="sm" />
                       <span className="text-sm font-medium">{loanToken.symbol}</span>
                     </div>
                   </div>

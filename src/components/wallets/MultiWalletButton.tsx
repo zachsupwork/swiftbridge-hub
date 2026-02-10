@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut } from 'lucide-react';
+import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut, Globe } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
@@ -215,6 +215,21 @@ export function MultiWalletButton() {
                   <Wallet className="w-4 h-4 text-muted-foreground" />
                   Multi-Wallet ({connectedCount}/4)
                 </button>
+                <ConnectButton.Custom>
+                  {({ openChainModal, mounted }) => (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDropdown(false);
+                        if (mounted && openChainModal) openChainModal();
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-muted/50 transition-colors"
+                    >
+                      <Globe className="w-4 h-4 text-muted-foreground" />
+                      Switch Network
+                    </button>
+                  )}
+                </ConnectButton.Custom>
                 <button
                   type="button"
                   onClick={handleDisconnect}

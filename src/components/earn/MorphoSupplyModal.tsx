@@ -261,7 +261,7 @@ export function MorphoSupplyModal({
                 Supply {token.symbol}
               </DialogTitle>
               <DialogDescription className="flex items-center gap-2 flex-wrap">
-                <TokenIconStable symbol={token.symbol} size="sm" />
+                <TokenIconStable symbol={token.symbol} logoURI={token.logoUrl} size="sm" />
                 <span>{chainConfig?.label}</span>
                 <span className="text-muted-foreground">•</span>
                 <span className="text-success font-medium">{formatAPY(market.supplyApy)} APY</span>
@@ -398,7 +398,7 @@ export function MorphoSupplyModal({
                   className="text-lg font-mono pr-20"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <TokenIconStable symbol={token.symbol} size="sm" />
+                  <TokenIconStable symbol={token.symbol} logoURI={token.logoUrl} size="sm" />
                   <span className="text-sm font-medium">{token.symbol}</span>
                 </div>
               </div>

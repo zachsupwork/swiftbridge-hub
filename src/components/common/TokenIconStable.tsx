@@ -8,6 +8,8 @@ interface TokenIconStableProps {
   className?: string;
 }
 
+// logoURI prop already exists — this component supports it natively.
+
 const SIZE_MAP = {
   sm: 'w-4 h-4 text-[8px]',
   md: 'w-7 h-7 text-[10px]',

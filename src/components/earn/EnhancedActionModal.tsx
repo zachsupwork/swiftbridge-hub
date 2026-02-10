@@ -504,11 +504,11 @@ export function MorphoActionModal({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <TokenIconStable symbol={token.symbol} size="sm" />
+            <TokenIconStable symbol={token.symbol} logoURI={token.logoUrl} size="sm" />
             {getActionLabel()} {token.symbol}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
-            <TokenIconStable symbol={market.loanAsset.symbol} size="sm" />
+            <TokenIconStable symbol={market.loanAsset.symbol} logoURI={market.loanAsset.logoUrl} size="sm" />
             {market.loanAsset.symbol}
             {market.collateralAsset && ` / ${market.collateralAsset.symbol}`}
             {' • LLTV: '}{market.lltv.toFixed(0)}%
