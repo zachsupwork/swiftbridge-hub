@@ -1,4 +1,11 @@
-import { getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { connectorsForWallets } from '@rainbow-me/rainbowkit';
+import {
+  injectedWallet,
+  walletConnectWallet,
+  coinbaseWallet,
+  rainbowWallet,
+} from '@rainbow-me/rainbowkit/wallets';
+import { createConfig, http } from 'wagmi';
 import { 
   mainnet, 
   optimism, 
@@ -17,7 +24,6 @@ import {
   scroll,
   mantle,
 } from 'wagmi/chains';
-import { http } from 'wagmi';
 
 const MAINNET_RPC = import.meta.env.VITE_RPC_URL_MAINNET || 'https://eth.llamarpc.com';
 const SEPOLIA_RPC = import.meta.env.VITE_RPC_URL_SEPOLIA || 'https://rpc.sepolia.org';
@@ -71,9 +77,28 @@ if (import.meta.env.DEV && !import.meta.env.VITE_WALLETCONNECT_PROJECT_ID) {
   console.warn('[WagmiConfig] VITE_WALLETCONNECT_PROJECT_ID not set — WalletConnect may not work. Get one at https://cloud.walletconnect.com');
 }
 
-export const config = getDefaultConfig({
-  appName: 'Crypto DeFi Bridge',
-  projectId: WALLETCONNECT_PROJECT_ID,
+// Explicit connectors: injected FIRST so MetaMask in-app browser uses
+// the native window.ethereum provider instead of MetaMask SDK connector.
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: 'Popular',
+      wallets: [
+        injectedWallet,
+        walletConnectWallet,
+        coinbaseWallet,
+        rainbowWallet,
+      ],
+    },
+  ],
+  {
+    appName: 'Crypto DeFi Bridge',
+    projectId: WALLETCONNECT_PROJECT_ID,
+  }
+);
+
+export const config = createConfig({
+  connectors,
   chains: SUPPORTED_CHAINS,
   transports: {
     [mainnet.id]: http(MAINNET_RPC),
