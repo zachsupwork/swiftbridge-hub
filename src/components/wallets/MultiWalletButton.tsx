@@ -2,9 +2,6 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut, Globe } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { useConnectWallet, useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
 import { useAccount, useDisconnect } from 'wagmi';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
@@ -32,9 +29,6 @@ export function MultiWalletButton() {
   
   const { disconnect: disconnectEvm } = useDisconnect();
   const { connect: connectBitcoin, disconnect: disconnectBitcoin, isAvailable: btcAvailable, providerName: btcProvider } = useBitcoinWallet();
-  const { disconnect: disconnectSolana } = useSolanaWallet();
-  const { mutate: connectSui } = useConnectWallet();
-  const { mutate: disconnectSui } = useDisconnectWallet();
 
   const isUnsupportedNetwork = evmConnected && currentChainId && !isChainSupported(currentChainId);
   const connectedCount = [wallets.evm.connected, wallets.solana.connected, wallets.bitcoin.connected, wallets.sui.connected].filter(Boolean).length;
@@ -94,15 +88,8 @@ export function MultiWalletButton() {
   }, [connectBitcoin, startConnecting]);
 
   const handleSuiConnect = useCallback(() => {
-    startConnecting('sui');
-    try {
-      connectSui({ wallet: null as any });
-    } catch (err) {
-      if (import.meta.env.DEV) console.error('[Wallet] Sui connect error:', err);
-      toast.error('Failed to connect Sui wallet');
-      setConnectingType(null);
-    }
-  }, [connectSui, startConnecting]);
+    toast.info('Sui wallet support is not available.');
+  }, []);
 
   const closeModal = useCallback(() => {
     setIsOpen(false);
@@ -261,8 +248,8 @@ export function MultiWalletButton() {
           btcAvailable={btcAvailable}
           btcProvider={btcProvider}
           onDisconnectBitcoin={disconnectBitcoin}
-          onDisconnectSolana={() => disconnectSolana()}
-          onDisconnectSui={() => disconnectSui()}
+          onDisconnectSolana={() => {}}
+          onDisconnectSui={() => {}}
         />
       </div>
     );
@@ -301,8 +288,8 @@ export function MultiWalletButton() {
         btcAvailable={btcAvailable}
         btcProvider={btcProvider}
         onDisconnectBitcoin={disconnectBitcoin}
-        onDisconnectSolana={() => disconnectSolana()}
-        onDisconnectSui={() => disconnectSui()}
+        onDisconnectSolana={() => {}}
+        onDisconnectSui={() => {}}
       />
     </>
   );
@@ -407,22 +394,11 @@ function WalletModal({
                 </ConnectButton.Custom>
               </WalletSection>
 
-              {/* Solana */}
-              <WalletSection title="Solana" titleColor={WALLET_CONFIG.solana.color} connected={wallets.solana.connected}>
-                {wallets.solana.connected ? (
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex items-center px-4 h-12 rounded-xl bg-muted/30 text-sm font-medium font-mono truncate">
-                      {wallets.solana.shortAddress}
-                    </div>
-                    <button type="button" onClick={onDisconnectSolana} className="h-12 px-4 text-sm rounded-xl hover:bg-muted/50 text-muted-foreground">
-                      Disconnect
-                    </button>
-                  </div>
-                ) : (
-                  <div className="wallet-button-wrapper">
-                    <WalletMultiButton />
-                  </div>
-                )}
+              {/* Solana - not available */}
+              <WalletSection title="Solana" titleColor={WALLET_CONFIG.solana.color} connected={false}>
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-muted/30 text-sm text-muted-foreground">
+                  <span className="leading-relaxed">Solana wallet support coming soon.</span>
+                </div>
               </WalletSection>
 
               {/* Bitcoin */}
