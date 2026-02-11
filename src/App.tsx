@@ -7,17 +7,6 @@ import { WagmiProvider } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 
-// Solana wallet imports
-import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
-import "@solana/wallet-adapter-react-ui/styles.css";
-
-// Sui wallet imports
-import { createNetworkConfig, SuiClientProvider, WalletProvider as SuiWalletProvider } from "@mysten/dapp-kit";
-import { getFullnodeUrl } from "@mysten/sui/client";
-import "@mysten/dapp-kit/dist/index.css";
-
 import { config } from "@/lib/wagmiConfig";
 import { BitcoinWalletProvider, MultiWalletProvider } from "@/lib/wallets";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -30,26 +19,10 @@ import Market from "./pages/Market";
 import Support from "./pages/Support";
 import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
-import { useMemo } from "react";
 
 const queryClient = new QueryClient();
 
-// Solana cluster endpoint
-const SOLANA_ENDPOINT = "https://api.mainnet-beta.solana.com";
-
-// Sui network config
-const { networkConfig } = createNetworkConfig({
-  mainnet: { url: getFullnodeUrl("mainnet") },
-  testnet: { url: getFullnodeUrl("testnet") },
-});
-
 function WalletProviders({ children }: { children: React.ReactNode }) {
-  // Solana wallets
-  const solanaWallets = useMemo(
-    () => [new PhantomWalletAdapter(), new SolflareWalletAdapter()],
-    []
-  );
-
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
@@ -61,21 +34,11 @@ function WalletProviders({ children }: { children: React.ReactNode }) {
             fontStack: 'system',
           })}
         >
-          <ConnectionProvider endpoint={SOLANA_ENDPOINT}>
-            <SolanaWalletProvider wallets={solanaWallets} autoConnect>
-              <WalletModalProvider>
-                <SuiClientProvider networks={networkConfig} defaultNetwork="mainnet">
-                  <SuiWalletProvider autoConnect>
-                    <BitcoinWalletProvider>
-                      <MultiWalletProvider>
-                        {children}
-                      </MultiWalletProvider>
-                    </BitcoinWalletProvider>
-                  </SuiWalletProvider>
-                </SuiClientProvider>
-              </WalletModalProvider>
-            </SolanaWalletProvider>
-          </ConnectionProvider>
+          <BitcoinWalletProvider>
+            <MultiWalletProvider>
+              {children}
+            </MultiWalletProvider>
+          </BitcoinWalletProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

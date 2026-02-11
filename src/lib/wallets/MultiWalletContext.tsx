@@ -1,7 +1,5 @@
 import { createContext, useContext, ReactNode, useMemo } from 'react';
 import { useAccount } from 'wagmi';
-import { useWallet as useSolanaWallet } from '@solana/wallet-adapter-react';
-import { useCurrentAccount as useSuiCurrentAccount } from '@mysten/dapp-kit';
 import { useBitcoinWallet } from './bitcoinWallet';
 import { WalletType, shortenAddress } from './types';
 
@@ -17,33 +15,18 @@ interface MultiWalletContextValue {
   solana: WalletConnection;
   bitcoin: WalletConnection;
   sui: WalletConnection;
-  // Helper to check if a specific wallet type is connected
   isWalletConnected: (type: WalletType) => boolean;
-  // Get address for a wallet type
   getAddress: (type: WalletType) => string | null;
-  // Check if ANY wallet is connected
   anyWalletConnected: boolean;
 }
 
 const MultiWalletContext = createContext<MultiWalletContextValue | null>(null);
 
 export function MultiWalletProvider({ children }: { children: ReactNode }) {
-  // EVM wallet from wagmi
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
-  
-  // Solana wallet
-  const { publicKey: solanaPublicKey, connected: solanaConnected } = useSolanaWallet();
-  
-  // Bitcoin wallet
   const { address: btcAddress, connected: btcConnected } = useBitcoinWallet();
-  
-  // Sui wallet
-  const suiAccount = useSuiCurrentAccount();
 
   const value = useMemo<MultiWalletContextValue>(() => {
-    const solanaAddress = solanaPublicKey?.toBase58() || null;
-    const suiAddress = suiAccount?.address || null;
-
     const wallets: MultiWalletContextValue = {
       evm: {
         type: 'evm',
@@ -53,9 +36,9 @@ export function MultiWalletProvider({ children }: { children: ReactNode }) {
       },
       solana: {
         type: 'solana',
-        connected: solanaConnected,
-        address: solanaAddress,
-        shortAddress: solanaAddress ? shortenAddress(solanaAddress) : null,
+        connected: false,
+        address: null,
+        shortAddress: null,
       },
       bitcoin: {
         type: 'bitcoin',
@@ -65,33 +48,29 @@ export function MultiWalletProvider({ children }: { children: ReactNode }) {
       },
       sui: {
         type: 'sui',
-        connected: !!suiAccount,
-        address: suiAddress,
-        shortAddress: suiAddress ? shortenAddress(suiAddress) : null,
+        connected: false,
+        address: null,
+        shortAddress: null,
       },
       isWalletConnected: (type: WalletType) => {
         switch (type) {
           case 'evm': return evmConnected;
-          case 'solana': return solanaConnected;
           case 'bitcoin': return btcConnected;
-          case 'sui': return !!suiAccount;
           default: return false;
         }
       },
       getAddress: (type: WalletType) => {
         switch (type) {
           case 'evm': return evmAddress || null;
-          case 'solana': return solanaAddress;
           case 'bitcoin': return btcAddress;
-          case 'sui': return suiAddress;
           default: return null;
         }
       },
-      anyWalletConnected: evmConnected || solanaConnected || btcConnected || !!suiAccount,
+      anyWalletConnected: evmConnected || btcConnected,
     };
 
     return wallets;
-  }, [evmAddress, evmConnected, solanaPublicKey, solanaConnected, btcAddress, btcConnected, suiAccount]);
+  }, [evmAddress, evmConnected, btcAddress, btcConnected]);
 
   return (
     <MultiWalletContext.Provider value={value}>
