@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
+import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -99,6 +100,7 @@ export default function Support() {
 
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4 py-6 max-w-4xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

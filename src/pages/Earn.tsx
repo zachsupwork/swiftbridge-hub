@@ -12,6 +12,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   RefreshCw, 
@@ -33,6 +34,7 @@ import { useAccount, useChainId } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 import { Layout } from '@/components/layout/Layout';
+import { SeoHead, SeoContentBlock } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -264,7 +266,41 @@ export default function Earn() {
 
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4 py-6 max-w-6xl">
+        <SeoContentBlock>
+          <h1>Earn Yield with DeFi Lending &amp; Staking</h1>
+          <p>
+            Crypto DeFi Bridge gives you access to <strong>DeFi staking</strong> and lending markets powered by Morpho Blue on Ethereum.
+            Supply your crypto assets to earn competitive APY, or borrow against your collateral at transparent rates — all non-custodial.
+          </p>
+          <h2>How DeFi Lending Works</h2>
+          <p>
+            When you supply tokens to a lending market, borrowers pay interest to use your liquidity. Your deposited assets
+            remain in audited smart contracts — Crypto DeFi Bridge never takes custody. Rates are determined by supply and demand,
+            giving you market-driven yield on idle assets.
+          </p>
+          <h2>Crypto Vaults &amp; Liquid Staking</h2>
+          <p>
+            <strong>Crypto vaults</strong> automate yield strategies so you can earn without active management.
+            <strong> Liquid staking</strong> lets you stake ETH while keeping a tradeable receipt token.
+            Both approaches are accessible through the markets listed below.
+          </p>
+          <h2>Borrow Against Your Holdings</h2>
+          <p>
+            Need liquidity without selling? Deposit collateral and borrow stablecoins or other assets.
+            Monitor your health factor to avoid liquidation, and repay at any time.
+          </p>
+          <p>
+            New to DeFi? Start by <Link to="/">swapping tokens</Link> or read our{' '}
+            <Link to="/docs">documentation</Link> to understand the risks.
+          </p>
+          <h2>Risk Disclaimer</h2>
+          <p>
+            Lending and borrowing involve smart-contract risk and liquidation risk. Collateral values can fluctuate,
+            and positions may be liquidated if health factors drop below safe thresholds. Always DYOR.
+          </p>
+        </SeoContentBlock>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

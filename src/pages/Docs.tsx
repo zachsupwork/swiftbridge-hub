@@ -19,6 +19,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
+import { SeoHead } from '@/components/seo';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +69,7 @@ function Section({
 export default function Docs() {
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4 py-6 max-w-4xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
