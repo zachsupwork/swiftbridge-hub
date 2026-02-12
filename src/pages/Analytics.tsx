@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, TrendingUp, DollarSign, Download, Calendar } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
+import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { getAnalytics, exportToCSV, getSwapHistory } from '@/lib/swapStorage';
 import { getIntegratorFee, formatFeePercentage } from '@/lib/lifiClient';
@@ -54,6 +55,7 @@ export default function Analytics() {
 
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

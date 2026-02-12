@@ -1,21 +1,64 @@
+import { Link } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { SwapCard } from '@/components/swap/SwapCard';
+import { SeoHead, SeoContentBlock } from '@/components/seo';
 import { motion } from 'framer-motion';
 
 const Index = () => {
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4">
+        <SeoContentBlock>
+          <h1>Cross-Chain Crypto Swap &amp; Bridge</h1>
+          <p>
+            Crypto DeFi Bridge is a non-custodial <strong>cross-chain swap</strong> and <strong>crypto bridge</strong> aggregator.
+            Swap tokens across Ethereum, Arbitrum, Base, Polygon, Optimism, BNB Chain, Avalanche, and more — all from one interface
+            with transparent fees and optimized routing.
+          </p>
+          <h2>How Does a Cross-Chain Crypto Swap Work?</h2>
+          <p>
+            A <strong>cryptocurrency swap</strong> lets you exchange one token for another without a centralized exchange.
+            When the tokens live on different blockchains, a <strong>crypto bridge</strong> moves value between networks.
+            Crypto DeFi Bridge aggregates DEX and bridge liquidity to find the best route for every trade —
+            so you always get competitive pricing whether you're swapping ETH to USDC on Arbitrum or bridging
+            MATIC to Base.
+          </p>
+          <h2>Why Use a DeFi Swap Aggregator?</h2>
+          <p>
+            Instead of manually comparing prices on Uniswap, SushiSwap, or individual bridges, our aggregator
+            queries multiple sources simultaneously and presents the optimal <strong>cross-chain swap</strong> route.
+            This saves time, reduces slippage, and often results in better net output for the trader.
+          </p>
+          <h2>Trade Crypto Non-Custodially</h2>
+          <p>
+            Every swap executes directly between your wallet and the underlying smart contracts.
+            Crypto DeFi Bridge never holds your private keys or tokens. You approve, you sign, you control.
+          </p>
+          <p>
+            Looking to earn yield on your idle assets? Visit our{' '}
+            <Link to="/earn">DeFi staking &amp; lending</Link> page to supply and borrow with competitive APY.
+            Track everything in your{' '}
+            <Link to="/portfolio">cross-chain portfolio</Link>.
+          </p>
+          <h2>Risk Disclaimer</h2>
+          <p>
+            DeFi protocols involve smart-contract risk, bridge risk, and potential impermanent loss.
+            Always do your own research (DYOR) before interacting with any protocol. Past performance
+            does not guarantee future results.
+          </p>
+        </SeoContentBlock>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+          <p className="text-4xl md:text-5xl font-bold mb-4">
             <span className="text-gradient">Crypto DeFi Bridge</span>
             <br />
-            <span className="text-foreground text-2xl md:text-3xl">Cross-Chain Swap, Borrow & Earn</span>
-          </h1>
+            <span className="text-foreground text-2xl md:text-3xl">Cross-Chain Swap, Borrow &amp; Earn</span>
+          </p>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Swap tokens across multiple blockchains using the best liquidity routes.
             <br className="hidden sm:block" />

@@ -4,6 +4,7 @@ import { useAccount, useChainId } from 'wagmi';
 import { formatUnits } from 'viem';
 import { Wallet, RefreshCw, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
+import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { getChains, getTokenBalances, Chain, TokenAmount } from '@/lib/lifiClient';
 import { cn } from '@/lib/utils';
@@ -167,6 +168,7 @@ export default function Portfolio() {
   if (!isConnected) {
     return (
       <Layout>
+        <SeoHead />
         <div className="container mx-auto px-4">
           <div className="glass rounded-2xl p-12 text-center max-w-lg mx-auto">
             <Wallet className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
@@ -182,6 +184,7 @@ export default function Portfolio() {
 
   return (
     <Layout>
+      <SeoHead />
       <div className="container mx-auto px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
