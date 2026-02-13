@@ -37,7 +37,7 @@ import {
   ExternalLink,
   HelpCircle,
 } from 'lucide-react';
-import { useState, useMemo, useCallback, memo, useEffect } from 'react';
+import { useState, useMemo, useCallback, memo, useEffect, Fragment } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -482,96 +482,25 @@ export function MorphoMarketsTable({
           const showDivider = !trusted && prevTrusted;
 
           return (
-            <div key={`mobile-${market.chainId}-${market.id}`}>
+            <Fragment key={`mobile-${market.chainId}-${market.id}`}>
               {showDivider && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground px-2 py-3 mt-2">
                   <ShieldAlert className="w-3.5 h-3.5 text-warning" />
                   <span className="font-medium">Unverified / Higher Risk Markets</span>
                 </div>
               )}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: Math.min(index * 0.02, 0.3) }}
-                className={cn("glass rounded-xl p-4", !trusted && "opacity-60")}
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div
-                    className="cursor-pointer hover:text-primary transition-colors flex-1"
-                    onClick={() => navigate(`/market/${market.uniqueKey || market.id}`)}
-                  >
-                    <div className="font-medium flex items-center gap-1.5 flex-wrap">
-                      {market.collateralAsset ? (
-                        <>
-                          {market.collateralAsset.symbol}
-                          <span className="text-muted-foreground font-normal">/ {market.loanAsset.symbol}</span>
-                        </>
-                      ) : (
-                        market.loanAsset.symbol
-                      )}
-                      {!trusted && (
-                        <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
-                          <ShieldAlert className="w-2.5 h-2.5" />
-                          Unverified
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground">LLTV: {market.lltv.toFixed(0)}%</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold text-lg text-success">{formatAPY(market.supplyApy)}</div>
-                    <div className="text-[10px] text-muted-foreground">Supply APY</div>
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="flex items-center justify-between pt-3 border-t border-border/30">
-                  <div className="grid grid-cols-3 gap-3 text-sm flex-1">
-                    <div>
-                      <span className="text-muted-foreground text-xs">TVL </span>
-                      <span className="font-medium text-xs">{formatUsd(market.totalSupplyUsd)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground text-xs">Borrow </span>
-                      <span className="font-medium text-xs text-warning">{formatAPY(market.borrowApy)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground text-xs">Util </span>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-xs h-5",
-                          market.utilization > 90 ? "bg-destructive/10 text-destructive border-destructive/30" :
-                          market.utilization > 70 ? "bg-warning/10 text-warning border-warning/30" :
-                          "bg-muted/50"
-                        )}
-                      >
-                        {formatUtilization(market.utilization)}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2 mt-3">
-                  <Button size="sm" onClick={() => onSupply?.(market)} className="flex-1 h-9 gap-1">
-                    <TrendingUp className="w-3 h-3" />
-                    Supply
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onBorrow?.(market)}
-                    className="flex-1 h-9 gap-1"
-                    disabled={!market.collateralAsset}
-                  >
-                    <Wallet className="w-3 h-3" />
-                    Borrow
-                  </Button>
-                </div>
-              </motion.div>
-            </div>
+              <MobileMarketCard
+                market={market}
+                index={index}
+                trusted={trusted}
+                onSupply={onSupply}
+                onBorrow={onBorrow}
+                onMarketDetails={onMarketDetails}
+                onCopy={copyToClipboard}
+                copiedIrm={copiedIrm}
+                navigate={navigate}
+              />
+            </Fragment>
           );
         })}
       </div>
@@ -759,5 +688,184 @@ const DesktopRow = memo(function DesktopRow({
         </td>
       </motion.tr>
     </>
+  );
+});
+
+/* ─── Mobile Market Card (full parity with desktop) ─── */
+interface MobileMarketCardProps {
+  market: MorphoMarket & { normalizedSupplyApy: number; normalizedBorrowApy: number };
+  index: number;
+  trusted: boolean;
+  onSupply?: (m: MorphoMarket) => void;
+  onBorrow?: (m: MorphoMarket) => void;
+  onMarketDetails?: (m: MorphoMarket) => void;
+  onCopy: (text: string, id: string) => void;
+  copiedIrm: string | null;
+  navigate: ReturnType<typeof useNavigate>;
+}
+
+const MobileMarketCard = memo(function MobileMarketCard({
+  market, index, trusted, onSupply, onBorrow, onMarketDetails, onCopy, copiedIrm, navigate,
+}: MobileMarketCardProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: Math.min(index * 0.02, 0.3) }}
+      className={cn("glass rounded-xl p-4", !trusted && "opacity-60")}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div
+          className="cursor-pointer hover:text-primary transition-colors flex-1"
+          onClick={() => navigate(`/market/${market.uniqueKey || market.id}`)}
+        >
+          <div className="font-medium flex items-center gap-1.5 flex-wrap">
+            {market.collateralAsset ? (
+              <>
+                {market.collateralAsset.symbol}
+                <span className="text-muted-foreground font-normal">/ {market.loanAsset.symbol}</span>
+              </>
+            ) : (
+              market.loanAsset.symbol
+            )}
+            {!trusted && (
+              <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-warning/10 text-warning border-warning/30 gap-0.5">
+                <ShieldAlert className="w-2.5 h-2.5" />
+                Unverified
+              </Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">LLTV: {market.lltv.toFixed(0)}%</div>
+        </div>
+        <div className="text-right">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="font-semibold text-lg text-success cursor-default">{formatAPY(market.supplyApy)}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                Rates apply to the LOAN asset ({market.loanAsset.symbol}). Fee: {market.fee.toFixed(1)}%.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <div className="text-[10px] text-muted-foreground">Supply APY</div>
+        </div>
+      </div>
+
+      {/* Primary stats row */}
+      <div className="grid grid-cols-3 gap-3 text-sm pt-3 border-t border-border/30">
+        <div>
+          <span className="text-muted-foreground text-xs">TVL </span>
+          <span className="font-medium text-xs">{formatUsd(market.totalSupplyUsd)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground text-xs">Borrow </span>
+          <span className="font-medium text-xs text-warning">{formatAPY(market.borrowApy)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground text-xs">Util </span>
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-xs h-5",
+              market.utilization > 90 ? "bg-destructive/10 text-destructive border-destructive/30" :
+              market.utilization > 70 ? "bg-warning/10 text-warning border-warning/30" :
+              "bg-muted/50"
+            )}
+          >
+            {formatUtilization(market.utilization)}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Expand toggle */}
+      <button
+        onClick={() => setExpanded(prev => !prev)}
+        className="w-full flex items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2 py-1 transition-colors"
+      >
+        {expanded ? 'Hide details' : 'Show details'}
+        <ArrowUpDown className="w-3 h-3" />
+      </button>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs pt-2 border-t border-border/20 mt-1">
+          <div>
+            <span className="text-muted-foreground">Total Borrow</span>
+            <div className="font-medium">{formatUsd(market.totalBorrowUsd)}</div>
+            {market.totalBorrowAssets > 0 && (
+              <div className="text-[10px] text-muted-foreground">{formatTokenAmount(market.totalBorrowAssets, market.loanAsset.symbol)}</div>
+            )}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Liquidity</span>
+            <div className="font-medium">{formatUsd(market.availableLiquidityUsd)}</div>
+            {market.liquidityAssets > 0 && (
+              <div className="text-[10px] text-muted-foreground">{formatTokenAmount(market.liquidityAssets, market.loanAsset.symbol)}</div>
+            )}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Total Supply (tokens)</span>
+            <div className="font-medium">
+              {market.totalSupplyAssets > 0 ? formatTokenAmount(market.totalSupplyAssets, market.loanAsset.symbol) : '—'}
+            </div>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Fee</span>
+            <div className="font-medium">{market.fee.toFixed(1)}%</div>
+          </div>
+          <div className="col-span-2">
+            <span className="text-muted-foreground">IRM</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <a
+                href={getExplorerAddressUrl(market.chainId, market.irm)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[11px] text-primary hover:underline"
+              >
+                {truncAddr(market.irm)}
+              </a>
+              <button
+                onClick={(e) => { e.stopPropagation(); onCopy(market.irm, market.id); }}
+                className="p-1 text-muted-foreground hover:text-foreground"
+              >
+                {copiedIrm === market.id ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+              </button>
+              <ExternalLink className="w-3 h-3 text-muted-foreground" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-2 mt-3">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onMarketDetails?.(market)}
+          className="h-9 w-9 p-0"
+          title="Market details"
+        >
+          <Info className="w-4 h-4" />
+        </Button>
+        <Button size="sm" onClick={() => onSupply?.(market)} className="flex-1 h-9 gap-1">
+          <TrendingUp className="w-3 h-3" />
+          Supply
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => onBorrow?.(market)}
+          className="flex-1 h-9 gap-1"
+          disabled={!market.collateralAsset}
+        >
+          <Wallet className="w-3 h-3" />
+          Borrow
+        </Button>
+      </div>
+    </motion.div>
   );
 });
