@@ -444,6 +444,8 @@ export default function Earn() {
             </div>
             <a
               href="/docs"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               Learn more
