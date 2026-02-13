@@ -141,27 +141,39 @@ export const supportedChains = [
   { id: 11155111, name: 'Sepolia', icon: '🧪' },
 ];
 
-// Block explorer URLs for each chain
-export const CHAIN_EXPLORERS: Record<number, string> = {
-  1: 'https://etherscan.io/tx/',
-  10: 'https://optimistic.etherscan.io/tx/',
-  137: 'https://polygonscan.com/tx/',
-  42161: 'https://arbiscan.io/tx/',
-  8453: 'https://basescan.org/tx/',
-  43114: 'https://snowtrace.io/tx/',
-  56: 'https://bscscan.com/tx/',
-  250: 'https://ftmscan.com/tx/',
-  100: 'https://gnosisscan.io/tx/',
-  42220: 'https://celoscan.io/tx/',
-  1284: 'https://moonscan.io/tx/',
-  324: 'https://era.zksync.network/tx/',
-  59144: 'https://lineascan.build/tx/',
-  534352: 'https://scrollscan.com/tx/',
-  5000: 'https://explorer.mantle.xyz/tx/',
-  11155111: 'https://sepolia.etherscan.io/tx/',
+// Block explorer base URLs for each chain
+export const CHAIN_EXPLORER_BASES: Record<number, string> = {
+  1: 'https://etherscan.io',
+  10: 'https://optimistic.etherscan.io',
+  137: 'https://polygonscan.com',
+  42161: 'https://arbiscan.io',
+  8453: 'https://basescan.org',
+  43114: 'https://snowtrace.io',
+  56: 'https://bscscan.com',
+  250: 'https://ftmscan.com',
+  100: 'https://gnosisscan.io',
+  42220: 'https://celoscan.io',
+  1284: 'https://moonscan.io',
+  324: 'https://era.zksync.network',
+  59144: 'https://lineascan.build',
+  534352: 'https://scrollscan.com',
+  5000: 'https://explorer.mantle.xyz',
+  11155111: 'https://sepolia.etherscan.io',
 };
 
+// Legacy compat — kept for existing consumers
+export const CHAIN_EXPLORERS: Record<number, string> = Object.fromEntries(
+  Object.entries(CHAIN_EXPLORER_BASES).map(([k, v]) => [k, `${v}/tx/`])
+);
+
+export function getExplorerBaseUrl(chainId: number): string {
+  return CHAIN_EXPLORER_BASES[chainId] || 'https://etherscan.io';
+}
+
 export function getExplorerTxUrl(chainId: number, txHash: string): string {
-  const baseUrl = CHAIN_EXPLORERS[chainId] || 'https://etherscan.io/tx/';
-  return `${baseUrl}${txHash}`;
+  return `${getExplorerBaseUrl(chainId)}/tx/${txHash}`;
+}
+
+export function getExplorerAddressUrl(chainId: number, address: string): string {
+  return `${getExplorerBaseUrl(chainId)}/address/${address}`;
 }
