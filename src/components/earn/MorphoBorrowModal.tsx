@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   AlertTriangle, 
   Loader2, 
@@ -21,6 +22,7 @@ import {
   Zap,
   TrendingUp,
   ChevronRight,
+  Repeat,
 } from 'lucide-react';
 import { 
   useAccount, 
@@ -66,6 +68,7 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
+import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
 
 type BorrowStep = 'collateral' | 'borrow';
 
@@ -92,6 +95,7 @@ export function MorphoBorrowModal({
 }: MorphoBorrowModalProps) {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
+  const navigate = useNavigate();
   
   const { writeContractAsync } = useWriteContract();
 
@@ -438,6 +442,35 @@ export function MorphoBorrowModal({
                       </p>
                     </div>
                   </div>
+                  {/* Swap CTA when no collateral balance */}
+                  {(!collateralBalance || collateralBalance.value === 0n) && collateralToken && (
+                    <div className="mt-2 p-3 rounded-lg bg-warning/10 border border-warning/20 space-y-2">
+                      <p className="text-xs text-muted-foreground">
+                        You don't have <strong>{collateralToken.symbol}</strong> in this wallet. Swap into it first.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                        onClick={() => {
+                          const link = buildSwapLink({
+                            chainId: market.chainId,
+                            toTokenAddress: collateralToken.address,
+                            toTokenSymbol: collateralToken.symbol,
+                            fromTokenAddress: getDefaultFromToken(market.chainId),
+                            marketId: market.uniqueKey,
+                            ref: 'earn',
+                            action: 'borrow',
+                          });
+                          onClose();
+                          navigate(link);
+                        }}
+                      >
+                        <Repeat className="w-3.5 h-3.5" />
+                        Swap for {collateralToken.symbol}
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Collateral Input */}
