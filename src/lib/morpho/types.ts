@@ -36,6 +36,14 @@ export interface MorphoMarket {
   utilization: number; // As percentage (e.g., 75.3)
   oracle: string;
   irm: string;
+  // Extended fields for Morpho parity
+  totalSupplyAssets: number; // In loan token units
+  totalBorrowAssets: number; // In loan token units
+  liquidityAssets: number;   // In loan token units
+  totalCollateralUsd: number;
+  rateAtTarget: number | null; // IRM rate at target utilization (percentage)
+  fee: number; // Protocol fee as percentage (e.g., 10 = 10%)
+  morphoBlue: string; // Morpho Blue core contract
 }
 
 export interface MorphoPosition {

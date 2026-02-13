@@ -44,6 +44,9 @@ const MARKETS_QUERY = `
         lltv
         oracleAddress
         irmAddress
+        morphoBlue {
+          address
+        }
         loanAsset {
           address
           symbol
@@ -63,6 +66,12 @@ const MARKETS_QUERY = `
           supplyAssetsUsd
           borrowAssetsUsd
           liquidityAssetsUsd
+          supplyAssets
+          borrowAssets
+          liquidityAssets
+          collateralAssetsUsd
+          rateAtUTarget
+          fee
         }
       }
     }
@@ -124,6 +133,7 @@ interface ApiMarket {
   lltv: string;
   oracleAddress: string;
   irmAddress: string;
+  morphoBlue?: { address: string } | null;
   loanAsset: { address: string; symbol: string; decimals: number; name: string } | null;
   collateralAsset: { address: string; symbol: string; decimals: number; name: string } | null;
   state: {
@@ -133,6 +143,12 @@ interface ApiMarket {
     supplyAssetsUsd: number;
     borrowAssetsUsd: number;
     liquidityAssetsUsd: number;
+    supplyAssets: string | number | null;
+    borrowAssets: string | number | null;
+    liquidityAssets: string | number | null;
+    collateralAssetsUsd: number | null;
+    rateAtUTarget: number | null;
+    fee: number | null;
   } | null;
 }
 
@@ -204,6 +220,34 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
   const lltvRaw = BigInt(market.lltv || '0');
   const lltv = Number(lltvRaw) / 1e18 * 100;
 
+  // Parse token-denominated amounts using loan asset decimals
+  const decimals = loanAsset.decimals;
+  const parseTokenAmount = (val: string | number | null | undefined): number => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    try {
+      return parseFloat(val) / Math.pow(10, decimals);
+    } catch {
+      return 0;
+    }
+  };
+
+  // Rate at target utilization (comes as decimal, convert to %)
+  const rateAtTarget = market.state.rateAtUTarget != null
+    ? market.state.rateAtUTarget * 100
+    : null;
+
+  // Protocol fee (comes as decimal 0-1, convert to %)
+  const fee = (market.state.fee || 0) * 100;
+
+  // Scaling sanity check: warn if borrow APR looks impossibly high
+  if (borrowApy > 100) {
+    const parityDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('parityDebug') === 'true';
+    if (parityDebug) {
+      console.warn(`[Morpho Parity] High Borrow APR detected: ${borrowApy.toFixed(2)}% for ${loanAsset.symbol}/${market.collateralAsset?.symbol || '—'} — possible scaling bug`);
+    }
+  }
+
   return {
     id: market.uniqueKey,
     uniqueKey: market.uniqueKey,
@@ -219,9 +263,15 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
     utilization: (market.state.utilization || 0) * 100,
     oracle: market.oracleAddress,
     irm: market.irmAddress,
+    totalSupplyAssets: parseTokenAmount(market.state.supplyAssets),
+    totalBorrowAssets: parseTokenAmount(market.state.borrowAssets),
+    liquidityAssets: parseTokenAmount(market.state.liquidityAssets),
+    totalCollateralUsd: market.state.collateralAssetsUsd || 0,
+    rateAtTarget,
+    fee,
+    morphoBlue: market.morphoBlue?.address || '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb',
   };
 }
-
 export async function fetchMorphoMarkets(options: {
   chainId: number;
   first?: number;

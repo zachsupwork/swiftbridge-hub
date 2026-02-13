@@ -154,9 +154,13 @@ export default function Market() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h1 className="text-2xl font-bold">
-                      {market.loanAsset.symbol}
-                      {market.collateralAsset && (
-                        <span className="text-muted-foreground font-normal"> / {market.collateralAsset.symbol}</span>
+                      {market.collateralAsset ? (
+                        <>
+                          {market.collateralAsset.symbol}
+                          <span className="text-muted-foreground font-normal"> / {market.loanAsset.symbol}</span>
+                        </>
+                      ) : (
+                        market.loanAsset.symbol
                       )}
                     </h1>
                     {trusted ? (
