@@ -442,15 +442,13 @@ export default function Earn() {
                 APY is variable and based on market utilization. Smart contract risk applies.
               </p>
             </div>
-            <a
-              href="/docs"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to="/docs"
               className="text-xs text-primary hover:underline flex items-center gap-1"
             >
               Learn more
               <ExternalLink className="w-3 h-3" />
-            </a>
+            </Link>
           </div>
 
           {/* How It Works */}
