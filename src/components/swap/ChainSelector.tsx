@@ -168,12 +168,12 @@ export function ChainSelector({ selectedChainId, onSelect, label, excludeChainId
               onClick={() => { setIsOpen(false); setSearch(''); }}
             />
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 40 }}
+              exit={{ opacity: 0, y: 20 }}
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:inset-auto sm:w-full sm:max-w-[420px] bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col"
-              style={{ maxHeight: '80vh' }}
+              className="fixed z-[70] inset-x-0 bottom-0 sm:bottom-auto sm:inset-auto sm:absolute sm:left-0 sm:top-full sm:mt-2 sm:w-[420px] sm:max-w-[95vw] bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col"
+              style={{ maxHeight: 'min(520px, 70vh)' }}
             >
               {/* Header */}
               <div className="flex-shrink-0 p-4 border-b border-border/50">

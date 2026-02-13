@@ -49,23 +49,6 @@ const Index = () => {
           </p>
         </SeoContentBlock>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-12"
-        >
-          <p className="text-4xl md:text-5xl font-bold mb-4">
-            <span className="text-gradient">Crypto DeFi Bridge</span>
-            <br />
-            <span className="text-foreground text-2xl md:text-3xl">Cross-Chain Swap, Borrow &amp; Earn</span>
-          </p>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Swap tokens across multiple blockchains using the best liquidity routes.
-            <br className="hidden sm:block" />
-            <span className="text-foreground/80">Non-custodial. Transparent fees. Secure by design.</span>
-          </p>
-        </motion.div>
-
         <SwapCard />
 
         {/* Features */}
@@ -73,7 +56,7 @@ const Index = () => {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="grid md:grid-cols-3 gap-6 mt-16 max-w-4xl mx-auto"
+          className="grid md:grid-cols-3 gap-6 mt-12 max-w-4xl mx-auto"
         >
           <article className="glass rounded-xl p-6 text-center hover:scale-105 transition-transform">
             <div className="text-4xl mb-4" aria-hidden="true">⚡</div>
@@ -92,6 +75,24 @@ const Index = () => {
             <h2 className="font-semibold mb-2 text-lg">Best Cross-Chain Routes</h2>
             <p className="text-sm text-muted-foreground">Aggregated routes ensure you always get optimal pricing across all supported chains.</p>
           </article>
+        </motion.div>
+
+        {/* Heading + description moved below feature cards */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="text-center mt-16 mb-8 max-w-3xl mx-auto"
+        >
+          <p className="text-3xl md:text-4xl font-bold mb-4">
+            <span className="text-gradient">Crypto DeFi Bridge</span>
+            <br />
+            <span className="text-foreground text-xl md:text-2xl">Cross-Chain Swap, Borrow &amp; Earn</span>
+          </p>
+          <p className="text-base text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            A <strong className="text-foreground/90">DEX aggregator</strong> and <strong className="text-foreground/90">crypto bridge</strong> for DeFi swapping across 15+ blockchains.
+            Swap ETH, stablecoins, wrapped BTC, and hundreds more — always non-custodial with best-price routing.
+          </p>
         </motion.div>
       </div>
     </Layout>

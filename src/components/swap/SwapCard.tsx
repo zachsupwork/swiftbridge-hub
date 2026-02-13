@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useSendTransaction, useBalance, useReadContract } from 'wagmi';
+import { useAccount, useSendTransaction, useBalance, useReadContract, useSwitchChain } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
 import { ChainSelector } from './ChainSelector';
@@ -40,8 +40,7 @@ const QUOTE_MAX_AGE = 45;
 export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
-  // Removed useSwitchChain — causes "getChainId is not a function" on MetaMask.
-  // Chain mismatch is handled via UI prompt below.
+  const { switchChain } = useSwitchChain();
   const wallets = useMultiWallet();
 
   const [fromChainId, setFromChainId] = useState(1);
@@ -64,6 +63,8 @@ export function SwapCard() {
   const [quoteTimestamp, setQuoteTimestamp] = useState<number>(0);
   const [quoteTimeRemaining, setQuoteTimeRemaining] = useState<string>('');
   const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+  const [switchingChain, setSwitchingChain] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
   const { data: nativeBalanceData } = useBalance({
     address,
@@ -482,7 +483,54 @@ export function SwapCard() {
           </motion.div>
         )}
 
-        {/* Route details accordion */}
+        {/* Wrong network warning */}
+        {isConnected && walletChainId !== undefined && walletChainId !== fromChainId && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="bg-warning/10 text-warning text-sm p-3 rounded-lg flex flex-col gap-2 border border-warning/20"
+          >
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>
+                Wrong network. Please switch to <strong>{getChainName(fromChainId)}</strong> to continue.
+              </span>
+            </div>
+            {switchError && (
+              <span className="text-xs text-destructive">{switchError}</span>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full border-warning/30 text-warning hover:bg-warning/10"
+              disabled={switchingChain}
+              onClick={async () => {
+                setSwitchingChain(true);
+                setSwitchError(null);
+                try {
+                  await switchChain({ chainId: fromChainId });
+                } catch (err: any) {
+                  if (err?.code === 4001 || err?.message?.includes('rejected')) {
+                    setSwitchError('Switch rejected by user.');
+                  } else if (err?.code === 4902) {
+                    setSwitchError(`${getChainName(fromChainId)} not added to wallet. Please add it manually.`);
+                  } else {
+                    setSwitchError(err?.message || 'Failed to switch network.');
+                  }
+                } finally {
+                  setSwitchingChain(false);
+                }
+              }}
+            >
+              {switchingChain ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Switching…</>
+              ) : (
+                <>Switch to {getChainName(fromChainId)}</>
+              )}
+            </Button>
+          </motion.div>
+        )}
+
         {route && (
           <div className="rounded-xl border border-border/30 overflow-hidden">
             <button

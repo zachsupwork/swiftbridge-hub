@@ -21,9 +21,9 @@ export interface RouteSeo {
 
 export const ROUTE_SEO: Record<string, RouteSeo> = {
   '/': {
-    title: 'Crypto DeFi Bridge — Cross-Chain Swap & Bridge Aggregator',
+    title: 'Crypto DeFi Bridge | Cross-Chain DEX Aggregator, Swap & Bridge',
     description:
-      'Swap and bridge crypto across 15+ blockchains with the best cross-chain routes. Non-custodial, transparent fees, and optimized pricing on every trade.',
+      'Non-custodial cross-chain swap & bridge aggregator. DEX aggregator with best-price routing across 15+ blockchains. Swap ETH, stablecoins, wrapped BTC & more with transparent fees.',
     primaryKeyword: 'crypto swap',
     secondaryKeywords: ['cross chain swap', 'crypto bridge', 'defi swap', 'cryptocurrency swap', 'trade crypto'],
     category: 'swap',
