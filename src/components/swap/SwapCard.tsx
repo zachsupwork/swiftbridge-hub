@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
@@ -42,9 +43,23 @@ export function SwapCard() {
   const { sendTransactionAsync } = useSendTransaction();
   const { switchChain } = useSwitchChain();
   const wallets = useMultiWallet();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
-  const [fromChainId, setFromChainId] = useState(1);
-  const [toChainId, setToChainId] = useState(1);
+  // Parse earn deep link params
+  const earnRef = searchParams.get('ref');
+  const earnToSymbol = searchParams.get('toSymbol');
+  const earnMarketId = searchParams.get('marketId');
+  const earnAction = searchParams.get('action');
+
+  const [fromChainId, setFromChainId] = useState(() => {
+    const p = searchParams.get('fromChainId');
+    return p ? Number(p) : 1;
+  });
+  const [toChainId, setToChainId] = useState(() => {
+    const p = searchParams.get('toChainId');
+    return p ? Number(p) : 1;
+  });
   const [fromToken, setFromToken] = useState<Token | null>(null);
   const [toToken, setToToken] = useState<Token | null>(null);
   const [fromAmount, setFromAmount] = useState('');
@@ -308,6 +323,25 @@ export function SwapCard() {
       className="w-full max-w-lg mx-auto"
     >
       <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-xl shadow-2xl p-5 sm:p-6 space-y-4">
+        {/* Earn deep-link banner */}
+        {earnRef === 'earn' && earnToSymbol && (
+          <div className="flex items-center justify-between gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20 text-xs">
+            <p className="text-muted-foreground">
+              You need <strong className="text-foreground">{earnToSymbol}</strong> to {earnAction === 'borrow' ? 'borrow' : 'supply'} in Earn.
+              Swap into {earnToSymbol} then return.
+            </p>
+            <button
+              onClick={() => {
+                // Clear params and go to earn
+                navigate('/earn');
+              }}
+              className="text-primary hover:underline whitespace-nowrap font-medium"
+            >
+              Back to Earn →
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold flex items-center gap-2">

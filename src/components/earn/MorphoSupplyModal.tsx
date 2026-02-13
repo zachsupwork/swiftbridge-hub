@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   X, 
@@ -18,6 +19,7 @@ import {
   HelpCircle,
   ArrowRight,
   Zap,
+  Repeat,
 } from 'lucide-react';
 import { 
   useAccount, 
@@ -61,6 +63,7 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
+import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
 
 interface MorphoSupplyModalProps {
   isOpen: boolean;
@@ -79,6 +82,7 @@ export function MorphoSupplyModal({
 }: MorphoSupplyModalProps) {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
+  const navigate = useNavigate();
   
   const { writeContractAsync } = useWriteContract();
 
@@ -87,7 +91,7 @@ export function MorphoSupplyModal({
   const [error, setError] = useState<string | null>(null);
   const [approvalTxHash, setApprovalTxHash] = useState<Hash | undefined>();
   const [actionTxHash, setActionTxHash] = useState<Hash | undefined>();
-  const [showExplanation, setShowExplanation] = useState(true);
+  const [showExplanation, setShowExplanation] = useState(false);
 
   const token = market?.loanAsset;
   const decimals = token?.decimals || 18;
@@ -153,8 +157,9 @@ export function MorphoSupplyModal({
 
   const isWrongChain = market && walletChainId !== market.chainId;
   const balanceFormatted = tokenBalance ? formatUnits(tokenBalance, decimals) : '0';
-
-
+  const hasNoBalance = !tokenBalance || tokenBalance === 0n;
+  const isValidAmount = parsedAmount > 0n && parsedAmount <= (tokenBalance || 0n);
+  const isInsufficientBalance = parsedAmount > 0n && parsedAmount > (tokenBalance || 0n);
 
   // Set max amount
   const handleSetMax = useCallback(() => {
@@ -394,8 +399,31 @@ export function MorphoSupplyModal({
                   <span className="text-sm font-bold">{token.symbol}</span>
                 </div>
               </div>
-              {parsedAmount > (tokenBalance || 0n) && tokenBalance !== undefined && (
-                <p className="text-xs text-destructive">Insufficient balance</p>
+              {isInsufficientBalance && (
+                <p className="text-xs text-destructive">
+                  {hasNoBalance ? `No ${token.symbol} balance` : 'Insufficient balance'}
+                </p>
+              )}
+              {hasNoBalance && (
+                <button
+                  onClick={() => {
+                    const link = buildSwapLink({
+                      chainId: market.chainId,
+                      toTokenAddress: token.address,
+                      toTokenSymbol: token.symbol,
+                      fromTokenAddress: getDefaultFromToken(market.chainId),
+                      marketId: market.uniqueKey,
+                      ref: 'earn',
+                      action: 'supply',
+                    });
+                    onClose();
+                    navigate(link);
+                  }}
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Repeat className="w-3 h-3" />
+                  Swap to get {token.symbol}
+                </button>
               )}
             </div>
 
@@ -406,39 +434,52 @@ export function MorphoSupplyModal({
                 Transaction Preview
               </div>
               
-              <div className="space-y-2">
-                {/* Step 1: Approval */}
-                <div className={cn(
-                  "flex items-center gap-3 p-2 rounded",
-                  needsApproval ? "bg-warning/10" : "bg-success/10"
-                )}>
+              {!isValidAmount ? (
+                <div className="flex items-center gap-3 p-2 rounded bg-muted/30">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-muted text-muted-foreground">
+                    —
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {isInsufficientBalance 
+                      ? `Insufficient ${token.symbol} balance` 
+                      : 'Enter an amount to preview'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Step 1: Approval */}
                   <div className={cn(
-                    "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold",
-                    needsApproval ? "bg-warning/20 text-warning" : "bg-success/20 text-success"
+                    "flex items-center gap-3 p-2 rounded",
+                    needsApproval ? "bg-warning/10" : "bg-success/10"
                   )}>
-                    {needsApproval ? '1' : <Check className="w-3 h-3" />}
+                    <div className={cn(
+                      "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold",
+                      needsApproval ? "bg-warning/20 text-warning" : "bg-success/20 text-success"
+                    )}>
+                      {needsApproval ? '1' : <Check className="w-3 h-3" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm">{needsApproval ? 'Approve token spending' : 'Allowance sufficient'}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {needsApproval ? `Allow Morpho to use your ${token.symbol}` : 'No approval needed'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm">{needsApproval ? 'Approve token spending' : 'Allowance sufficient'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {needsApproval ? `Allow Morpho to use your ${token.symbol}` : 'No approval needed'}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Step 2: Supply */}
-                <div className="flex items-center gap-3 p-2 rounded bg-primary/10">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-primary/20 text-primary">
-                    {needsApproval ? '2' : '1'}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm">Supply {amount || '0'} {token.symbol}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Your position will increase by this amount
-                    </p>
+                  {/* Step 2: Supply */}
+                  <div className="flex items-center gap-3 p-2 rounded bg-primary/10">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-primary/20 text-primary">
+                      {needsApproval ? '2' : '1'}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm">Supply {amount} {token.symbol}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Your position will increase by this amount
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="pt-2 border-t border-border/30">
                 <p className="text-xs text-muted-foreground">
