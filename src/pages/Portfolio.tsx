@@ -15,6 +15,7 @@ import { usePortfolioTotal, PortfolioTokenBalance } from '@/hooks/usePortfolioTo
 import { buildSwapLink } from '@/lib/swapDeepLink';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 // Testnet IDs to exclude from chain filter tabs
 const TESTNET_IDS = new Set([11155111]);
@@ -277,16 +278,9 @@ export default function Portfolio() {
                     transition={{ delay: Math.min(idx * 0.02, 0.5) }}
                     className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors group"
                   >
-                    {/* Token icon with chain badge */}
+                    {/* Token icon – stable colored circle, no remote images */}
                     <div className="relative flex-shrink-0">
-                      <img
-                        src={item.token.logoURI || `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/${item.token.address}/logo.png`}
-                        alt={item.token.symbol}
-                        className="w-10 h-10 rounded-full bg-muted"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                        }}
-                      />
+                      <TokenIconStable symbol={item.token.symbol} size="lg" />
                       {chain && (
                         <img
                           src={chain.logoURI}

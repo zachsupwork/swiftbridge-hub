@@ -9,6 +9,7 @@ import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
+import { TokenIconStable } from '@/components/common/TokenIconStable';
 
 const WALLET_CONFIG: Record<WalletType, { label: string; color: string; bgColor: string }> = {
   evm: { label: 'EVM', color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
@@ -209,12 +210,7 @@ export function MultiWalletButton() {
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Top Holdings</div>
                   {topHoldings.map((tb, i) => (
                     <div key={`${tb.chainId}-${tb.token.address}-${i}`} className="flex items-center gap-2 py-1">
-                      <img
-                        src={tb.token.logoURI || 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'}
-                        alt={tb.token.symbol}
-                        className="w-4 h-4 rounded-full bg-muted"
-                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }}
-                      />
+                      <TokenIconStable symbol={tb.token.symbol} size="sm" />
                       <span className="text-xs font-medium flex-1">{tb.token.symbol}</span>
                       <span className="text-xs text-muted-foreground">
                         {tb.balanceUSD > 0 ? `$${tb.balanceUSD.toFixed(2)}` : tb.balanceFormatted}
