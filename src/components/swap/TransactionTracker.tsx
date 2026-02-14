@@ -75,7 +75,6 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
   };
 
   const getExplorerUrl = (chainId: number, hash: string) => {
-    // Import from wagmiConfig for consistency
     const explorers: Record<number, string> = {
       1: 'https://etherscan.io/tx/',
       10: 'https://optimistic.etherscan.io/tx/',

@@ -332,7 +332,6 @@ export function SwapCard() {
             </p>
             <button
               onClick={() => {
-                // Clear params and go to earn
                 navigate('/earn');
               }}
               className="text-primary hover:underline whitespace-nowrap font-medium"
