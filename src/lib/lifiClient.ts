@@ -305,55 +305,344 @@ export async function getTransactionStatus(
   return data;
 }
 
-// ─── Token Balances ─────────────────────────────────────────────
+// ─── Token Balances (on-chain via viem multicall) ────────────────
 
+// ERC20 balanceOf ABI fragment
+const ERC20_BALANCE_OF_ABI = [
+  {
+    name: 'balanceOf',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+// Curated top tokens per chain (address, symbol, decimals, name, logoURI)
+// These are the most commonly held tokens that users expect to see
+interface KnownToken {
+  address: string;
+  symbol: string;
+  decimals: number;
+  name: string;
+  logoURI?: string;
+}
+
+const KNOWN_TOKENS: Record<number, KnownToken[]> = {
+  1: [ // Ethereum
+    { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', symbol: 'WBTC', decimals: 8, name: 'Wrapped BTC' },
+    { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0x514910771AF9Ca656af840dff83E8264EcF986CA', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+  ],
+  137: [ // Polygon
+    { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
+    { address: '0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6', symbol: 'WBTC', decimals: 8, name: 'Wrapped BTC' },
+    { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', symbol: 'WPOL', decimals: 18, name: 'Wrapped POL' },
+  ],
+  42161: [ // Arbitrum
+    { address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
+    { address: '0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f', symbol: 'WBTC', decimals: 8, name: 'Wrapped BTC' },
+    { address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0x912CE59144191C1204E64559FE8253a0e49E6548', symbol: 'ARB', decimals: 18, name: 'Arbitrum' },
+  ],
+  8453: [ // Base
+    { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+  ],
+  10: [ // Optimism
+    { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
+    { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0x4200000000000000000000000000000000000042', symbol: 'OP', decimals: 18, name: 'Optimism' },
+  ],
+  56: [ // BSC
+    { address: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT', decimals: 18, name: 'Tether USD' },
+    { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', symbol: 'USDC', decimals: 18, name: 'USD Coin' },
+    { address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', symbol: 'ETH', decimals: 18, name: 'Ethereum' },
+    { address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', symbol: 'WBNB', decimals: 18, name: 'Wrapped BNB' },
+    { address: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', symbol: 'BTCB', decimals: 18, name: 'Bitcoin BEP2' },
+  ],
+  43114: [ // Avalanche
+    { address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
+    { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
+    { address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB', symbol: 'WETH.e', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', symbol: 'WAVAX', decimals: 18, name: 'Wrapped AVAX' },
+  ],
+};
+
+// Native token metadata per chain
+const NATIVE_TOKEN_META: Record<number, { symbol: string; name: string; decimals: number; logoURI?: string }> = {
+  1: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  10: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  137: { symbol: 'POL', name: 'POL', decimals: 18 },
+  42161: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  8453: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  56: { symbol: 'BNB', name: 'BNB', decimals: 18 },
+  43114: { symbol: 'AVAX', name: 'Avalanche', decimals: 18 },
+  250: { symbol: 'FTM', name: 'Fantom', decimals: 18 },
+  100: { symbol: 'xDAI', name: 'xDAI', decimals: 18 },
+  42220: { symbol: 'CELO', name: 'Celo', decimals: 18 },
+  1284: { symbol: 'GLMR', name: 'Moonbeam', decimals: 18 },
+  324: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  59144: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  534352: { symbol: 'ETH', name: 'Ether', decimals: 18 },
+  5000: { symbol: 'MNT', name: 'Mantle', decimals: 18 },
+};
+
+// RPC URLs per chain (reuse from wagmiConfig or fallback publics)
+const CHAIN_RPCS: Record<number, string> = {
+  1: 'https://eth.llamarpc.com',
+  10: 'https://mainnet.optimism.io',
+  137: 'https://polygon-rpc.com',
+  42161: 'https://arb1.arbitrum.io/rpc',
+  8453: 'https://mainnet.base.org',
+  56: 'https://bsc-dataseed1.binance.org',
+  43114: 'https://api.avax.network/ext/bc/C/rpc',
+  250: 'https://rpc.ftm.tools',
+  100: 'https://rpc.gnosischain.com',
+  42220: 'https://forno.celo.org',
+  1284: 'https://rpc.api.moonbeam.network',
+  324: 'https://mainnet.era.zksync.io',
+  59144: 'https://rpc.linea.build',
+  534352: 'https://rpc.scroll.io',
+  5000: 'https://rpc.mantle.xyz',
+};
+
+// Track the fetch method used for debugging
+export let lastFetchMethod = '';
+export let lastFetchDebug: { url?: string; status?: number; error?: string; rawSample?: string } = {};
+
+/**
+ * Fetch token balances for a wallet across multiple chains.
+ * Strategy:
+ * 1. Try LI.FI REST endpoint first (may work for some users)
+ * 2. If empty/error, fall back to on-chain multicall via viem
+ */
 export async function getTokenBalances(
   walletAddress: string,
   chainIds: number[]
 ): Promise<TokenBalancesResponse> {
   const isDev = import.meta.env.DEV;
 
+  // Step 1: Try LI.FI REST endpoint
   try {
     const chainsParam = chainIds.join(',');
     const url = `${LIFI_BASE_URL}/v1/token/balances?walletAddress=${walletAddress}&chains=${chainsParam}`;
 
-    if (isDev) {
-      console.debug('[LiFi Balances] Fetching:', url);
-    }
+    if (isDev) console.debug('[LiFi Balances] Trying REST:', url);
 
-    const raw = await fetchWithTimeout<unknown>(url, undefined, 30000);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch(url, { signal: controller.signal, headers: { 'Content-Type': 'application/json' } });
+    clearTimeout(timeout);
 
-    if (isDev) {
-      const topKeys = raw && typeof raw === 'object' ? Object.keys(raw as object).slice(0, 10) : [];
-      console.debug('[LiFi Balances] Raw response — type:', typeof raw,
-        Array.isArray(raw) ? `array(${(raw as unknown[]).length})` : `keys: [${topKeys.join(',')}]`,
-      );
-      try {
-        const sample = JSON.stringify(raw, null, 2).slice(0, 800);
-        console.debug('[LiFi Balances] Sample:', sample);
-      } catch { }
-    }
+    lastFetchDebug = { url, status: response.status };
 
-    const normalized = normalizeBalancesResponse(raw);
-
-    if (isDev) {
+    if (response.ok) {
+      const raw = await response.json();
+      lastFetchDebug.rawSample = JSON.stringify(raw).slice(0, 500);
+      const normalized = normalizeBalancesResponse(raw);
       const totalTokens = Object.values(normalized).reduce((s, arr) => s + arr.length, 0);
-      console.debug('[LiFi Balances] Normalized:', Object.keys(normalized).length, 'chains,', totalTokens, 'tokens');
-    }
 
-    return normalized;
-  } catch (error) {
-    console.error('[LiFi Balances] Failed to fetch token balances:', error);
-    // Fallback: try per-chain individually
-    if (chainIds.length > 1) {
-      console.warn('[LiFi Balances] Attempting per-chain fallback...');
-      return getTokenBalancesPerChain(walletAddress, chainIds);
+      if (totalTokens > 0) {
+        lastFetchMethod = 'lifi-rest';
+        if (isDev) console.debug('[LiFi Balances] REST succeeded:', totalTokens, 'tokens');
+        return normalized;
+      }
+      if (isDev) console.debug('[LiFi Balances] REST returned 0 tokens, falling back to on-chain');
+    } else {
+      if (isDev) console.warn('[LiFi Balances] REST failed:', response.status);
+      lastFetchDebug.error = `HTTP ${response.status}`;
     }
-    return {};
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (isDev) console.warn('[LiFi Balances] REST error:', msg);
+    lastFetchDebug.error = msg;
   }
+
+  // Step 2: On-chain fallback via JSON-RPC batch calls
+  if (isDev) console.debug('[LiFi Balances] Using on-chain multicall fallback');
+  lastFetchMethod = 'on-chain-rpc';
+
+  // Fetch token prices from LI.FI /v1/tokens for price data
+  let tokenPrices: Record<string, string> = {}; // key: `${chainId}:${address.toLowerCase()}`
+  try {
+    const priceChains = chainIds.slice(0, 8).join(','); // limit to avoid huge response
+    const priceData = await fetchWithTimeout<Record<string, unknown>>(
+      `${LIFI_BASE_URL}/v1/tokens?chains=${priceChains}`,
+      undefined,
+      10000
+    );
+    // Response shape: { tokens: { "137": [...tokens], "1": [...tokens] } } or { "137": [...], ... }
+    const tokensMap = (priceData as any)?.tokens || priceData;
+    if (tokensMap && typeof tokensMap === 'object') {
+      for (const [cid, tokens] of Object.entries(tokensMap)) {
+        if (Array.isArray(tokens)) {
+          for (const t of tokens) {
+            if (t?.address && t?.priceUSD) {
+              tokenPrices[`${cid}:${t.address.toLowerCase()}`] = String(t.priceUSD);
+            }
+          }
+        }
+      }
+    }
+    if (isDev) console.debug('[LiFi Balances] Loaded prices for', Object.keys(tokenPrices).length, 'tokens');
+  } catch (e) {
+    if (isDev) console.warn('[LiFi Balances] Price fetch failed, USD values will be missing');
+  }
+
+  // Fetch balances on-chain per chain (batched 3 at a time)
+  const result: TokenBalancesResponse = {};
+  const batchSize = 3;
+
+  for (let i = 0; i < chainIds.length; i += batchSize) {
+    const batch = chainIds.slice(i, i + batchSize);
+    const batchResults = await Promise.allSettled(
+      batch.map((chainId) => fetchChainBalancesOnChain(walletAddress, chainId, tokenPrices))
+    );
+
+    for (let j = 0; j < batchResults.length; j++) {
+      const r = batchResults[j];
+      if (r.status === 'fulfilled' && r.value.length > 0) {
+        result[String(batch[j])] = r.value;
+      }
+    }
+  }
+
+  if (isDev) {
+    const total = Object.values(result).reduce((s, a) => s + a.length, 0);
+    console.debug('[LiFi Balances] On-chain result:', Object.keys(result).length, 'chains,', total, 'tokens');
+  }
+
+  return result;
 }
 
-/** Per-chain fallback when batch request fails */
+/**
+ * Fetch native + ERC20 balances for one chain using JSON-RPC eth_call / eth_getBalance.
+ */
+async function fetchChainBalancesOnChain(
+  walletAddress: string,
+  chainId: number,
+  tokenPrices: Record<string, string>
+): Promise<TokenAmount[]> {
+  const rpc = CHAIN_RPCS[chainId];
+  if (!rpc) return [];
+
+  const nativeMeta = NATIVE_TOKEN_META[chainId] || { symbol: 'ETH', name: 'Native', decimals: 18 };
+  const knownTokens = KNOWN_TOKENS[chainId] || [];
+  const tokens: TokenAmount[] = [];
+
+  // Build batch JSON-RPC request
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const calls: any[] = [];
+
+  // Call 0: native balance
+  calls.push({
+    jsonrpc: '2.0' as any,
+    method: 'eth_getBalance',
+    params: [walletAddress, 'latest'],
+    id: 0,
+  });
+
+  // Calls 1..N: ERC20 balanceOf via eth_call
+  const balanceOfData = '0x70a08231000000000000000000000000' + walletAddress.slice(2).toLowerCase();
+  for (let i = 0; i < knownTokens.length; i++) {
+    calls.push({
+      jsonrpc: '2.0' as any,
+      method: 'eth_call',
+      params: [{ to: knownTokens[i].address, data: balanceOfData }, 'latest'],
+      id: i + 1,
+    });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    const resp = await fetch(rpc, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(calls),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!resp.ok) return [];
+
+    const results: { id: number; result?: string; error?: unknown }[] = await resp.json();
+    if (!Array.isArray(results)) return [];
+
+    // Index results by id
+    const byId: Record<number, string> = {};
+    for (const r of results) {
+      if (r.result && typeof r.result === 'string' && r.result !== '0x' && r.result !== '0x0') {
+        byId[r.id] = r.result;
+      }
+    }
+
+    // Native balance
+    if (byId[0]) {
+      const rawBal = byId[0];
+      const amount = BigInt(rawBal);
+      if (amount > 0n) {
+        const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`] || '';
+        tokens.push({
+          address: '0x0000000000000000000000000000000000000000',
+          symbol: nativeMeta.symbol,
+          decimals: nativeMeta.decimals,
+          chainId,
+          name: nativeMeta.name,
+          logoURI: nativeMeta.logoURI,
+          priceUSD: nativePrice || undefined,
+          amount: amount.toString(),
+        });
+      }
+    }
+
+    // ERC20 balances
+    for (let i = 0; i < knownTokens.length; i++) {
+      const hex = byId[i + 1];
+      if (!hex) continue;
+      try {
+        const amount = BigInt(hex);
+        if (amount > 0n) {
+          const tk = knownTokens[i];
+          const priceKey = `${chainId}:${tk.address.toLowerCase()}`;
+          tokens.push({
+            address: tk.address,
+            symbol: tk.symbol,
+            decimals: tk.decimals,
+            chainId,
+            name: tk.name,
+            logoURI: tk.logoURI,
+            priceUSD: tokenPrices[priceKey] || undefined,
+            amount: amount.toString(),
+          });
+        }
+      } catch { /* skip invalid hex */ }
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      console.warn(`[LiFi Balances] On-chain fetch failed for chain ${chainId}:`, e);
+    }
+  }
+
+  return tokens;
+}
+
+/** Per-chain LI.FI REST fallback (kept for completeness) */
 async function getTokenBalancesPerChain(
   walletAddress: string,
   chainIds: number[]
@@ -383,48 +672,28 @@ async function getTokenBalancesPerChain(
 }
 
 /**
- * Handles ALL known LI.FI balance response shapes:
- *  Format A: { balances: BalanceItem[] }
- *  Format B: { balances: { [chainId]: BalanceItem[] } }
- *  Format C: { [chainId]: BalanceItem[] }  (already a map)
- *  Format D: { balances: { [chainId]: { [tokenAddress]: BalanceItem } } }
- *  Format E: Flat array of tokens with chainId
- *  Format F: { tokens: [...] }
+ * Handles ALL known LI.FI balance response shapes (kept for REST path).
  */
 function normalizeBalancesResponse(raw: unknown): TokenBalancesResponse {
   if (!raw || typeof raw !== 'object') return {};
 
   const obj = raw as Record<string, unknown>;
 
-  // Format F: { tokens: [...] }
-  if ('tokens' in obj && Array.isArray(obj.tokens)) {
-    return groupTokensByChain(obj.tokens);
-  }
+  if ('tokens' in obj && Array.isArray(obj.tokens)) return groupTokensByChain(obj.tokens);
 
-  // Format A/B/D: { balances: ... }
   if ('balances' in obj && obj.balances != null) {
     const balances = obj.balances;
-
-    // Format A: { balances: [...] }
-    if (Array.isArray(balances)) {
-      return groupTokensByChain(balances);
-    }
-
-    // Format B or D: { balances: { chainId: [...] | { addr: token } } }
+    if (Array.isArray(balances)) return groupTokensByChain(balances);
     if (typeof balances === 'object') {
       const result: TokenBalancesResponse = {};
       for (const [key, value] of Object.entries(balances as Record<string, unknown>)) {
         const chainId = parseInt(key, 10);
         if (isNaN(chainId)) continue;
-
         if (Array.isArray(value)) {
           const tokens = value.map(coerceToken).filter((t): t is TokenAmount => t !== null);
           if (tokens.length > 0) result[String(chainId)] = tokens;
         } else if (typeof value === 'object' && value !== null) {
-          // Format D: nested { [tokenAddress]: BalanceItem }
-          const tokens = Object.values(value as Record<string, unknown>)
-            .map(coerceToken)
-            .filter((t): t is TokenAmount => t !== null);
+          const tokens = Object.values(value as Record<string, unknown>).map(coerceToken).filter((t): t is TokenAmount => t !== null);
           if (tokens.length > 0) result[String(chainId)] = tokens;
         }
       }
@@ -432,24 +701,14 @@ function normalizeBalancesResponse(raw: unknown): TokenBalancesResponse {
     }
   }
 
-  // Format E: flat array
-  if (Array.isArray(raw)) {
-    return groupTokensByChain(raw);
-  }
+  if (Array.isArray(raw)) return groupTokensByChain(raw);
 
-  // Format C: already a map { \"137\": [...], ... }
   const result: TokenBalancesResponse = {};
   for (const [key, value] of Object.entries(obj)) {
     const chainId = parseInt(key, 10);
     if (isNaN(chainId)) continue;
-
     if (Array.isArray(value)) {
       const tokens = value.map(coerceToken).filter((t): t is TokenAmount => t !== null);
-      if (tokens.length > 0) result[String(chainId)] = tokens;
-    } else if (typeof value === 'object' && value !== null) {
-      const tokens = Object.values(value as Record<string, unknown>)
-        .map(coerceToken)
-        .filter((t): t is TokenAmount => t !== null);
       if (tokens.length > 0) result[String(chainId)] = tokens;
     }
   }
@@ -468,47 +727,23 @@ function groupTokensByChain(arr: unknown[]): TokenBalancesResponse {
   return result;
 }
 
-/**
- * Lenient coercion: accepts chainId as string or number,
- * only requires address + symbol to be present.
- */
 function coerceToken(v: unknown): TokenAmount | null {
   if (!v || typeof v !== 'object') return null;
   const t = v as Record<string, unknown>;
-
   if (typeof t.address !== 'string' || typeof t.symbol !== 'string') return null;
 
   let chainId: number;
-  if (typeof t.chainId === 'number') {
-    chainId = t.chainId;
-  } else if (typeof t.chainId === 'string') {
-    chainId = parseInt(t.chainId, 10);
-  } else {
-    return null;
-  }
+  if (typeof t.chainId === 'number') chainId = t.chainId;
+  else if (typeof t.chainId === 'string') chainId = parseInt(t.chainId, 10);
+  else return null;
   if (isNaN(chainId)) return null;
 
-  let decimals: number;
-  if (typeof t.decimals === 'number') {
-    decimals = t.decimals;
-  } else if (typeof t.decimals === 'string') {
-    decimals = parseInt(t.decimals, 10);
-  } else {
-    decimals = NaN;
-  }
-  if (isNaN(decimals) || decimals < 0) {
-    if (import.meta.env.DEV) {
-      console.warn(`[LiFi] Token ${t.symbol} on chain ${chainId}: unknown decimals, defaulting to 18`);
-    }
-    decimals = 18;
-  }
+  let decimals = typeof t.decimals === 'number' ? t.decimals : (typeof t.decimals === 'string' ? parseInt(t.decimals, 10) : NaN);
+  if (isNaN(decimals) || decimals < 0) decimals = 18;
 
   let priceUSD: string | undefined;
-  if (typeof t.priceUSD === 'string' && t.priceUSD !== '') {
-    priceUSD = t.priceUSD;
-  } else if (typeof t.priceUSD === 'number') {
-    priceUSD = String(t.priceUSD);
-  }
+  if (typeof t.priceUSD === 'string' && t.priceUSD !== '') priceUSD = t.priceUSD;
+  else if (typeof t.priceUSD === 'number') priceUSD = String(t.priceUSD);
 
   return {
     address: t.address,

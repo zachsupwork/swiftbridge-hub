@@ -5,7 +5,7 @@ import { Wallet, RefreshCw, Loader2, ChevronDown, ChevronUp, AlertCircle } from 
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
-import { getChains, Chain } from '@/lib/lifiClient';
+import { getChains, Chain, lastFetchMethod, lastFetchDebug } from '@/lib/lifiClient';
 import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
@@ -157,6 +157,9 @@ export default function Portfolio() {
                 <div className="mt-3 space-y-1 font-mono text-muted-foreground border-t border-border pt-3">
                   <p><span className="text-foreground">Address:</span> {address}</p>
                   <p><span className="text-foreground">Chain IDs queried:</span> {chainIds.join(', ')}</p>
+                  <p><span className="text-foreground">Fetch method:</span> {lastFetchMethod || 'none'}</p>
+                  <p><span className="text-foreground">REST debug:</span> {lastFetchDebug.url ? `${lastFetchDebug.status} → ${lastFetchDebug.url}` : 'n/a'}</p>
+                  {lastFetchDebug.error && <p><span className="text-foreground">Fetch error:</span> {lastFetchDebug.error}</p>}
                   <p><span className="text-foreground">Chains in response:</span> {Object.keys(balancesByChain).join(', ') || 'none'}</p>
                   <p><span className="text-foreground">Balances returned:</span> {Object.values(balancesByChain).reduce((s, a) => s + a.length, 0)}</p>
                   <p><span className="text-foreground">Total tokens parsed:</span> {tokenBalances.length}</p>
@@ -166,6 +169,12 @@ export default function Portfolio() {
                   <p><span className="text-foreground">Total USD (filtered):</span> ${filteredTotal.toFixed(2)}</p>
                   <p><span className="text-foreground">Error:</span> {error || 'none'}</p>
                   <p><span className="text-foreground">Last fetch:</span> {lastUpdated?.toLocaleString() || 'never'}</p>
+                  {lastFetchDebug.rawSample && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-foreground">REST raw sample</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto text-[10px] break-all">{lastFetchDebug.rawSample}</pre>
+                    </details>
+                  )}
                   {/* Show first 2 raw items */}
                   {Object.keys(balancesByChain).length > 0 && (
                     <details className="mt-2">
