@@ -155,12 +155,18 @@ async function fetchWithTimeout<T>(url: string, options?: RequestInit, timeout =
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   
+  // Only set Content-Type for POST/PUT to avoid CORS preflight on GET
+  const method = (options?.method || 'GET').toUpperCase();
+  const defaultHeaders: Record<string, string> = method === 'GET' || method === 'HEAD'
+    ? { 'Accept': 'application/json' }
+    : { 'Content-Type': 'application/json' };
+
   try {
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
+        ...defaultHeaders,
         ...options?.headers,
       },
     });
@@ -446,7 +452,7 @@ export async function getTokenBalances(
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const response = await fetch(url, { signal: controller.signal, headers: { 'Content-Type': 'application/json' } });
+    const response = await fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } });
     clearTimeout(timeout);
 
     lastFetchDebug = { url, status: response.status };
@@ -531,7 +537,8 @@ export async function getTokenBalances(
 }
 
 /**
- * Fetch native + ERC20 balances for one chain using JSON-RPC eth_call / eth_getBalance.
+ * Fetch native + ERC20 balances for one chain using individual JSON-RPC calls.
+ * Does NOT use batch requests since many public RPCs reject them.
  */
 async function fetchChainBalancesOnChain(
   walletAddress: string,
@@ -545,57 +552,45 @@ async function fetchChainBalancesOnChain(
   const knownTokens = KNOWN_TOKENS[chainId] || [];
   const tokens: TokenAmount[] = [];
 
-  // Build batch JSON-RPC request
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const calls: any[] = [];
-
-  // Call 0: native balance
-  calls.push({
-    jsonrpc: '2.0' as any,
-    method: 'eth_getBalance',
-    params: [walletAddress, 'latest'],
-    id: 0,
-  });
-
-  // Calls 1..N: ERC20 balanceOf via eth_call
   const balanceOfData = '0x70a08231000000000000000000000000' + walletAddress.slice(2).toLowerCase();
-  for (let i = 0; i < knownTokens.length; i++) {
-    calls.push({
-      jsonrpc: '2.0' as any,
-      method: 'eth_call',
-      params: [{ to: knownTokens[i].address, data: balanceOfData }, 'latest'],
-      id: i + 1,
-    });
+
+  // Helper: single JSON-RPC call (no batching)
+  async function rpcCall(method: string, params: unknown[]): Promise<string | null> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const resp = await fetch(rpc, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!resp.ok) return null;
+      const json = await resp.json();
+      const result = json?.result;
+      if (typeof result === 'string' && result !== '0x' && result !== '0x0') return result;
+      return null;
+    } catch {
+      return null;
+    }
   }
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-    const resp = await fetch(rpc, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(calls),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  // Fire all calls in parallel with Promise.allSettled
+  const allCalls = [
+    rpcCall('eth_getBalance', [walletAddress, 'latest']),
+    ...knownTokens.map((tk) =>
+      rpcCall('eth_call', [{ to: tk.address, data: balanceOfData }, 'latest'])
+    ),
+  ];
 
-    if (!resp.ok) return [];
+  const results = await Promise.allSettled(allCalls);
 
-    const results: { id: number; result?: string; error?: unknown }[] = await resp.json();
-    if (!Array.isArray(results)) return [];
-
-    // Index results by id
-    const byId: Record<number, string> = {};
-    for (const r of results) {
-      if (r.result && typeof r.result === 'string' && r.result !== '0x' && r.result !== '0x0') {
-        byId[r.id] = r.result;
-      }
-    }
-
-    // Native balance
-    if (byId[0]) {
-      const rawBal = byId[0];
-      const amount = BigInt(rawBal);
+  // Native balance (index 0)
+  const nativeResult = results[0];
+  if (nativeResult.status === 'fulfilled' && nativeResult.value) {
+    try {
+      const amount = BigInt(nativeResult.value);
       if (amount > 0n) {
         const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`] || '';
         tokens.push({
@@ -609,34 +604,34 @@ async function fetchChainBalancesOnChain(
           amount: amount.toString(),
         });
       }
-    }
+    } catch { /* skip */ }
+  }
 
-    // ERC20 balances
-    for (let i = 0; i < knownTokens.length; i++) {
-      const hex = byId[i + 1];
-      if (!hex) continue;
-      try {
-        const amount = BigInt(hex);
-        if (amount > 0n) {
-          const tk = knownTokens[i];
-          const priceKey = `${chainId}:${tk.address.toLowerCase()}`;
-          tokens.push({
-            address: tk.address,
-            symbol: tk.symbol,
-            decimals: tk.decimals,
-            chainId,
-            name: tk.name,
-            logoURI: tk.logoURI,
-            priceUSD: tokenPrices[priceKey] || undefined,
-            amount: amount.toString(),
-          });
-        }
-      } catch { /* skip invalid hex */ }
-    }
-  } catch (e) {
-    if (import.meta.env.DEV) {
-      console.warn(`[LiFi Balances] On-chain fetch failed for chain ${chainId}:`, e);
-    }
+  // ERC20 balances (index 1..N)
+  for (let i = 0; i < knownTokens.length; i++) {
+    const r = results[i + 1];
+    if (r.status !== 'fulfilled' || !r.value) continue;
+    try {
+      const amount = BigInt(r.value);
+      if (amount > 0n) {
+        const tk = knownTokens[i];
+        const priceKey = `${chainId}:${tk.address.toLowerCase()}`;
+        tokens.push({
+          address: tk.address,
+          symbol: tk.symbol,
+          decimals: tk.decimals,
+          chainId,
+          name: tk.name,
+          logoURI: tk.logoURI,
+          priceUSD: tokenPrices[priceKey] || undefined,
+          amount: amount.toString(),
+        });
+      }
+    } catch { /* skip invalid hex */ }
+  }
+
+  if (import.meta.env.DEV && tokens.length > 0) {
+    console.debug(`[LiFi Balances] Chain ${chainId}: found ${tokens.length} tokens via individual RPC calls`);
   }
 
   return tokens;
