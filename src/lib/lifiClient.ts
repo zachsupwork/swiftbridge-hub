@@ -296,11 +296,14 @@ export async function getStepTransaction(step: Step): Promise<Step> {
 export async function getTransactionStatus(
   txHash: string,
   fromChainId: number,
-  toChainId: number
+  toChainId: number,
+  tool?: string
 ): Promise<TransactionStatus> {
-  const data = await fetchWithTimeout<TransactionStatus>(
-    `${LIFI_BASE_URL}/v1/status?txHash=${txHash}&bridge=across&fromChain=${fromChainId}&toChain=${toChainId}`
-  );
+  let url = `${LIFI_BASE_URL}/v1/status?txHash=${txHash}&fromChain=${fromChainId}&toChain=${toChainId}`;
+  if (tool) {
+    url += `&bridge=${encodeURIComponent(tool)}`;
+  }
+  const data = await fetchWithTimeout<TransactionStatus>(url);
   return data;
 }
 
