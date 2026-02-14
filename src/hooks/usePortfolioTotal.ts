@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
 import { getTokenBalances, TokenAmount, TokenBalancesResponse } from '@/lib/lifiClient';
+import { fetchPrices, clearPriceCache } from '@/lib/prices';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 
 // Testnet chain IDs to exclude from portfolio by default
@@ -46,6 +47,35 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
+async function enrichWithPrices(tokenBalances: PortfolioTokenBalance[]): Promise<PortfolioTokenBalance[]> {
+  // Collect tokens that are missing USD prices
+  const needsPricing = tokenBalances.filter(
+    (tb) => !tb.token.priceUSD || parseFloat(tb.token.priceUSD) === 0
+  );
+
+  if (needsPricing.length === 0) return tokenBalances;
+
+  const priceMap = await fetchPrices(
+    needsPricing.map((tb) => ({ chainId: tb.chainId, address: tb.token.address }))
+  );
+
+  return tokenBalances.map((tb) => {
+    const existingPrice = parseFloat(tb.token.priceUSD || '0');
+    if (existingPrice > 0) return tb;
+
+    const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
+    const fetched = priceMap.get(key);
+    if (!fetched) return tb;
+
+    const newUSD = tb.balance * fetched.usdPrice;
+    return {
+      ...tb,
+      token: { ...tb.token, priceUSD: String(fetched.usdPrice) },
+      balanceUSD: newUSD,
+    };
+  });
+}
+
 function parseBalances(balancesByChain: TokenBalancesResponse): { tokenBalances: PortfolioTokenBalance[]; totalUSD: number } {
   const tokenBalances: PortfolioTokenBalance[] = [];
   let totalUSD = 0;
@@ -62,10 +92,6 @@ function parseBalances(balancesByChain: TokenBalancesResponse): { tokenBalances:
       const balance = parseFloat(formatUnits(rawAmount, decimals));
       const priceUSD = parseFloat(token.priceUSD || '0');
       const balanceUSD = balance * priceUSD;
-
-      if (decimals === 18 && token.decimals !== 18) {
-        console.warn(`[PortfolioTotal] Token ${token.symbol} on chain ${chainId} using fallback decimals=18`);
-      }
 
       tokenBalances.push({
         chainId,
@@ -88,6 +114,9 @@ function parseBalances(balancesByChain: TokenBalancesResponse): { tokenBalances:
   return { tokenBalances, totalUSD };
 }
 
+// Auto-refresh interval (90 seconds)
+const AUTO_REFRESH_MS = 90_000;
+
 /**
  * Shared hook that caches portfolio balances + totals across components.
  * Queries ALL supported chains (excluding testnets).
@@ -97,6 +126,7 @@ export function usePortfolioTotal() {
   const { address, isConnected } = useAccount();
   const [, rerender] = useState(0);
   const fetchingRef = useRef(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const cb = () => rerender((n) => n + 1);
@@ -116,13 +146,22 @@ export function usePortfolioTotal() {
       }
 
       const balancesByChain = await getTokenBalances(address, PORTFOLIO_CHAIN_IDS);
-      const { tokenBalances, totalUSD } = parseBalances(balancesByChain);
+      let { tokenBalances, totalUSD } = parseBalances(balancesByChain);
+
+      // Enrich missing prices via DefiLlama
+      tokenBalances = await enrichWithPrices(tokenBalances);
+      totalUSD = tokenBalances.reduce((sum, t) => sum + t.balanceUSD, 0);
+
+      // Re-sort after price enrichment
+      tokenBalances.sort((a, b) => {
+        if (b.balanceUSD !== a.balanceUSD) return b.balanceUSD - a.balanceUSD;
+        return b.balance - a.balance;
+      });
 
       if (import.meta.env.DEV) {
         console.log('[PortfolioTotal] Parsed:', tokenBalances.length, 'tokens, total $', totalUSD.toFixed(2));
       }
 
-      // If we got zero tokens back, it may be an API issue — set a warning
       const hasTokens = tokenBalances.length > 0;
 
       cachedState = {
@@ -150,10 +189,23 @@ export function usePortfolioTotal() {
     }
   }, [isConnected, address, refresh]);
 
+  // Auto-refresh interval
+  useEffect(() => {
+    if (isConnected && address) {
+      intervalRef.current = setInterval(() => {
+        refresh();
+      }, AUTO_REFRESH_MS);
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      };
+    }
+  }, [isConnected, address, refresh]);
+
   // Clear on disconnect
   useEffect(() => {
     if (!isConnected) {
       cachedState = { totalUSD: 0, loading: false, lastUpdated: null, error: null, balancesByChain: {}, tokenBalances: [] };
+      clearPriceCache();
       notify();
     }
   }, [isConnected]);

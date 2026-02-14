@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut, Globe } from 'lucide-react';
+import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut, Globe, ArrowRightLeft, PieChart } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useDisconnect, useBalance } from 'wagmi';
+import { useNavigate } from 'react-router-dom';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
@@ -28,13 +29,17 @@ export function MultiWalletButton() {
 
   const { address: evmAddr, chainId: currentChainId, isConnected: evmConnected } = useAccount();
   const nativeBalance = useBalance({ address: evmAddr });
-  const { totalUSD: portfolioTotal, loading: portfolioLoading, refresh: refreshPortfolio } = usePortfolioTotal();
+  const { totalUSD: portfolioTotal, loading: portfolioLoading, tokenBalances, refresh: refreshPortfolio } = usePortfolioTotal();
+  const navigate = useNavigate();
   
   const { disconnect: disconnectEvm } = useDisconnect();
   const { connect: connectBitcoin, disconnect: disconnectBitcoin, isAvailable: btcAvailable, providerName: btcProvider } = useBitcoinWallet();
 
   const isUnsupportedNetwork = evmConnected && currentChainId && !isChainSupported(currentChainId);
   const connectedCount = [wallets.evm.connected, wallets.solana.connected, wallets.bitcoin.connected, wallets.sui.connected].filter(Boolean).length;
+
+  // Top 3 holdings for dropdown display
+  const topHoldings = useMemo(() => tokenBalances.slice(0, 3), [tokenBalances]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -192,12 +197,50 @@ export function MultiWalletButton() {
                 )}
                 <div className="text-xs mt-1.5">
                   <span className="text-muted-foreground">Portfolio: </span>
-                  <span className="text-foreground font-medium">
+                  <span className="text-foreground font-semibold">
                     {portfolioLoading ? '...' : `$${portfolioTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                 </div>
               </div>
+
+              {/* Top holdings */}
+              {topHoldings.length > 0 && (
+                <div className="px-3 py-2 border-b border-border/50">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Top Holdings</div>
+                  {topHoldings.map((tb, i) => (
+                    <div key={`${tb.chainId}-${tb.token.address}-${i}`} className="flex items-center gap-2 py-1">
+                      <img
+                        src={tb.token.logoURI || 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'}
+                        alt={tb.token.symbol}
+                        className="w-4 h-4 rounded-full bg-muted"
+                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }}
+                      />
+                      <span className="text-xs font-medium flex-1">{tb.token.symbol}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {tb.balanceUSD > 0 ? `$${tb.balanceUSD.toFixed(2)}` : tb.balanceFormatted}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="p-1">
+                <button
+                  type="button"
+                  onClick={() => { setShowDropdown(false); navigate('/'); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-muted/50 transition-colors"
+                >
+                  <ArrowRightLeft className="w-4 h-4 text-muted-foreground" />
+                  Swap
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowDropdown(false); navigate('/portfolio'); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm hover:bg-muted/50 transition-colors"
+                >
+                  <PieChart className="w-4 h-4 text-muted-foreground" />
+                  Portfolio
+                </button>
                 <button
                   type="button"
                   onClick={copyAddress}

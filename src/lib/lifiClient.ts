@@ -592,8 +592,11 @@ async function fetchChainBalancesOnChain(
     try {
       const amount = BigInt(nativeResult.value);
       if (amount > 0n) {
-        const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`] || '';
-        tokens.push({
+      // Try both native address conventions for price lookup
+      const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`]
+        || tokenPrices[`${chainId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`]
+        || '';
+      tokens.push({
           address: '0x0000000000000000000000000000000000000000',
           symbol: nativeMeta.symbol,
           decimals: nativeMeta.decimals,
