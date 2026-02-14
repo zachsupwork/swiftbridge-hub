@@ -1,20 +1,25 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
-import { Wallet, RefreshCw, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Wallet, RefreshCw, Loader2, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { getChains, Chain } from '@/lib/lifiClient';
 import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
+import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 
-const MAIN_CHAIN_IDS = [1, 10, 137, 42161, 8453] as const;
-type MainChainId = typeof MAIN_CHAIN_IDS[number];
+// Testnet IDs to exclude from chain filter tabs
+const TESTNET_IDS = new Set([11155111]);
+
+const PORTFOLIO_CHAIN_IDS = SUPPORTED_CHAINS
+  .map((c) => c.id as number)
+  .filter((id) => !TESTNET_IDS.has(id));
 
 export default function Portfolio() {
   const { address, isConnected } = useAccount();
-  const { totalUSD, loading, lastUpdated, tokenBalances, balancesByChain, refresh } = usePortfolioTotal();
+  const { totalUSD, loading, lastUpdated, error, tokenBalances, balancesByChain, refresh, chainIds } = usePortfolioTotal();
   const [selectedChainFilter, setSelectedChainFilter] = useState<number | 'all'>('all');
   const [chains, setChains] = useState<Chain[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -41,14 +46,15 @@ export default function Portfolio() {
     return map;
   }, [chains]);
 
-  const uniqueMainChains = useMemo(() => {
+  // Show all non-testnet supported chains as filter tabs
+  const chainFilterTabs = useMemo(() => {
     return chains
-      .filter((c) => MAIN_CHAIN_IDS.includes(c.id as MainChainId))
+      .filter((c) => PORTFOLIO_CHAIN_IDS.includes(c.id))
       .filter((chain, index, self) => index === self.findIndex((c) => c.id === chain.id));
   }, [chains]);
 
   const displayTotal = selectedChainFilter === 'all' ? totalUSD : filteredTotal;
-  const isDev = import.meta.env.DEV;
+  const showDebugEnv = import.meta.env.DEV || import.meta.env.VITE_PORTFOLIO_DEBUG === 'true';
 
   if (!isConnected) {
     return (
@@ -82,6 +88,17 @@ export default function Portfolio() {
             </Button>
           </div>
 
+          {/* Error banner */}
+          {error && !loading && (
+            <div className="flex items-center gap-3 p-4 mb-6 rounded-xl bg-destructive/10 border border-destructive/30 text-sm">
+              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
+              <span className="flex-1 text-destructive">{error}</span>
+              <Button onClick={() => refresh()} variant="outline" size="sm" className="text-xs">
+                Retry
+              </Button>
+            </div>
+          )}
+
           {/* Total value */}
           <div className="glass rounded-2xl p-8 mb-8">
             <div className="text-sm text-muted-foreground mb-2">
@@ -109,7 +126,7 @@ export default function Portfolio() {
             >
               All Chains
             </button>
-            {uniqueMainChains.map((chain) => (
+            {chainFilterTabs.map((chain) => (
               <button
                 key={`chain-filter-${chain.id}`}
                 onClick={() => setSelectedChainFilter(chain.id)}
@@ -126,29 +143,46 @@ export default function Portfolio() {
             ))}
           </div>
 
-          {/* Debug section (dev only) */}
-          {isDev && (
+          {/* Debug section (dev or VITE_PORTFOLIO_DEBUG only) */}
+          {showDebugEnv && (
             <div className="glass rounded-xl p-4 mb-6 text-xs">
               <button
                 onClick={() => setDebugOpen(!debugOpen)}
                 className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors w-full"
               >
                 {debugOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                <span className="font-medium">Debug Info</span>
+                <span className="font-medium">Debug: balances source</span>
               </button>
               {debugOpen && (
                 <div className="mt-3 space-y-1 font-mono text-muted-foreground border-t border-border pt-3">
                   <p><span className="text-foreground">Address:</span> {address}</p>
+                  <p><span className="text-foreground">Chain IDs queried:</span> {chainIds.join(', ')}</p>
                   <p><span className="text-foreground">Chains in response:</span> {Object.keys(balancesByChain).join(', ') || 'none'}</p>
+                  <p><span className="text-foreground">Balances returned:</span> {Object.values(balancesByChain).reduce((s, a) => s + a.length, 0)}</p>
                   <p><span className="text-foreground">Total tokens parsed:</span> {tokenBalances.length}</p>
                   <p><span className="text-foreground">Filtered tokens:</span> {filteredTokens.length}</p>
                   <p><span className="text-foreground">Filter:</span> {selectedChainFilter === 'all' ? 'All Chains' : selectedChainFilter}</p>
                   <p><span className="text-foreground">Total USD (all):</span> ${totalUSD.toFixed(2)}</p>
                   <p><span className="text-foreground">Total USD (filtered):</span> ${filteredTotal.toFixed(2)}</p>
+                  <p><span className="text-foreground">Error:</span> {error || 'none'}</p>
                   <p><span className="text-foreground">Last fetch:</span> {lastUpdated?.toLocaleString() || 'never'}</p>
+                  {/* Show first 2 raw items */}
+                  {Object.keys(balancesByChain).length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-foreground">Raw items (first 2 per chain)</summary>
+                      <pre className="mt-1 max-h-60 overflow-auto text-[10px]">
+                        {JSON.stringify(
+                          Object.fromEntries(
+                            Object.entries(balancesByChain).map(([k, v]) => [k, v.slice(0, 2)])
+                          ),
+                          null, 2
+                        )}
+                      </pre>
+                    </details>
+                  )}
                   {tokenBalances.length > 0 && (
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-foreground">Token details</summary>
+                      <summary className="cursor-pointer text-foreground">Parsed token details</summary>
                       <pre className="mt-1 max-h-60 overflow-auto text-[10px]">
                         {JSON.stringify(tokenBalances.map((t) => ({
                           chain: t.chainId,
@@ -174,8 +208,12 @@ export default function Portfolio() {
           ) : filteredTokens.length === 0 ? (
             <div className="glass rounded-2xl p-12 text-center">
               <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">No tokens found on {selectedChainFilter === 'all' ? 'any chain' : chainMap.get(selectedChainFilter as number)?.name || 'selected chain'}</p>
-              <p className="text-xs text-muted-foreground/60 mt-2">Try selecting a different chain or check if your wallet has tokens</p>
+              <p className="text-muted-foreground">
+                {error
+                  ? 'Unable to load balances right now'
+                  : `No tokens found on ${selectedChainFilter === 'all' ? 'any chain' : chainMap.get(selectedChainFilter as number)?.name || 'selected chain'}`}
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-2">Try selecting a different chain or click Refresh</p>
             </div>
           ) : (
             <div className="glass rounded-2xl divide-y divide-border overflow-hidden">
