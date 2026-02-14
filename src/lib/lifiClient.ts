@@ -362,9 +362,11 @@ const KNOWN_TOKENS: Record<number, KnownToken[]> = {
     { address: '0x912CE59144191C1204E64559FE8253a0e49E6548', symbol: 'ARB', decimals: 18, name: 'Arbitrum' },
   ],
   8453: [ // Base
+    { address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
+    { address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22', symbol: 'cbETH', decimals: 18, name: 'Coinbase Wrapped Staked ETH' },
   ],
   10: [ // Optimism
     { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
@@ -633,8 +635,11 @@ async function fetchChainBalancesOnChain(
     } catch { /* skip invalid hex */ }
   }
 
-  if (import.meta.env.DEV && tokens.length > 0) {
-    console.debug(`[LiFi Balances] Chain ${chainId}: found ${tokens.length} tokens via individual RPC calls`);
+  if (import.meta.env.DEV) {
+    console.debug(`[LiFi Balances] Chain ${chainId}: found ${tokens.length} token(s) via individual RPC calls`, tokens.map(t => `${t.symbol}=${t.amount}`));
+    if (tokens.length === 0) {
+      console.warn(`[LiFi Balances] Chain ${chainId}: 0 tokens returned. RPC=${rpc}, knownTokens=${knownTokens.length}`);
+    }
   }
 
   return tokens;
