@@ -313,14 +313,26 @@ export async function getTokenBalances(
 ): Promise<TokenBalancesResponse> {
   try {
     const chainsParam = chainIds.join(',');
-    const raw = await fetchWithTimeout<unknown>(
-      `${LIFI_BASE_URL}/v1/token/balances?walletAddress=${walletAddress}&chains=${chainsParam}`,
-      undefined,
-      30000
-    );
+    const url = `${LIFI_BASE_URL}/v1/token/balances?walletAddress=${walletAddress}&chains=${chainsParam}`;
+    
+    if (import.meta.env.DEV) {
+      console.log('[LiFi Balances] Fetching:', url);
+    }
+    
+    const raw = await fetchWithTimeout<unknown>(url, undefined, 30000);
 
-    // Normalize any response shape into { [chainId: string]: TokenAmount[] }
-    return normalizeBalancesResponse(raw);
+    if (import.meta.env.DEV) {
+      console.log('[LiFi Balances] Raw response type:', typeof raw, Array.isArray(raw) ? 'array' : '', raw);
+    }
+
+    const normalized = normalizeBalancesResponse(raw);
+
+    if (import.meta.env.DEV) {
+      const totalTokens = Object.values(normalized).reduce((s, arr) => s + arr.length, 0);
+      console.log('[LiFi Balances] Normalized:', Object.keys(normalized).length, 'chains,', totalTokens, 'tokens');
+    }
+
+    return normalized;
   } catch (error) {
     console.error('Failed to fetch token balances:', error);
     return {};
@@ -354,7 +366,8 @@ function normalizeBalancesResponse(raw: unknown): TokenBalancesResponse {
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     const chainId = parseInt(key, 10);
     if (isNaN(chainId) || !Array.isArray(value)) continue;
-    result[key] = value.filter(isTokenAmount);
+    const tokens = value.map(coerceToken).filter((t): t is TokenAmount => t !== null);
+    if (tokens.length > 0) result[String(chainId)] = tokens;
   }
   return result;
 }
@@ -362,21 +375,54 @@ function normalizeBalancesResponse(raw: unknown): TokenBalancesResponse {
 function groupTokensByChain(arr: unknown[]): TokenBalancesResponse {
   const result: TokenBalancesResponse = {};
   for (const item of arr) {
-    if (!isTokenAmount(item)) continue;
-    const key = String(item.chainId);
+    const token = coerceToken(item);
+    if (!token) continue;
+    const key = String(token.chainId);
     if (!result[key]) result[key] = [];
-    result[key].push(item);
+    result[key].push(token);
   }
   return result;
 }
 
-function isTokenAmount(v: unknown): v is TokenAmount {
-  if (!v || typeof v !== 'object') return false;
+/**
+ * Lenient coercion: accepts chainId as string or number,
+ * only requires address + symbol to be present.
+ */
+function coerceToken(v: unknown): TokenAmount | null {
+  if (!v || typeof v !== 'object') return null;
   const t = v as Record<string, unknown>;
-  return typeof t.address === 'string' &&
-    typeof t.symbol === 'string' &&
-    typeof t.decimals === 'number' &&
-    typeof t.chainId === 'number';
+
+  // Must have address and symbol at minimum
+  if (typeof t.address !== 'string' || typeof t.symbol !== 'string') return null;
+
+  // Coerce chainId from string or number
+  let chainId: number;
+  if (typeof t.chainId === 'number') {
+    chainId = t.chainId;
+  } else if (typeof t.chainId === 'string') {
+    chainId = parseInt(t.chainId, 10);
+  } else {
+    return null;
+  }
+  if (isNaN(chainId)) return null;
+
+  const decimals = typeof t.decimals === 'number' ? t.decimals : parseInt(String(t.decimals || '18'), 10);
+
+  return {
+    address: t.address,
+    symbol: t.symbol as string,
+    decimals: isNaN(decimals) ? 18 : decimals,
+    chainId,
+    name: (typeof t.name === 'string' ? t.name : t.symbol) as string,
+    logoURI: typeof t.logoURI === 'string' ? t.logoURI : undefined,
+    priceUSD: typeof t.priceUSD === 'string' ? t.priceUSD : (typeof t.priceUSD === 'number' ? String(t.priceUSD) : undefined),
+    amount: typeof t.amount === 'string' ? t.amount : (typeof t.amount === 'number' ? String(t.amount) : '0'),
+    blockNumber: typeof t.blockNumber === 'number' ? t.blockNumber : undefined,
+  };
+}
+
+function isTokenAmount(v: unknown): v is TokenAmount {
+  return coerceToken(v) !== null;
 }
 
 export function getIntegratorFee(): number {
