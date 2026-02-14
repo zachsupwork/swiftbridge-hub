@@ -313,16 +313,70 @@ export async function getTokenBalances(
 ): Promise<TokenBalancesResponse> {
   try {
     const chainsParam = chainIds.join(',');
-    const data = await fetchWithTimeout<TokenBalancesResponse>(
+    const raw = await fetchWithTimeout<unknown>(
       `${LIFI_BASE_URL}/v1/token/balances?walletAddress=${walletAddress}&chains=${chainsParam}`,
       undefined,
-      30000 // longer timeout for balance fetching
+      30000
     );
-    return data;
+
+    // Normalize any response shape into { [chainId: string]: TokenAmount[] }
+    return normalizeBalancesResponse(raw);
   } catch (error) {
     console.error('Failed to fetch token balances:', error);
     return {};
   }
+}
+
+/**
+ * Handles all known LI.FI balance response shapes:
+ *  1) Already a map: { "1": [...], "137": [...] }
+ *  2) Flat array of tokens with chainId: [ { chainId: 1, ... }, ... ]
+ *  3) Wrapped: { tokens: [...] }
+ */
+function normalizeBalancesResponse(raw: unknown): TokenBalancesResponse {
+  if (!raw || typeof raw !== 'object') return {};
+
+  // Shape 3: { tokens: [...] }
+  if ('tokens' in (raw as Record<string, unknown>)) {
+    const inner = (raw as Record<string, unknown>).tokens;
+    if (Array.isArray(inner)) {
+      return groupTokensByChain(inner);
+    }
+  }
+
+  // Shape 2: flat array
+  if (Array.isArray(raw)) {
+    return groupTokensByChain(raw);
+  }
+
+  // Shape 1: already a map — validate entries
+  const result: TokenBalancesResponse = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const chainId = parseInt(key, 10);
+    if (isNaN(chainId) || !Array.isArray(value)) continue;
+    result[key] = value.filter(isTokenAmount);
+  }
+  return result;
+}
+
+function groupTokensByChain(arr: unknown[]): TokenBalancesResponse {
+  const result: TokenBalancesResponse = {};
+  for (const item of arr) {
+    if (!isTokenAmount(item)) continue;
+    const key = String(item.chainId);
+    if (!result[key]) result[key] = [];
+    result[key].push(item);
+  }
+  return result;
+}
+
+function isTokenAmount(v: unknown): v is TokenAmount {
+  if (!v || typeof v !== 'object') return false;
+  const t = v as Record<string, unknown>;
+  return typeof t.address === 'string' &&
+    typeof t.symbol === 'string' &&
+    typeof t.decimals === 'number' &&
+    typeof t.chainId === 'number';
 }
 
 export function getIntegratorFee(): number {

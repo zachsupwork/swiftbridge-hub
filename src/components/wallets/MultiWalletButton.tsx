@@ -2,11 +2,12 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, ChevronDown, Check, Copy, AlertTriangle, X, Loader2, LogOut, Globe } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useDisconnect } from 'wagmi';
+import { useAccount, useDisconnect, useBalance } from 'wagmi';
 import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/lib/wallets';
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
 
 const WALLET_CONFIG: Record<WalletType, { label: string; color: string; bgColor: string }> = {
   evm: { label: 'EVM', color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
@@ -26,6 +27,8 @@ export function MultiWalletButton() {
   const wallets = useMultiWallet();
 
   const { address: evmAddr, chainId: currentChainId, isConnected: evmConnected } = useAccount();
+  const nativeBalance = useBalance({ address: evmAddr });
+  const { totalUSD: portfolioTotal, loading: portfolioLoading, refresh: refreshPortfolio } = usePortfolioTotal();
   
   const { disconnect: disconnectEvm } = useDisconnect();
   const { connect: connectBitcoin, disconnect: disconnectBitcoin, isAvailable: btcAvailable, providerName: btcProvider } = useBitcoinWallet();
@@ -180,8 +183,19 @@ export function MultiWalletButton() {
                 {currentChainId && (
                   <div className="text-xs text-muted-foreground mt-1">
                     {getChainName(currentChainId)}
+                    {nativeBalance.data && (
+                      <span className="ml-2 text-foreground font-medium">
+                        {parseFloat(nativeBalance.data.formatted).toFixed(4)} {nativeBalance.data.symbol}
+                      </span>
+                    )}
                   </div>
                 )}
+                <div className="text-xs mt-1.5">
+                  <span className="text-muted-foreground">Portfolio: </span>
+                  <span className="text-foreground font-medium">
+                    {portfolioLoading ? '...' : `$${portfolioTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </span>
+                </div>
               </div>
               <div className="p-1">
                 <button
