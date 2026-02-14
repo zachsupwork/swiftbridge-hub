@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useSendTransaction, useBalance, useReadContract, useSwitchChain } from 'wagmi';
+import { useAccount, useSendTransaction, useBalance, useReadContract, useSwitchChain, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import { TokenSelector } from './TokenSelector';
 import { ChainSelector } from './ChainSelector';
@@ -14,25 +14,27 @@ import { IntegratorFeeTooltip, IntegratorDebugPanel } from './IntegratorDebug';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
-import { Token, Route, getRoutes, getIntegratorFee, getStepTransaction } from '@/lib/lifiClient';
+import { Token, Route, getRoutes, getIntegratorFee } from '@/lib/lifiClient';
 import { saveSwap, SwapRecord } from '@/lib/swapStorage';
 import { cn } from '@/lib/utils';
 import {
-  normalizeTxRequest,
-  getTransactionSimulation,
-  logTransactionDetails,
   TransactionValidationError,
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
 import { isChainSupported, getChainName, getSupportedChainIds } from '@/lib/wagmiConfig';
 import { useMultiWallet } from '@/lib/wallets';
-import { 
-  validatePreflight, 
-  getQuoteTimeRemaining, 
+import {
+  validatePreflight,
+  getQuoteTimeRemaining,
   isQuoteExpired,
   getErrorSuggestions,
   type PreflightResult,
 } from '@/lib/swapPreflight';
+import {
+  executeRoute as executeRouteEngine,
+  type ExecutionUpdate,
+  type StepResult,
+} from '@/lib/routeExecutor';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
@@ -41,6 +43,8 @@ const QUOTE_MAX_AGE = 45;
 export function SwapCard() {
   const { address, isConnected, chainId: walletChainId } = useAccount();
   const { sendTransactionAsync } = useSendTransaction();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
   const wallets = useMultiWallet();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -70,6 +74,8 @@ export function SwapCard() {
   const [route, setRoute] = useState<Route | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [stepResults, setStepResults] = useState<StepResult[]>([]);
+  const [executionMessage, setExecutionMessage] = useState('');
   const [swapId, setSwapId] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [txSimulation, setTxSimulation] = useState<TransactionSimulation | null>(null);
@@ -233,10 +239,13 @@ export function SwapCard() {
   };
 
   const handleExecute = async () => {
-    if (!route || !address || !fromToken || !toToken) return;
+    if (!route || !address || !fromToken || !toToken || !publicClient) return;
     setState('swapping');
     setError(null);
     setTxSimulation(null);
+    setStepResults([]);
+    setExecutionMessage('');
+
     try {
       if (!isChainSupported(fromChainId)) {
         throw new TransactionValidationError(
@@ -248,43 +257,79 @@ export function SwapCard() {
           `Wrong network. Please switch to ${getChainName(fromChainId)} in your wallet before swapping.`
         );
       }
-      const stepWithTx = await getStepTransaction(route.steps[0]);
-      if (!stepWithTx.transactionRequest) {
-        throw new TransactionValidationError('No transaction data received');
-      }
-      const tx = stepWithTx.transactionRequest;
-      const simulation = getTransactionSimulation(tx, fromToken.address, fromToken.symbol);
-      setTxSimulation(simulation);
-      const normalizedTx = normalizeTxRequest(tx, fromToken.address);
-      logTransactionDetails(fromChainId, normalizedTx, simulation);
-      const hash = await sendTransactionAsync({
-        to: normalizedTx.to,
-        data: normalizedTx.data,
-        value: normalizedTx.value,
-        gas: normalizedTx.gas,
+
+      const result = await executeRouteEngine(route, {
+        walletChainId: walletChainId!,
+        walletAddress: address as `0x${string}`,
+
+        sendTransaction: async (params) => {
+          return await sendTransactionAsync(params);
+        },
+
+        approveToken: async ({ tokenAddress, spender, amount, chainId }) => {
+          return await writeContractAsync({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [spender, amount],
+          } as any);
+        },
+
+        waitForReceipt: async (hash) => {
+          const receipt = await publicClient.waitForTransactionReceipt({ hash });
+          return { status: receipt.status === 'success' ? 'success' : 'reverted' };
+        },
+
+        readAllowance: async ({ tokenAddress, owner, spender }) => {
+          const data = await (publicClient as any).readContract({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: 'allowance',
+            args: [owner, spender],
+          });
+          return data as bigint;
+        },
+
+        onUpdate: (update) => {
+          setStepResults([...update.stepResults]);
+          setExecutionMessage(update.message);
+
+          if (update.phase === 'approving') {
+            setState('approving');
+          } else if (update.phase === 'sending') {
+            setState('swapping');
+          }
+        },
       });
-      setTxHash(hash);
-      const integratorFee = getIntegratorFee();
-      const fromAmountUSD = parseFloat(route.fromAmountUSD) || 0;
-      const swapRecord: SwapRecord = {
-        id: `${Date.now()}-${hash.slice(0, 8)}`,
-        timestamp: Date.now(),
-        fromChainId,
-        toChainId,
-        fromToken: fromToken.symbol,
-        toToken: toToken.symbol,
-        fromAmount: fromAmount,
-        toAmount: formatUnits(BigInt(route.toAmount), toToken.decimals),
-        fromAmountUSD: route.fromAmountUSD,
-        toAmountUSD: route.toAmountUSD,
-        txHash: hash,
-        status: 'pending',
-        integratorFee: (parseFloat(fromAmount) * integratorFee).toFixed(6),
-        integratorFeeUSD: (fromAmountUSD * integratorFee).toFixed(4),
-      };
-      saveSwap(swapRecord);
-      setSwapId(swapRecord.id);
-      setState('tracking');
+
+      if (result.success && result.stepResults.length > 0) {
+        const lastHash = result.stepResults[result.stepResults.length - 1].txHash;
+        setTxHash(lastHash);
+
+        const integratorFee = getIntegratorFee();
+        const fromAmountUSD = parseFloat(route.fromAmountUSD) || 0;
+        const swapRecord: SwapRecord = {
+          id: `${Date.now()}-${lastHash.slice(0, 8)}`,
+          timestamp: Date.now(),
+          fromChainId,
+          toChainId,
+          fromToken: fromToken.symbol,
+          toToken: toToken.symbol,
+          fromAmount: fromAmount,
+          toAmount: formatUnits(BigInt(route.toAmount), toToken.decimals),
+          fromAmountUSD: route.fromAmountUSD,
+          toAmountUSD: route.toAmountUSD,
+          txHash: lastHash,
+          status: 'completed',
+          integratorFee: (parseFloat(fromAmount) * integratorFee).toFixed(6),
+          integratorFeeUSD: (fromAmountUSD * integratorFee).toFixed(4),
+        };
+        saveSwap(swapRecord);
+        setSwapId(swapRecord.id);
+        setState('tracking');
+      } else {
+        throw new Error(result.error || 'Execution failed');
+      }
     } catch (err) {
       if (err instanceof TransactionValidationError) {
         setError(err.message);
@@ -299,6 +344,8 @@ export function SwapCard() {
     setRoute(null);
     setTxHash(null);
     setSwapId(null);
+    setStepResults([]);
+    setExecutionMessage('');
     setFromAmount('');
     setState('idle');
     setError(null);
@@ -310,7 +357,7 @@ export function SwapCard() {
   if (state === 'tracking' && txHash && route && swapId) {
     return (
       <div className="w-full max-w-lg mx-auto space-y-4">
-        <TransactionTracker txHash={txHash} route={route} swapId={swapId} onComplete={() => {}} />
+        <TransactionTracker txHash={txHash} route={route} swapId={swapId} stepResults={stepResults} onComplete={() => {}} />
         <Button onClick={handleReset} variant="outline" className="w-full">New Swap</Button>
       </div>
     );

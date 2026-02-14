@@ -3,29 +3,34 @@ import { motion } from 'framer-motion';
 import { Loader2, CheckCircle2, XCircle, ExternalLink, Clock } from 'lucide-react';
 import { Route, getTransactionStatus, TransactionStatus } from '@/lib/lifiClient';
 import { updateSwapStatus } from '@/lib/swapStorage';
+import type { StepResult } from '@/lib/routeExecutor';
 
 interface TransactionTrackerProps {
   txHash: string;
   route: Route;
   swapId: string;
+  stepResults?: StepResult[];
   onComplete?: () => void;
 }
 
 type TxStatus = 'pending' | 'sending' | 'bridging' | 'receiving' | 'completed' | 'failed';
 
-export function TransactionTracker({ txHash, route, swapId, onComplete }: TransactionTrackerProps) {
+export function TransactionTracker({ txHash, route, swapId, stepResults, onComplete }: TransactionTrackerProps) {
   const [status, setStatus] = useState<TxStatus>('pending');
   const [statusData, setStatusData] = useState<TransactionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Derive tool from the first step for accurate status polling
+  const stepTool = route.steps?.[0]?.tool;
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutes max
+    const maxAttempts = 60;
 
     const checkStatus = async () => {
       try {
-        const data = await getTransactionStatus(txHash, route.fromChainId, route.toChainId);
+        const data = await getTransactionStatus(txHash, route.fromChainId, route.toChainId, stepTool);
         setStatusData(data);
 
         if (data.status === 'DONE') {
@@ -60,7 +65,7 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
     interval = setInterval(checkStatus, 5000);
 
     return () => clearInterval(interval);
-  }, [txHash, route, swapId, onComplete]);
+  }, [txHash, route, swapId, stepTool, onComplete]);
 
   const steps = [
     { key: 'sending', label: 'Sending', description: 'Transaction submitted' },
@@ -169,8 +174,25 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
         </div>
       </div>
 
-      {/* Transaction links */}
+      {/* Transaction links — show all step hashes */}
       <div className="flex flex-col gap-2">
+        {/* Approval tx hashes */}
+        {stepResults && stepResults.map((sr, idx) => (
+          sr.approvalTxHash && (
+            <a
+              key={`approval-${idx}`}
+              href={getExplorerUrl(route.fromChainId, sr.approvalTxHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary hover:underline"
+            >
+              Approval tx ({sr.tool})
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )
+        ))}
+
+        {/* Source chain tx */}
         <a
           href={getExplorerUrl(route.fromChainId, txHash)}
           target="_blank"
@@ -180,6 +202,8 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
           View on source chain explorer
           <ExternalLink className="w-3 h-3" />
         </a>
+
+        {/* Destination chain tx */}
         {statusData?.receiving?.txHash && (
           <a
             href={getExplorerUrl(route.toChainId, statusData.receiving.txHash)}
@@ -191,6 +215,22 @@ export function TransactionTracker({ txHash, route, swapId, onComplete }: Transa
             <ExternalLink className="w-3 h-3" />
           </a>
         )}
+
+        {/* Additional step tx hashes (multi-step routes) */}
+        {stepResults && stepResults.length > 1 && stepResults.map((sr, idx) => (
+          sr.txHash !== txHash && (
+            <a
+              key={`step-${idx}`}
+              href={getExplorerUrl(route.fromChainId, sr.txHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-primary hover:underline"
+            >
+              Step {idx + 1} tx ({sr.tool})
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )
+        ))}
       </div>
     </motion.div>
   );
