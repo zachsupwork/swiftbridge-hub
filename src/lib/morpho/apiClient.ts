@@ -1,8 +1,13 @@
 /**
  * Morpho GraphQL API Client
  * 
- * Fetches market and position data from the official Morpho API.
- * No API key required.
+ * Fetches market and position data from the official Morpho Blue API.
+ * Uses blue-api.morpho.org/graphql (no API key required).
+ * 
+ * Key fixes:
+ * - Pagination to fetch ALL markets (not just first 50)
+ * - Robust deduplication by uniqueKey per chain
+ * - Correct field mapping from API response
  */
 
 import { MORPHO_API_URL, getMorphoChainConfig } from './config';
@@ -20,16 +25,22 @@ const TOKEN_LOGOS: Record<string, string> = {
   WSTETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
   RETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/reth.svg',
   CBBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
+  USDE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
+  SUSDE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
+  PYUSD: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
+  WEETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
+  EZETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
 };
 
 const GENERIC_TOKEN_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 
-function getTokenLogo(symbol: string): string {
+function getTokenLogo(symbol: string, logoUri?: string): string {
+  if (logoUri) return logoUri;
   const normalized = symbol.toUpperCase().replace(/[.\-]/g, '');
   return TOKEN_LOGOS[normalized] || GENERIC_TOKEN_LOGO;
 }
 
-// GraphQL query for markets
+// GraphQL query for markets — fetch by chain with pagination
 const MARKETS_QUERY = `
   query GetMarkets($chainId: Int!, $first: Int!, $skip: Int!) {
     markets(
@@ -52,12 +63,14 @@ const MARKETS_QUERY = `
           symbol
           decimals
           name
+          logoURI
         }
         collateralAsset {
           address
           symbol
           decimals
           name
+          logoURI
         }
         state {
           supplyApy
@@ -73,6 +86,7 @@ const MARKETS_QUERY = `
           rateAtUTarget
           fee
         }
+      
       }
     }
   }
@@ -99,12 +113,14 @@ const POSITIONS_QUERY = `
             symbol
             decimals
             name
+            logoURI
           }
           collateralAsset {
             address
             symbol
             decimals
             name
+            logoURI
           }
           state {
             supplyApy
@@ -128,14 +144,23 @@ const POSITIONS_QUERY = `
   }
 `;
 
+interface ApiAsset {
+  address: string;
+  symbol: string;
+  decimals: number;
+  name: string;
+  logoURI?: string;
+}
+
 interface ApiMarket {
   uniqueKey: string;
   lltv: string;
   oracleAddress: string;
   irmAddress: string;
   morphoBlue?: { address: string } | null;
-  loanAsset: { address: string; symbol: string; decimals: number; name: string } | null;
-  collateralAsset: { address: string; symbol: string; decimals: number; name: string } | null;
+  loanAsset: ApiAsset | null;
+  collateralAsset: ApiAsset | null;
+  whitelisted?: boolean;
   state: {
     supplyApy: number;
     borrowApy: number;
@@ -170,9 +195,15 @@ interface GraphQLResponse<T> {
 }
 
 async function graphqlFetch<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const apiKey = import.meta.env.VITE_MORPHO_API_KEY;
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
   const response = await fetch(MORPHO_API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 
@@ -193,14 +224,14 @@ async function graphqlFetch<T>(query: string, variables: Record<string, unknown>
   return json.data;
 }
 
-function parseAsset(asset: ApiMarket['loanAsset'], chainId: number): MorphoAsset | null {
+function parseAsset(asset: ApiAsset | null, chainId: number): MorphoAsset | null {
   if (!asset) return null;
   return {
     address: asset.address,
     symbol: asset.symbol || 'UNKNOWN',
     decimals: asset.decimals || 18,
     name: asset.name || 'Unknown Token',
-    logoUrl: getTokenLogo(asset.symbol || ''),
+    logoUrl: getTokenLogo(asset.symbol || '', asset.logoURI),
   };
 }
 
@@ -240,14 +271,6 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
   // Protocol fee (comes as decimal 0-1, convert to %)
   const fee = (market.state.fee || 0) * 100;
 
-  // Scaling sanity check: warn if borrow APR looks impossibly high
-  if (borrowApy > 100) {
-    const parityDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('parityDebug') === 'true';
-    if (parityDebug) {
-      console.warn(`[Morpho Parity] High Borrow APR detected: ${borrowApy.toFixed(2)}% for ${loanAsset.symbol}/${market.collateralAsset?.symbol || '—'} — possible scaling bug`);
-    }
-  }
-
   return {
     id: market.uniqueKey,
     uniqueKey: market.uniqueKey,
@@ -270,14 +293,20 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
     rateAtTarget,
     fee,
     morphoBlue: market.morphoBlue?.address || '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb',
+    whitelisted: market.whitelisted ?? false,
   };
 }
+
+/**
+ * Fetch ALL markets for a chain with automatic pagination.
+ * Deduplicates by uniqueKey to prevent repeated entries.
+ */
 export async function fetchMorphoMarkets(options: {
   chainId: number;
   first?: number;
   skip?: number;
 }): Promise<MorphoMarket[]> {
-  const { chainId, first = 50, skip = 0 } = options;
+  const { chainId } = options;
 
   const config = getMorphoChainConfig(chainId);
   if (!config?.enabled) {
@@ -286,24 +315,52 @@ export async function fetchMorphoMarkets(options: {
 
   console.log(`[Morpho API] Fetching markets for ${config.label}...`);
 
-  const data = await graphqlFetch<{ markets: { items: ApiMarket[] } }>(
-    MARKETS_QUERY,
-    { chainId, first, skip }
-  );
+  const PAGE_SIZE = 100;
+  const allRaw: ApiMarket[] = [];
+  let skip = 0;
+  let hasMore = true;
 
-  const parsed = data.markets.items
+  // Paginate through all markets
+  while (hasMore) {
+    const data = await graphqlFetch<{ markets: { items: ApiMarket[] } }>(
+      MARKETS_QUERY,
+      { chainId, first: PAGE_SIZE, skip }
+    );
+
+    const items = data.markets.items;
+    allRaw.push(...items);
+
+    if (items.length < PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      skip += PAGE_SIZE;
+      // Safety cap: don't fetch more than 500 markets per chain
+      if (skip >= 500) {
+        console.warn(`[Morpho API] Hit 500 market cap for ${config.label}, stopping pagination`);
+        hasMore = false;
+      }
+    }
+  }
+
+  console.log(`[Morpho API] Raw API returned ${allRaw.length} markets for ${config.label}`);
+
+  // Parse and filter
+  const parsed = allRaw
     .map(m => parseMarket(m, chainId))
-    .filter((m): m is MorphoMarket => m !== null && m.totalSupplyUsd > 0);
+    .filter((m): m is MorphoMarket => {
+      if (!m) return false;
+      // Require minimum TVL ($1000) to filter out empty/dead markets
+      if (m.totalSupplyUsd < 1000) return false;
+      return true;
+    });
 
-  // Deduplicate by uniqueKey (API can return duplicates across pages)
+  // CRITICAL: Deduplicate by uniqueKey (the API can return duplicates)
   const seen = new Set<string>();
   const markets = parsed.filter(m => {
-    const key = m.uniqueKey;
-    if (seen.has(key)) {
-      console.warn(`[Morpho API] Duplicate market filtered: ${key} on ${config.label}`);
+    if (seen.has(m.uniqueKey)) {
       return false;
     }
-    seen.add(key);
+    seen.add(m.uniqueKey);
     return true;
   });
 
@@ -351,7 +408,6 @@ export async function fetchMorphoPositions(options: {
 
     const positions: UserPosition[] = data.positions.items
       .filter(p => {
-        // Filter out empty positions
         const hasSupply = BigInt(p.supplyAssets || '0') > 0n;
         const hasBorrow = BigInt(p.borrowAssets || '0') > 0n;
         const hasCollateral = BigInt(p.collateral || '0') > 0n;

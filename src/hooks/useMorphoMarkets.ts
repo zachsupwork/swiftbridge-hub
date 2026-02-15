@@ -10,20 +10,27 @@ import { fetchMorphoMarkets } from '@/lib/morpho/apiClient';
 import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket, MorphoChainConfig } from '@/lib/morpho/types';
 
-// Trusted asset symbols – markets with BOTH assets in this list are "verified"
+// Trusted asset symbols – fallback if API doesn't provide whitelisted field
 const TRUSTED_SYMBOLS = new Set([
   'ETH', 'WETH', 'wstETH', 'stETH', 'rETH', 'cbETH',
   'USDC', 'USDT', 'DAI', 'FRAX', 'LUSD', 'PYUSD',
-  'WBTC', 'tBTC',
+  'WBTC', 'tBTC', 'cbBTC',
   'AAVE', 'LINK', 'CRV',
   'sDAI', 'GHO', 'USDe', 'sUSDe', 'weETH', 'ezETH', 'osETH', 'COMP', 'MKR', 'UNI',
 ]);
 
 // Popular / blue-chip assets get a small TVL boost in sorting
-const POPULAR_SYMBOLS = new Set(['ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'WBTC']);
+const POPULAR_SYMBOLS = new Set(['ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'WBTC', 'cbBTC']);
 const POPULARITY_BOOST_USD = 50_000_000; // $50M virtual boost for sorting only
 
+/**
+ * A market is "trusted" if the API marks it as whitelisted,
+ * or if both assets are well-known symbols (fallback).
+ */
 export function isMarketTrusted(market: MorphoMarket): boolean {
+  // Prefer API whitelisted flag
+  if (market.whitelisted) return true;
+  // Fallback: check symbols
   const loanOk = TRUSTED_SYMBOLS.has(market.loanAsset.symbol);
   const collateralOk = !market.collateralAsset || TRUSTED_SYMBOLS.has(market.collateralAsset.symbol);
   return loanOk && collateralOk;
@@ -138,39 +145,43 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
       const allMarkets: MorphoMarket[] = [];
 
-      for (const chain of chainsToFetch) {
+      // Fetch from ALL chains in parallel (not sequentially)
+      const fetchPromises = chainsToFetch.map(async (chain) => {
         // Check cache first (unless force refresh)
         if (!forceRefresh) {
           const cached = marketCache.get(chain.chainId);
           if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
             console.log(`[Morpho] Using cached markets for ${chain.label} (${cached.markets.length} markets)`);
-            allMarkets.push(...cached.markets);
-            continue;
+            return cached.markets;
           }
         }
 
         // Fetch from API
-        try {
-          console.log(`[Morpho] Fetching fresh markets for ${chain.label}...`);
-          const chainMarkets = await fetchMorphoMarkets({
-            chainId: chain.chainId,
-            first: 50,
-            skip: 0,
-          });
+        console.log(`[Morpho] Fetching fresh markets for ${chain.label}...`);
+        const chainMarkets = await fetchMorphoMarkets({
+          chainId: chain.chainId,
+        });
 
-          // Update cache
-          marketCache.set(chain.chainId, {
-            markets: chainMarkets,
-            timestamp: Date.now(),
-          });
+        // Update cache
+        marketCache.set(chain.chainId, {
+          markets: chainMarkets,
+          timestamp: Date.now(),
+        });
 
-          allMarkets.push(...chainMarkets);
-        } catch (chainError: unknown) {
-          const errorMessage = chainError instanceof Error ? chainError.message : 'Unknown error';
-          console.error(`[Morpho] Failed to fetch ${chain.label}:`, errorMessage);
-          // Continue with other chains if one fails
+        return chainMarkets;
+      });
+
+      const results = await Promise.allSettled(fetchPromises);
+
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const chain = chainsToFetch[i];
+        if (result.status === 'fulfilled') {
+          allMarkets.push(...result.value);
+        } else {
+          console.error(`[Morpho] Failed to fetch ${chain.label}:`, result.reason);
           if (chainsToFetch.length === 1) {
-            throw chainError; // Re-throw if this was the only chain
+            throw result.reason;
           }
         }
       }
