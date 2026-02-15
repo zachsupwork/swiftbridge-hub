@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 import { BalanceSyncingState } from '@/components/common/BalanceSyncingState';
+import { TokenDetailModal } from '@/components/portfolio/TokenDetailModal';
 
 // Testnet IDs to exclude from chain filter tabs
 const TESTNET_IDS = new Set([11155111]);
@@ -39,6 +40,7 @@ export default function Portfolio() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [hideDust, setHideDust] = useState(false);
+  const [selectedToken, setSelectedToken] = useState<PortfolioTokenBalance | null>(null);
 
   useEffect(() => {
     getChains().then(setChains);
@@ -285,10 +287,11 @@ export default function Portfolio() {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: Math.min(idx * 0.02, 0.5) }}
-                    className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors group"
+                    className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors group cursor-pointer"
+                    onClick={() => setSelectedToken(item)}
                   >
                     <div className="relative flex-shrink-0">
-                      <TokenIconStable symbol={item.token.symbol} size="lg" />
+                      <TokenIconStable symbol={item.token.symbol} logoURI={item.token.logoURI} size="lg" />
                       {chain && (
                         <img
                           src={chain.logoURI}
@@ -314,7 +317,7 @@ export default function Portfolio() {
                       </div>
                     </div>
                     <button
-                      onClick={() => handleSwap(item)}
+                      onClick={(e) => { e.stopPropagation(); handleSwap(item); }}
                       className="flex-shrink-0 p-2 rounded-lg opacity-0 group-hover:opacity-100 sm:opacity-60 hover:opacity-100 hover:bg-primary/10 text-primary transition-all"
                       title={`Swap ${item.token.symbol}`}
                     >
@@ -349,6 +352,13 @@ export default function Portfolio() {
             </div>
           )}
         </motion.div>
+
+        {/* Token Detail Modal */}
+        <TokenDetailModal
+          isOpen={!!selectedToken}
+          onClose={() => setSelectedToken(null)}
+          token={selectedToken}
+        />
       </div>
     </Layout>
   );

@@ -62,10 +62,12 @@ import {
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
-import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
+import { CHAIN_EXPLORERS, supportedChains } from '@/lib/wagmiConfig';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
+
+const chainNameMap = new Map(supportedChains.map(c => [c.id, c.name]));
 
 interface MorphoSupplyModalProps {
   isOpen: boolean;
@@ -449,7 +451,7 @@ export function MorphoSupplyModal({
                         <div className="flex flex-wrap gap-1">
                           {otherChains.map((tb) => (
                             <Badge key={tb.chainId} variant="outline" className="text-[10px]">
-                              Chain {tb.chainId} · {tb.balanceFormatted}
+                              {chainNameMap.get(tb.chainId) || `Chain ${tb.chainId}`} · {tb.balanceFormatted}
                             </Badge>
                           ))}
                         </div>
