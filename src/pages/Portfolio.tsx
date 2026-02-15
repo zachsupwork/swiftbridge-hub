@@ -11,7 +11,8 @@ import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getChains, Chain, lastFetchMethod, lastFetchDebug } from '@/lib/lifiClient';
-import { useBalances, PortfolioTokenBalance } from '@/hooks/useBalances';
+import { useBalancesContext } from '@/providers/BalancesProvider';
+import type { PortfolioTokenBalance } from '@/hooks/useBalances';
 import { buildSwapLink } from '@/lib/swapDeepLink';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
@@ -32,7 +33,7 @@ export default function Portfolio() {
   const {
     totalUSD, isLoading, lastUpdated, error, tokenBalances,
     balancesByChain, refreshBalances, chainIds,
-  } = useBalances();
+  } = useBalancesContext();
   const [selectedChainFilter, setSelectedChainFilter] = useState<number | 'all'>('all');
   const [chains, setChains] = useState<Chain[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
