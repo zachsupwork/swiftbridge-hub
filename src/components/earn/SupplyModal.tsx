@@ -7,7 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
+import { supportedChains } from '@/lib/wagmiConfig';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
+
+const chainNameMap = new Map(supportedChains.map(c => [c.id, c.name]));
 
 interface SupplyModalProps {
   market: LendingMarket | null;
@@ -176,7 +179,7 @@ export function SupplyModal({
                         <div className="flex flex-wrap gap-1.5">
                           {otherChainBalances.map((tb) => (
                             <Badge key={tb.chainId} variant="outline" className="text-[10px] gap-1">
-                              {tb.token.symbol} · Chain {tb.chainId} · {tb.balanceFormatted}
+                              {chainNameMap.get(tb.chainId) || `Chain ${tb.chainId}`} · {tb.balanceFormatted} {tb.token.symbol}
                             </Badge>
                           ))}
                         </div>

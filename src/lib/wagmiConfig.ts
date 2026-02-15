@@ -5,7 +5,7 @@ import {
   coinbaseWallet,
   rainbowWallet,
 } from '@rainbow-me/rainbowkit/wallets';
-import { createConfig, http } from 'wagmi';
+import { createConfig, http, fallback } from 'wagmi';
 import { 
   mainnet, 
   optimism, 
@@ -101,22 +101,79 @@ export const config = createConfig({
   connectors,
   chains: SUPPORTED_CHAINS,
   transports: {
-    [mainnet.id]: http(MAINNET_RPC),
-    [optimism.id]: http('https://mainnet.optimism.io'),
-    [polygon.id]: http('https://polygon-rpc.com'),
-    [arbitrum.id]: http('https://arb1.arbitrum.io/rpc'),
-    [base.id]: http('https://mainnet.base.org'),
-    [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc'),
-    [bsc.id]: http('https://bsc-dataseed1.binance.org'),
-    [fantom.id]: http('https://rpc.ftm.tools'),
-    [gnosis.id]: http('https://rpc.gnosischain.com'),
-    [celo.id]: http('https://forno.celo.org'),
-    [moonbeam.id]: http('https://rpc.api.moonbeam.network'),
-    [zksync.id]: http('https://mainnet.era.zksync.io'),
-    [linea.id]: http('https://rpc.linea.build'),
-    [scroll.id]: http('https://rpc.scroll.io'),
-    [mantle.id]: http('https://rpc.mantle.xyz'),
-    [sepolia.id]: http(SEPOLIA_RPC),
+    [mainnet.id]: fallback([
+      http(MAINNET_RPC),
+      http('https://ethereum-rpc.publicnode.com'),
+      http('https://eth.drpc.org'),
+      http('https://rpc.ankr.com/eth'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [optimism.id]: fallback([
+      http('https://mainnet.optimism.io'),
+      http('https://optimism-rpc.publicnode.com'),
+      http('https://optimism.drpc.org'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [polygon.id]: fallback([
+      http('https://polygon-rpc.com'),
+      http('https://polygon-bor-rpc.publicnode.com'),
+      http('https://polygon.drpc.org'),
+      http('https://rpc.ankr.com/polygon'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [arbitrum.id]: fallback([
+      http('https://arb1.arbitrum.io/rpc'),
+      http('https://arbitrum-one-rpc.publicnode.com'),
+      http('https://arbitrum.drpc.org'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [base.id]: fallback([
+      http('https://mainnet.base.org'),
+      http('https://base-rpc.publicnode.com'),
+      http('https://base.drpc.org'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [avalanche.id]: fallback([
+      http('https://api.avax.network/ext/bc/C/rpc'),
+      http('https://avalanche-c-chain-rpc.publicnode.com'),
+      http('https://avax.meowrpc.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [bsc.id]: fallback([
+      http('https://bsc-dataseed1.binance.org'),
+      http('https://bsc-rpc.publicnode.com'),
+      http('https://bsc.drpc.org'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [fantom.id]: fallback([
+      http('https://rpc.ftm.tools'),
+      http('https://fantom-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [gnosis.id]: fallback([
+      http('https://rpc.gnosischain.com'),
+      http('https://gnosis-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [celo.id]: fallback([
+      http('https://forno.celo.org'),
+      http('https://celo-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [moonbeam.id]: fallback([
+      http('https://rpc.api.moonbeam.network'),
+      http('https://moonbeam-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [zksync.id]: fallback([
+      http('https://mainnet.era.zksync.io'),
+      http('https://zksync-era-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [linea.id]: fallback([
+      http('https://rpc.linea.build'),
+      http('https://linea-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [scroll.id]: fallback([
+      http('https://rpc.scroll.io'),
+      http('https://scroll-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [mantle.id]: fallback([
+      http('https://rpc.mantle.xyz'),
+      http('https://mantle-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
+    [sepolia.id]: fallback([
+      http(SEPOLIA_RPC),
+      http('https://ethereum-sepolia-rpc.publicnode.com'),
+    ], { retryCount: 2, retryDelay: 1500 }),
   },
   ssr: false,
 });
