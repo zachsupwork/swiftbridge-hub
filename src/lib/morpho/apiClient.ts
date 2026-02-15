@@ -351,6 +351,8 @@ export async function fetchMorphoMarkets(options: {
       if (!m) return false;
       // Require minimum TVL ($1000) to filter out empty/dead markets
       if (m.totalSupplyUsd < 1000) return false;
+      // Filter out GMORPHO/cbBTC market
+      if (m.loanAsset.symbol === 'GMORPHO' || m.collateralAsset?.symbol === 'GMORPHO') return false;
       return true;
     });
 

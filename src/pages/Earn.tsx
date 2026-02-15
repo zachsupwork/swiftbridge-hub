@@ -52,6 +52,7 @@ import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
 import { MorphoSupplyModal } from '@/components/earn/MorphoSupplyModal';
 import { MorphoBorrowModal } from '@/components/earn/MorphoBorrowModal';
 import { MarketDetailsDrawer } from '@/components/earn/MarketDetailsDrawer';
+import { MorphoVaultActionModal } from '@/components/earn/MorphoVaultActionModal';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
 import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
 import { useMorphoVaults } from '@/hooks/useMorphoVaults';
@@ -59,6 +60,7 @@ import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/confi
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import type { MorphoMarket } from '@/lib/morpho/types';
+import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -84,6 +86,10 @@ export default function Earn() {
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
   const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
+  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
+  const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
+  const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
+  const [vaultModalTab, setVaultModalTab] = useState<'deposit' | 'withdraw'>('deposit');
 
   // Fetch Morpho markets
   const { 
@@ -247,17 +253,35 @@ export default function Earn() {
     }
   }, []);
 
+  // Handle vault deposit/withdraw
+  const handleVaultAction = useCallback((vault: MorphoVault, action: 'deposit' | 'withdraw') => {
+    if (!isConnected) {
+      toast({ title: 'Connect Wallet', description: 'Please connect your wallet first.', variant: 'destructive' });
+      return;
+    }
+    setSelectedVault(vault);
+    setVaultModalTab(action);
+    // Find user's position for this vault
+    const pos = vaultPositions.find(vp => vp.vaultAddress.toLowerCase() === vault.address.toLowerCase() && vp.chainId === vault.chainId);
+    setSelectedVaultPosition(pos || null);
+    setIsVaultModalOpen(true);
+  }, [isConnected, vaultPositions]);
+
   // Close modals and refresh
   const handleCloseModal = useCallback(() => {
     setIsSupplyModalOpen(false);
     setIsBorrowModalOpen(false);
     setIsDetailsDrawerOpen(false);
+    setIsVaultModalOpen(false);
     setSelectedMarket(null);
     setSelectedPosition(null);
+    setSelectedVault(null);
+    setSelectedVaultPosition(null);
     // Refresh data after action
     refreshMarkets();
     refreshPositions();
-  }, [refreshMarkets, refreshPositions]);
+    refreshVaults();
+  }, [refreshMarkets, refreshPositions, refreshVaults]);
 
   // Format USD values
   const formatUsd = (value: number) => {
@@ -614,6 +638,7 @@ export default function Earn() {
                 loading={vaultsLoading}
                 error={vaultsError}
                 onRefresh={refreshVaults}
+                onVaultAction={handleVaultAction}
               />
             </TabsContent>
 
@@ -779,6 +804,18 @@ export default function Earn() {
         onBorrow={() => {
           setIsDetailsDrawerOpen(false);
           handleBorrow(selectedMarket!);
+        }}
+      />
+
+      {/* Vault Action Modal */}
+      <MorphoVaultActionModal
+        isOpen={isVaultModalOpen}
+        onClose={handleCloseModal}
+        vault={selectedVault}
+        userPosition={selectedVaultPosition}
+        onSuccess={() => {
+          refreshVaults();
+          refreshPositions();
         }}
       />
     </Layout>

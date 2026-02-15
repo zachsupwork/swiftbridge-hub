@@ -29,6 +29,49 @@ const MAINNET_RPC = import.meta.env.VITE_RPC_URL_MAINNET || 'https://eth.llamarp
 const SEPOLIA_RPC = import.meta.env.VITE_RPC_URL_SEPOLIA || 'https://rpc.sepolia.org';
 
 // All chains supported by the app - must match what LI.FI may return
+// Plus custom Morpho chains (Unichain, Katana, HyperEVM, Monad, Stable)
+import { defineChain } from 'viem';
+
+const unichain = defineChain({
+  id: 130,
+  name: 'Unichain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://mainnet.unichain.org'] } },
+  blockExplorers: { default: { name: 'Uniscan', url: 'https://uniscan.xyz' } },
+});
+
+const katana = defineChain({
+  id: 143,
+  name: 'Katana',
+  nativeCurrency: { name: 'RON', symbol: 'RON', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.katana.roninchain.com'] } },
+  blockExplorers: { default: { name: 'Katana Explorer', url: 'https://katana.roninchain.com' } },
+});
+
+const hyperEvm = defineChain({
+  id: 999,
+  name: 'HyperEVM',
+  nativeCurrency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.hyperliquid.xyz/evm'] } },
+  blockExplorers: { default: { name: 'HyperScan', url: 'https://hyperscan.xyz' } },
+});
+
+const monad = defineChain({
+  id: 747474,
+  name: 'Monad',
+  nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.monad.xyz'] } },
+  blockExplorers: { default: { name: 'Monad Explorer', url: 'https://explorer.monad.xyz' } },
+});
+
+const stable = defineChain({
+  id: 98866,
+  name: 'Stable',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.stable.xyz'] } },
+  blockExplorers: { default: { name: 'Stable Explorer', url: 'https://explorer.stable.xyz' } },
+});
+
 export const SUPPORTED_CHAINS = [
   mainnet,
   optimism, 
@@ -45,6 +88,11 @@ export const SUPPORTED_CHAINS = [
   linea,
   scroll,
   mantle,
+  unichain,
+  katana,
+  hyperEvm,
+  monad,
+  stable,
   sepolia, // testnet
 ] as const;
 
@@ -170,6 +218,11 @@ export const config = createConfig({
       http('https://rpc.mantle.xyz'),
       http('https://mantle-rpc.publicnode.com'),
     ], { retryCount: 2, retryDelay: 1500 }),
+    [unichain.id]: http('https://mainnet.unichain.org'),
+    [katana.id]: http('https://rpc.katana.roninchain.com'),
+    [hyperEvm.id]: http('https://rpc.hyperliquid.xyz/evm'),
+    [monad.id]: http('https://rpc.monad.xyz'),
+    [stable.id]: http('https://rpc.stable.xyz'),
     [sepolia.id]: fallback([
       http(SEPOLIA_RPC),
       http('https://ethereum-sepolia-rpc.publicnode.com'),
@@ -181,8 +234,11 @@ export const config = createConfig({
 // Chain metadata for UI display
 export const supportedChains = [
   { id: 1, name: 'Ethereum', icon: '⟠' },
-  { id: 10, name: 'Optimism', icon: '🔴' },
+  { id: 10, name: 'OP Mainnet', icon: '🔴' },
+  { id: 130, name: 'Unichain', icon: '🦄' },
   { id: 137, name: 'Polygon', icon: '🟣' },
+  { id: 143, name: 'Katana', icon: '⚔️' },
+  { id: 999, name: 'HyperEVM', icon: '⚡' },
   { id: 42161, name: 'Arbitrum', icon: '🔵' },
   { id: 8453, name: 'Base', icon: '🔷' },
   { id: 43114, name: 'Avalanche', icon: '🔺' },
@@ -193,8 +249,10 @@ export const supportedChains = [
   { id: 1284, name: 'Moonbeam', icon: '🌙' },
   { id: 324, name: 'zkSync Era', icon: '⚡' },
   { id: 59144, name: 'Linea', icon: '📐' },
+  { id: 98866, name: 'Stable', icon: '🔒' },
   { id: 534352, name: 'Scroll', icon: '📜' },
   { id: 5000, name: 'Mantle', icon: '🧥' },
+  { id: 747474, name: 'Monad', icon: '💜' },
   { id: 11155111, name: 'Sepolia', icon: '🧪' },
 ];
 
@@ -202,7 +260,10 @@ export const supportedChains = [
 export const CHAIN_EXPLORER_BASES: Record<number, string> = {
   1: 'https://etherscan.io',
   10: 'https://optimistic.etherscan.io',
+  130: 'https://uniscan.xyz',
   137: 'https://polygonscan.com',
+  143: 'https://katana.roninchain.com',
+  999: 'https://hyperscan.xyz',
   42161: 'https://arbiscan.io',
   8453: 'https://basescan.org',
   43114: 'https://snowtrace.io',
@@ -213,8 +274,10 @@ export const CHAIN_EXPLORER_BASES: Record<number, string> = {
   1284: 'https://moonscan.io',
   324: 'https://era.zksync.network',
   59144: 'https://lineascan.build',
+  98866: 'https://explorer.stable.xyz',
   534352: 'https://scrollscan.com',
   5000: 'https://explorer.mantle.xyz',
+  747474: 'https://explorer.monad.xyz',
   11155111: 'https://sepolia.etherscan.io',
 };
 

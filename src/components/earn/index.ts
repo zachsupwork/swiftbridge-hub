@@ -12,6 +12,7 @@ export { MorphoSupplyModal } from './MorphoSupplyModal';
 export { MorphoBorrowModal } from './MorphoBorrowModal';
 export { MarketDetailsDrawer } from './MarketDetailsDrawer';
 export { HowItWorksDiagram } from './HowItWorksDiagram';
+export { MorphoVaultActionModal } from './MorphoVaultActionModal';
 
 // Legacy Aave components (kept for reference, not used)
 export { MarketCard } from './MarketCard';
