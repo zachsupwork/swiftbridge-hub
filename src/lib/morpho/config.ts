@@ -26,7 +26,7 @@ export const MORPHO_CHAINS: MorphoChainConfig[] = [
     chainId: 8453,
     label: 'Base',
     logo: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
-    enabled: false,
+    enabled: true,
     morphoBlue: MORPHO_BLUE_ADDRESS,
   },
   {

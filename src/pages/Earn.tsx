@@ -68,7 +68,9 @@ export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
 
-  const isWrongNetwork = isConnected && walletChainId !== 1;
+  // Multi-chain: check if on any enabled Morpho chain
+  const enabledChainIds = new Set(getEnabledMorphoChains().map(c => c.chainId));
+  const isWrongNetwork = isConnected && !enabledChainIds.has(walletChainId);
 
   const [copiedDebug, setCopiedDebug] = useState(false);
   const [activeTab, setActiveTab] = useState('markets');
@@ -183,7 +185,8 @@ export default function Earn() {
       return;
     }
     if (isWrongNetwork) {
-      toast({ title: 'Wrong Network', description: 'Please switch to Ethereum mainnet to use Earn.', variant: 'destructive' });
+      const chainNames = getEnabledMorphoChains().map(c => c.label).join(', ');
+      toast({ title: 'Wrong Network', description: `Earn is available on ${chainNames}. Switch network to continue.`, variant: 'destructive' });
       return;
     }
     setSelectedMarket(market);
@@ -198,7 +201,8 @@ export default function Earn() {
       return;
     }
     if (isWrongNetwork) {
-      toast({ title: 'Wrong Network', description: 'Please switch to Ethereum mainnet to use Borrow.', variant: 'destructive' });
+      const chainNames = getEnabledMorphoChains().map(c => c.label).join(', ');
+      toast({ title: 'Wrong Network', description: `Borrow is available on ${chainNames}. Switch network to continue.`, variant: 'destructive' });
       return;
     }
     setSelectedMarket(market);
@@ -390,17 +394,14 @@ export default function Earn() {
             </div>
           </div>
 
-          {/* Ethereum-only badge */}
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="h-7 px-3 gap-1.5 text-sm font-medium border-blue-500/30 bg-blue-500/10 text-blue-400">
-              <svg className="w-4 h-4" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
-                <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
-                <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
-                <path fill="currentColor" d="M127.961 312.187l-1.575 1.92V414.53l1.575 4.6L256 236.587z" opacity=".6"/>
-                <path fill="currentColor" d="M127.962 419.13V312.187L0 236.587z"/>
-              </svg>
-              Ethereum Only
-            </Badge>
+          {/* Supported chains badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {getEnabledMorphoChains().map(chain => (
+              <Badge key={chain.chainId} variant="outline" className="h-7 px-3 gap-1.5 text-sm font-medium border-primary/30 bg-primary/10 text-primary">
+                <ChainIcon chainId={chain.chainId} size="sm" />
+                {chain.label}
+              </Badge>
+            ))}
           </div>
 
           {/* Wrong network warning */}
@@ -410,7 +411,7 @@ export default function Earn() {
               <div className="flex-1">
                 <p className="text-sm font-medium text-warning">Wrong Network</p>
                 <p className="text-xs text-muted-foreground">
-                  Earn is available on Ethereum mainnet only. Switch network to continue.
+                  Earn is available on {getEnabledMorphoChains().map(c => c.label).join(', ')}. Switch network to continue.
                 </p>
               </div>
               <ConnectButton.Custom>
@@ -420,10 +421,6 @@ export default function Earn() {
                     onClick={() => { if (mounted && openChainModal) openChainModal(); }}
                     className="gap-1.5"
                   >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 256 417" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid">
-                      <path fill="currentColor" d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity=".6"/>
-                      <path fill="currentColor" d="M127.962 0L0 212.32l127.962 75.639V154.158z"/>
-                    </svg>
                     Switch Network
                   </Button>
                 )}

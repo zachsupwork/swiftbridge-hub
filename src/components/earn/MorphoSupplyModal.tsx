@@ -160,17 +160,30 @@ export function MorphoSupplyModal({
   }, [isOpen]);
 
   const isWrongChain = market && walletChainId !== market.chainId;
-  const balanceFormatted = tokenBalance ? formatUnits(tokenBalance, decimals) : '0';
-  const hasNoBalance = !tokenBalance || tokenBalance === 0n;
-  const isValidAmount = parsedAmount > 0n && parsedAmount <= (tokenBalance || 0n);
-  const isInsufficientBalance = parsedAmount > 0n && parsedAmount > (tokenBalance || 0n);
 
-  // Set max amount
+  // Use onchain balance if available, else fallback to unified portfolio balance
+  const portfolioBalance = useMemo(() => {
+    if (!token || !market) return undefined;
+    return portfolioBalances.find(
+      (tb) => tb.chainId === market.chainId &&
+        tb.token.symbol.toUpperCase() === token.symbol.toUpperCase() &&
+        tb.balance > 0
+    );
+  }, [portfolioBalances, token, market]);
+
+  const effectiveBalance = tokenBalance ?? (portfolioBalance ? BigInt(Math.floor(portfolioBalance.balance * (10 ** decimals))) : undefined);
+  const balanceFormatted = effectiveBalance ? formatUnits(effectiveBalance, decimals) : '0';
+  const balanceSource = tokenBalance !== undefined ? 'onchain' : (portfolioBalance ? 'portfolio' : 'none');
+  const hasNoBalance = !effectiveBalance || effectiveBalance === 0n;
+  const isValidAmount = parsedAmount > 0n && parsedAmount <= (effectiveBalance || 0n);
+  const isInsufficientBalance = parsedAmount > 0n && parsedAmount > (effectiveBalance || 0n);
+
+  // Set max amount — use effective balance
   const handleSetMax = useCallback(() => {
-    if (tokenBalance && tokenBalance > 0n) {
-      setAmount(formatUnits(tokenBalance, decimals));
+    if (effectiveBalance && effectiveBalance > 0n) {
+      setAmount(formatUnits(effectiveBalance, decimals));
     }
-  }, [tokenBalance, decimals]);
+  }, [effectiveBalance, decimals]);
 
   // Execute supply
   const executeSupply = useCallback(async () => {
@@ -237,7 +250,7 @@ export function MorphoSupplyModal({
   }, [isActionConfirmed, step, amount, token?.symbol, refetchBalance, onSuccess]);
 
   const isLoading = step !== 'idle' && step !== 'success' && step !== 'error';
-  const canExecute = parsedAmount > 0n && !isLoading && !isWrongChain && isConnected && parsedAmount <= (tokenBalance || 0n);
+  const canExecute = parsedAmount > 0n && !isLoading && !isWrongChain && isConnected && parsedAmount <= (effectiveBalance || 0n);
 
   // Format helpers
   const formatAPY = (apy: number) => {
@@ -388,7 +401,8 @@ export function MorphoSupplyModal({
                     onClick={handleSetMax}
                     className="text-xs text-primary hover:underline flex items-center gap-1"
                   >
-                    Balance: {balSyncing && !tokenBalance ? '— (syncing)' : `${parseFloat(balanceFormatted).toFixed(4)} ${token.symbol}`}
+                    Balance: {balSyncing && !effectiveBalance ? '— (syncing)' : `${parseFloat(balanceFormatted).toFixed(4)} ${token.symbol}`}
+                    {balanceSource === 'portfolio' && <span className="text-muted-foreground">(cached)</span>}
                   </button>
                   <SyncBalancesButton
                     isLoading={balSyncing}
