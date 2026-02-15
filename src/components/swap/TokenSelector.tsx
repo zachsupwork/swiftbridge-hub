@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ChevronDown, X, Loader2, Coins } from 'lucide-react';
+import { Search, ChevronDown, X, Loader2, Coins, RefreshCw } from 'lucide-react';
 import { Token, getTokens } from '@/lib/lifiClient';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { useBalancesContext } from '@/providers/BalancesProvider';
+import { formatUnits } from 'viem';
 
 interface TokenSelectorProps {
   chainId: number;
@@ -24,6 +26,18 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
   const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const { tokenBalances, isLoading: balLoading, refreshBalances } = useBalancesContext();
+
+  // Build a fast lookup: address-lower -> balance formatted string
+  const balanceLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tb of tokenBalances) {
+      if (tb.chainId === chainId && tb.balance > 0) {
+        map.set(tb.token.address.toLowerCase(), tb.balanceFormatted);
+      }
+    }
+    return map;
+  }, [tokenBalances, chainId]);
 
   useEffect(() => {
     if (isOpen && tokens.length === 0) {
@@ -120,12 +134,22 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                     <Coins className="w-4 h-4 text-primary" />
                     Select Token
                   </h3>
-                  <button
-                    onClick={() => setIsOpen(false)}
-                    className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => refreshBalances()}
+                      disabled={balLoading}
+                      className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      title="Refresh balances"
+                    >
+                      <RefreshCw className={cn("w-3.5 h-3.5", balLoading && "animate-spin")} />
+                    </button>
+                    <button
+                      onClick={() => setIsOpen(false)}
+                      className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-muted/50 border border-border/30 rounded-xl focus-within:ring-2 focus-within:ring-primary/30 transition-all">
@@ -220,11 +244,20 @@ export function TokenSelector({ chainId, selectedToken, onSelect, label }: Token
                           <div className="font-semibold text-sm">{token.symbol}</div>
                           <div className="text-xs text-muted-foreground truncate">{token.name}</div>
                         </div>
-                        {token.priceUSD && (
-                          <div className="text-xs text-muted-foreground font-medium">
-                            ${parseFloat(token.priceUSD).toFixed(2)}
-                          </div>
-                        )}
+                        <div className="text-right">
+                          {(() => {
+                            const bal = balanceLookup.get(token.address.toLowerCase());
+                            if (bal) {
+                              return <div className="text-xs font-medium text-foreground">{bal}</div>;
+                            }
+                            return null;
+                          })()}
+                          {token.priceUSD && (
+                            <div className="text-[10px] text-muted-foreground">
+                              ${parseFloat(token.priceUSD).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
                       </button>
                     ))}
                     {visibleCount < filteredTokens.length && (

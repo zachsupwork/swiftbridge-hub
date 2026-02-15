@@ -64,7 +64,7 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
-import { useBalances } from '@/hooks/useBalances';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
 interface MorphoSupplyModalProps {
@@ -85,7 +85,7 @@ export function MorphoSupplyModal({
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const navigate = useNavigate();
-  const { tokenBalances: portfolioBalances, isLoading: balSyncing, lastUpdated: balLastUpdated, refreshBalances } = useBalances();
+  const { tokenBalances: portfolioBalances, isLoading: balSyncing, lastUpdated: balLastUpdated, refreshBalances } = useBalancesContext();
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');

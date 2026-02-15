@@ -5,7 +5,7 @@ import { X, ExternalLink, AlertTriangle, Lock, ArrowRight, Repeat } from 'lucide
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
-import { useBalances } from '@/hooks/useBalances';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
@@ -27,7 +27,7 @@ export function SupplyModal({
   const [isRedirecting, setIsRedirecting] = useState(false);
   const { trackSupplyClick } = useEarnAnalytics();
   const navigate = useNavigate();
-  const { tokenBalances } = useBalances();
+  const { tokenBalances } = useBalancesContext();
 
   if (!market) return null;
 

@@ -9,6 +9,7 @@ import "@rainbow-me/rainbowkit/styles.css";
 
 import { config } from "@/lib/wagmiConfig";
 import { BitcoinWalletProvider, MultiWalletProvider } from "@/lib/wallets";
+import { BalancesProvider } from "@/providers/BalancesProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
@@ -36,7 +37,9 @@ function WalletProviders({ children }: { children: React.ReactNode }) {
         >
           <BitcoinWalletProvider>
             <MultiWalletProvider>
-              {children}
+              <BalancesProvider>
+                {children}
+              </BalancesProvider>
             </MultiWalletProvider>
           </BitcoinWalletProvider>
         </RainbowKitProvider>

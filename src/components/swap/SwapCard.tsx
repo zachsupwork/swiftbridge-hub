@@ -21,7 +21,7 @@ import {
   TransactionValidationError,
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
-import { useBalances } from '@/hooks/useBalances';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
 /** Detect RPC / receipt polling errors that should get friendly messaging */
@@ -80,7 +80,7 @@ export function SwapCard() {
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
   const wallets = useMultiWallet();
-  const { isLoading: balanceSyncing, lastUpdated: balanceLastUpdated, refreshBalances } = useBalances();
+  const { isLoading: balanceSyncing, lastUpdated: balanceLastUpdated, refreshBalances } = useBalancesContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 

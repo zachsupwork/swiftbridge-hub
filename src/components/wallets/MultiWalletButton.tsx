@@ -8,7 +8,7 @@ import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useBalances } from '@/hooks/useBalances';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
@@ -31,7 +31,7 @@ export function MultiWalletButton() {
 
   const { address: evmAddr, chainId: currentChainId, isConnected: evmConnected } = useAccount();
   const nativeBalance = useBalance({ address: evmAddr });
-  const { totalUSD: portfolioTotal, isLoading: portfolioLoading, tokenBalances, refreshBalances, lastUpdated } = useBalances();
+  const { totalUSD: portfolioTotal, isLoading: portfolioLoading, tokenBalances, refreshBalances, lastUpdated } = useBalancesContext();
   const navigate = useNavigate();
   
   const { disconnect: disconnectEvm } = useDisconnect();
