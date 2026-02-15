@@ -113,11 +113,11 @@ export const config = createConfig({
       http('https://optimism.drpc.org'),
     ], { retryCount: 2, retryDelay: 1500 }),
     [polygon.id]: fallback([
-      http('https://polygon-rpc.com'),
       http('https://polygon-bor-rpc.publicnode.com'),
       http('https://polygon.drpc.org'),
       http('https://rpc.ankr.com/polygon'),
-    ], { retryCount: 2, retryDelay: 1500 }),
+      http('https://polygon-rpc.com'), // deprioritized — frequent rate limits
+    ], { retryCount: 3, retryDelay: 2000 }),
     [arbitrum.id]: fallback([
       http('https://arb1.arbitrum.io/rpc'),
       http('https://arbitrum-one-rpc.publicnode.com'),

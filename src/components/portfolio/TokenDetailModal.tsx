@@ -45,22 +45,29 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
   if (!token) return null;
 
   const handleSwap = (tb: PortfolioTokenBalance) => {
+    // Use token as FROM (user holds it, wants to swap it)
     const link = buildSwapLink({
       chainId: tb.chainId,
-      toTokenAddress: tb.token.address,
-      toTokenSymbol: tb.token.symbol,
+      fromTokenAddress: tb.token.address,
+      fromTokenSymbol: tb.token.symbol,
+      ref: 'portfolio',
+      action: 'swap',
     });
     onClose();
     navigate(link);
   };
 
   const handleBridge = (tb: PortfolioTokenBalance) => {
-    // Prefill swap from this chain's token to a different chain
-    const params = new URLSearchParams();
-    params.set('fromChainId', String(tb.chainId));
-    params.set('fromToken', tb.token.address);
+    // Prefill swap FROM this token on this chain TO a different chain
+    const link = buildSwapLink({
+      chainId: tb.chainId,
+      fromTokenAddress: tb.token.address,
+      fromTokenSymbol: tb.token.symbol,
+      ref: 'portfolio',
+      action: 'bridge',
+    });
     onClose();
-    navigate(`/?${params.toString()}`);
+    navigate(link);
   };
 
   const handleEarn = (tb: PortfolioTokenBalance) => {

@@ -94,10 +94,13 @@ export default function Portfolio() {
   const showDebugEnv = import.meta.env.DEV || import.meta.env.VITE_PORTFOLIO_DEBUG === 'true';
 
   const handleSwap = (token: PortfolioTokenBalance) => {
+    // Use token as FROM (user holds it, wants to swap it for something else)
     const link = buildSwapLink({
       chainId: token.chainId,
-      toTokenAddress: token.token.address,
-      toTokenSymbol: token.token.symbol,
+      fromTokenAddress: token.token.address,
+      fromTokenSymbol: token.token.symbol,
+      ref: 'portfolio',
+      action: 'swap',
     });
     navigate(link);
   };

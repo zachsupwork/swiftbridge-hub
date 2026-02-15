@@ -27,32 +27,43 @@ const NATIVE_TOKEN: Record<number, string> = {
 
 export interface SwapDeepLinkParams {
   chainId: number;
-  toTokenAddress: string;
+  /** Token to swap TO (e.g., needed token for earn) */
+  toTokenAddress?: string;
   toTokenSymbol?: string;
+  /** Token to swap FROM (portfolio token the user holds) */
   fromTokenAddress?: string;
+  fromTokenSymbol?: string;
+  /** Destination chain for bridge */
+  toChainId?: number;
   marketId?: string;
-  ref?: 'earn';
-  action?: 'supply' | 'borrow';
+  ref?: 'earn' | 'portfolio';
+  action?: 'supply' | 'borrow' | 'swap' | 'bridge';
 }
 
 /**
- * Build a swap URL with pre-filled query params for collateral/token acquisition.
+ * Build a swap URL with pre-filled query params.
+ * 
+ * For portfolio → swap: use fromTokenAddress (token user holds) as the FROM token.
+ * For earn → swap: use toTokenAddress (token user needs) as the TO token.
  */
 export function buildSwapLink({
   chainId,
   toTokenAddress,
   toTokenSymbol,
   fromTokenAddress,
+  fromTokenSymbol,
+  toChainId,
   marketId,
-  ref = 'earn',
+  ref,
   action,
 }: SwapDeepLinkParams): string {
   const params = new URLSearchParams();
   params.set('fromChainId', String(chainId));
-  params.set('toChainId', String(chainId));
-  params.set('toToken', toTokenAddress);
+  params.set('toChainId', String(toChainId ?? chainId));
+  if (toTokenAddress) params.set('toToken', toTokenAddress);
   if (toTokenSymbol) params.set('toSymbol', toTokenSymbol);
   if (fromTokenAddress) params.set('fromToken', fromTokenAddress);
+  if (fromTokenSymbol) params.set('fromSymbol', fromTokenSymbol);
   if (marketId) params.set('marketId', marketId);
   if (ref) params.set('ref', ref);
   if (action) params.set('action', action);

@@ -521,7 +521,7 @@ const NATIVE_TOKEN_META: Record<number, { symbol: string; name: string; decimals
 const CHAIN_RPC_LIST: Record<number, string[]> = {
   1: ['https://eth.llamarpc.com', 'https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org', 'https://rpc.ankr.com/eth'],
   10: ['https://mainnet.optimism.io', 'https://optimism-rpc.publicnode.com', 'https://optimism.drpc.org'],
-  137: ['https://polygon-rpc.com', 'https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org'],
+  137: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org', 'https://rpc.ankr.com/polygon', 'https://polygon-rpc.com'],
   42161: ['https://arb1.arbitrum.io/rpc', 'https://arbitrum-one-rpc.publicnode.com', 'https://arbitrum.drpc.org'],
   8453: ['https://mainnet.base.org', 'https://base-rpc.publicnode.com', 'https://base.drpc.org'],
   56: ['https://bsc-dataseed1.binance.org', 'https://bsc-dataseed2.binance.org', 'https://bsc-rpc.publicnode.com'],
