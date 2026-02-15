@@ -1,38 +1,29 @@
 /**
- * Earn Page - Enhanced Morpho Blue lending interface
+ * Earn Page — Aave V3 Markets + Morpho Vaults
  * 
- * Features:
- * - Markets, Vaults, and Positions tabs
- * - In-app supply/borrow actions
- * - User positions dashboard with health monitoring
- * - Auto chain switch (no popup)
- * - Swap CTA when balance is low
- * - Vault chain filtering synced with market filter
+ * Markets tab: Aave V3 supply/borrow across 6 chains
+ * Vaults tab: Morpho vaults
+ * Positions tab: Aave positions + Morpho vault deposits
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  RefreshCw, 
-  AlertTriangle, 
-  TrendingUp, 
-  Clock, 
-  Copy, 
-  Check, 
-  Rocket, 
-  Bug,
+  RefreshCw,
+  AlertTriangle,
+  TrendingUp,
+  Clock,
+  Rocket,
   Wallet,
   LayoutGrid,
   List,
   ExternalLink,
   Shield,
   Info,
-  ArrowRight,
   Repeat,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead, SeoContentBlock } from '@/components/seo';
@@ -46,29 +37,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
+import { AaveMarketsTable } from '@/components/earn/AaveMarketsTable';
+import { AaveSupplyModal } from '@/components/earn/AaveSupplyModal';
+import { AaveBorrowModal } from '@/components/earn/AaveBorrowModal';
+import { AavePositionCard } from '@/components/earn/AavePositionCard';
 import { MorphoVaultsTable } from '@/components/earn/MorphoVaultsTable';
-import { MorphoPositionCard } from '@/components/earn/MorphoPositionCard';
-import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
-import { MorphoSupplyModal } from '@/components/earn/MorphoSupplyModal';
-import { MorphoBorrowModal } from '@/components/earn/MorphoBorrowModal';
-import { MarketDetailsDrawer } from '@/components/earn/MarketDetailsDrawer';
 import { MorphoVaultActionModal } from '@/components/earn/MorphoVaultActionModal';
-import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
-import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
+import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
+import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
+import { useAavePositions } from '@/hooks/useAavePositions';
+import { useAaveBorrow } from '@/hooks/useAaveBorrow';
 import { useMorphoVaults } from '@/hooks/useMorphoVaults';
-import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
-import type { MorphoMarket } from '@/lib/morpho/types';
-import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
-import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { buildSwapLink } from '@/lib/swapDeepLink';
+import { toast } from '@/hooks/use-toast';
+import type { LendingMarket } from '@/hooks/useLendingMarkets';
+import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
-type ActionType = 'supply' | 'withdraw' | 'borrow' | 'repay';
-
-const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
+const AUTO_REFRESH_INTERVAL = 30000;
 
 export default function Earn() {
   const { address, isConnected } = useAccount();
@@ -76,53 +64,51 @@ export default function Earn() {
   const { switchChainAsync } = useSwitchChain();
   const navigate = useNavigate();
 
-  // Multi-chain: check if on any enabled Morpho chain
-  const enabledChainIds = new Set(getEnabledMorphoChains().map(c => c.chainId));
-  const isWrongNetwork = isConnected && !enabledChainIds.has(walletChainId);
-
-  const [copiedDebug, setCopiedDebug] = useState(false);
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'markets';
   const initialChainId = searchParams.get('chainId') ? parseInt(searchParams.get('chainId')!) : undefined;
   const [activeTab, setActiveTab] = useState(initialTab);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Modal state
-  const [selectedMarket, setSelectedMarket] = useState<MorphoMarket | null>(null);
-  const [selectedPosition, setSelectedPosition] = useState<MorphoPositionWithHealth | null>(null);
-  const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
-  const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
-  const [isDetailsDrawerOpen, setIsDetailsDrawerOpen] = useState(false);
-  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
-  const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
-  const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
-  const [vaultModalTab, setVaultModalTab] = useState<'deposit' | 'withdraw'>('deposit');
 
-  // Fetch Morpho markets
-  const { 
-    markets, 
-    loading: marketsLoading, 
-    error: marketsError, 
+  // Chain filter
+  const [selectedChainId, setSelectedChainId] = useState<number | undefined>(initialChainId);
+
+  // Wrong network check
+  const supportedSet = new Set(SUPPORTED_CHAIN_IDS);
+  const isWrongNetwork = isConnected && !supportedSet.has(walletChainId);
+
+  // ─── Aave Markets ───
+  const {
+    markets: allAaveMarkets,
+    loading: marketsLoading,
+    errorMessage: marketsError,
     refresh: refreshMarkets,
     lastFetched,
-    selectedChainId,
-    setSelectedChainId,
-    availableChains,
-    debugReport,
-  } = useMorphoMarkets();
+  } = useLendingMarkets(selectedChainId);
 
-  // Fetch user positions
+  // Filter by chain
+  const aaveMarkets = selectedChainId
+    ? allAaveMarkets.filter(m => m.chainId === selectedChainId)
+    : allAaveMarkets;
+
+  // ─── Aave Positions ───
   const {
-    positions,
+    positions: aavePositions,
+    chainAccountData,
     loading: positionsLoading,
-    error: positionsError,
     refresh: refreshPositions,
     totalSupplyUsd,
     totalBorrowUsd,
     totalCollateralUsd,
-  } = useMorphoPositions();
+    lowestHealthFactor,
+  } = useAavePositions(allAaveMarkets);
 
-  // Fetch vaults — sync chain filter
+  // ─── Aave Borrow (for account data) ───
+  const {
+    accountData,
+  } = useAaveBorrow();
+
+  // ─── Morpho Vaults ───
   const {
     vaults: allVaults,
     vaultPositions,
@@ -132,159 +118,69 @@ export default function Earn() {
     totalDepositedUsd,
   } = useMorphoVaults();
 
-  // Filter vaults by selected chain
   const vaults = selectedChainId
     ? allVaults.filter(v => v.chainId === selectedChainId)
     : allVaults;
 
-  const enabledChains = availableChains;
+  // ─── Modal state ───
+  const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
+  const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+  const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
+  const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
+  const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
+  const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
+  const [vaultModalTab, setVaultModalTab] = useState<'deposit' | 'withdraw'>('deposit');
 
-  // Sync chain filter from URL param
+  // ─── Auto-refresh ───
   useEffect(() => {
-    if (initialChainId && enabledChainIds.has(initialChainId)) {
-      setSelectedChainId(initialChainId);
-    }
-  }, []);
+    autoRefreshRef.current = setInterval(() => {
+      refreshMarkets();
+      refreshVaults();
+      if (isConnected) refreshPositions();
+    }, AUTO_REFRESH_INTERVAL);
+    return () => { if (autoRefreshRef.current) clearInterval(autoRefreshRef.current); };
+  }, [refreshMarkets, refreshVaults, refreshPositions, isConnected]);
 
-  // Calculate aggregate health factor
-  const aggregateHealthFactor = positions.reduce((acc, pos) => {
-    if (pos.healthFactor !== null && pos.healthFactor < (acc || Infinity)) {
-      return pos.healthFactor;
-    }
-    return acc;
-  }, null as number | null);
-
-  // Format last fetched time
-  const lastFetchedDisplay = lastFetched 
-    ? (() => {
-        const seconds = Math.floor((Date.now() - lastFetched) / 1000);
-        if (seconds < 60) return `${seconds}s ago`;
-        const minutes = Math.floor(seconds / 60);
-        return `${minutes}m ago`;
-      })()
-    : null;
-
-  // Auto-refresh effect
-  useEffect(() => {
-    const startAutoRefresh = () => {
-      if (autoRefreshRef.current) {
-        clearInterval(autoRefreshRef.current);
-      }
-      autoRefreshRef.current = setInterval(() => {
-        console.log('[Earn] Auto-refreshing data...');
-        refreshMarkets();
-        refreshVaults();
-        if (isConnected) {
-          refreshPositions();
-        }
-      }, AUTO_REFRESH_INTERVAL);
-    };
-
-    startAutoRefresh();
-
-    return () => {
-      if (autoRefreshRef.current) {
-        clearInterval(autoRefreshRef.current);
-      }
-    };
-  }, [refreshMarkets, refreshPositions, isConnected]);
-
-  // Auto switch chain helper — switches without popup
+  // ─── Auto switch chain ───
   const handleSwitchChain = useCallback(async (targetChainId: number) => {
     try {
       await switchChainAsync({ chainId: targetChainId });
-      toast({ title: 'Network Switched', description: `Switched to ${getMorphoChainConfig(targetChainId)?.label || 'target network'}` });
-    } catch (err) {
-      console.error('[Earn] Chain switch failed:', err);
-      toast({ title: 'Switch Failed', description: 'Please switch network in your wallet.', variant: 'destructive' });
+      toast({ title: 'Network Switched' });
+    } catch {
+      toast({ title: 'Switch Failed', variant: 'destructive' });
     }
   }, [switchChainAsync]);
 
-  // Copy debug report
-  const handleCopyDebugReport = useCallback(() => {
-    const report = JSON.stringify({
-      ...debugReport,
-      positions: {
-        count: positions.length,
-        totalSupplyUsd,
-        totalBorrowUsd,
-        totalCollateralUsd,
-        lowestHealthFactor: aggregateHealthFactor,
-      },
-      wallet: {
-        connected: isConnected,
-        address: address?.slice(0, 10) + '...',
-        chainId: walletChainId,
-      },
-    }, null, 2);
-    navigator.clipboard.writeText(report);
-    setCopiedDebug(true);
-    toast({
-      title: 'Debug Report Copied',
-      description: 'Debug information has been copied to clipboard.',
-    });
-    setTimeout(() => setCopiedDebug(false), 2000);
-  }, [debugReport, positions, totalSupplyUsd, totalBorrowUsd, totalCollateralUsd, aggregateHealthFactor, isConnected, address, walletChainId]);
-
-  // Handle supply action — auto switch chain if needed
-  const handleSupply = useCallback(async (market: MorphoMarket) => {
+  // ─── Supply action ───
+  const handleSupply = useCallback(async (market: LendingMarket) => {
     if (!isConnected) {
-      toast({ title: 'Connect Wallet', description: 'Please connect your wallet to supply assets.', variant: 'destructive' });
+      toast({ title: 'Connect Wallet', variant: 'destructive' });
       return;
     }
     if (walletChainId !== market.chainId) {
       await handleSwitchChain(market.chainId);
     }
     setSelectedMarket(market);
-    setSelectedPosition(null);
     setIsSupplyModalOpen(true);
   }, [isConnected, walletChainId, handleSwitchChain]);
 
-  // Handle borrow action
-  const handleBorrow = useCallback(async (market: MorphoMarket) => {
+  // ─── Borrow action ───
+  const handleBorrow = useCallback(async (market: LendingMarket) => {
     if (!isConnected) {
-      toast({ title: 'Connect Wallet', description: 'Please connect your wallet to borrow assets.', variant: 'destructive' });
+      toast({ title: 'Connect Wallet', variant: 'destructive' });
       return;
     }
     if (walletChainId !== market.chainId) {
       await handleSwitchChain(market.chainId);
     }
     setSelectedMarket(market);
-    setSelectedPosition(null);
     setIsBorrowModalOpen(true);
   }, [isConnected, walletChainId, handleSwitchChain]);
 
-  // Handle market details
-  const handleMarketDetails = useCallback((market: MorphoMarket) => {
-    setSelectedMarket(market);
-    setIsDetailsDrawerOpen(true);
-  }, []);
-
-  // Handle manage position
-  const handleManagePosition = useCallback(async (position: MorphoPositionWithHealth, action?: ActionType) => {
-    // Auto switch chain
-    if (walletChainId !== position.chainId) {
-      await handleSwitchChain(position.chainId);
-    }
-    setSelectedPosition(position);
-    if (position.market) {
-      setSelectedMarket(position.market);
-    }
-    if (action === 'supply' || action === 'withdraw') {
-      setIsSupplyModalOpen(true);
-    } else if (action === 'borrow' || action === 'repay') {
-      setIsBorrowModalOpen(true);
-    } else if (position.borrowAssetsUsd > 0) {
-      setIsBorrowModalOpen(true);
-    } else {
-      setIsSupplyModalOpen(true);
-    }
-  }, [walletChainId, handleSwitchChain]);
-
-  // Handle vault deposit/withdraw — auto switch chain
+  // ─── Vault action ───
   const handleVaultAction = useCallback(async (vault: MorphoVault, action: 'deposit' | 'withdraw') => {
     if (!isConnected) {
-      toast({ title: 'Connect Wallet', description: 'Please connect your wallet first.', variant: 'destructive' });
+      toast({ title: 'Connect Wallet', variant: 'destructive' });
       return;
     }
     if (walletChainId !== vault.chainId) {
@@ -297,14 +193,12 @@ export default function Earn() {
     setIsVaultModalOpen(true);
   }, [isConnected, vaultPositions, walletChainId, handleSwitchChain]);
 
-  // Close modals and refresh
+  // ─── Close modal + refresh ───
   const handleCloseModal = useCallback(() => {
     setIsSupplyModalOpen(false);
     setIsBorrowModalOpen(false);
-    setIsDetailsDrawerOpen(false);
     setIsVaultModalOpen(false);
     setSelectedMarket(null);
-    setSelectedPosition(null);
     setSelectedVault(null);
     setSelectedVaultPosition(null);
     refreshMarkets();
@@ -312,7 +206,7 @@ export default function Earn() {
     refreshVaults();
   }, [refreshMarkets, refreshPositions, refreshVaults]);
 
-  // Navigate to swap with prefill
+  // ─── Swap navigation ───
   const goToSwap = useCallback((chainId: number, tokenSymbol: string, tokenAddress?: string) => {
     const link = buildSwapLink({
       chainId,
@@ -324,7 +218,7 @@ export default function Earn() {
     navigate(link);
   }, [navigate]);
 
-  // Format USD values
+  // ─── Helpers ───
   const formatUsd = (value: number) => {
     if (!Number.isFinite(value) || value === 0) return '$0.00';
     if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -332,57 +226,28 @@ export default function Earn() {
     return `$${value.toFixed(2)}`;
   };
 
-  // Net APY calculation
-  const netApy = positions.length > 0 && totalSupplyUsd > 0
-    ? positions.reduce((acc, pos) => {
-        if (pos.market) {
-          const supplyContribution = (pos.supplyAssetsUsd / totalSupplyUsd) * pos.market.supplyApy;
-          const borrowCost = totalBorrowUsd > 0 
-            ? (pos.borrowAssetsUsd / totalBorrowUsd) * pos.market.borrowApy 
-            : 0;
-          return acc + supplyContribution - borrowCost;
-        }
-        return acc;
-      }, 0)
+  const lastFetchedDisplay = lastFetched
+    ? (() => {
+        const seconds = Math.floor((Date.now() - lastFetched) / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        return `${Math.floor(seconds / 60)}m ago`;
+      })()
     : null;
+
+  const totalPositionCount = aavePositions.length + vaultPositions.length;
 
   return (
     <Layout>
       <SeoHead />
       <div className="container mx-auto px-4 py-6 max-w-6xl">
         <SeoContentBlock>
-          <h1>Earn Yield with DeFi Lending &amp; Staking</h1>
+          <h1>Earn Yield with DeFi Lending &amp; Vaults</h1>
           <p>
-            Crypto DeFi Bridge gives you access to <strong>DeFi staking</strong> and lending markets powered by Morpho Blue on Ethereum.
-            Supply your crypto assets to earn competitive APY, or borrow against your collateral at transparent rates — all non-custodial.
-          </p>
-          <h2>How DeFi Lending Works</h2>
-          <p>
-            When you supply tokens to a lending market, borrowers pay interest to use your liquidity. Your deposited assets
-            remain in audited smart contracts — Crypto DeFi Bridge never takes custody. Rates are determined by supply and demand,
-            giving you market-driven yield on idle assets.
-          </p>
-          <h2>Crypto Vaults &amp; Liquid Staking</h2>
-          <p>
-            <strong>Crypto vaults</strong> automate yield strategies so you can earn without active management.
-            <strong> Liquid staking</strong> lets you stake ETH while keeping a tradeable receipt token.
-            Both approaches are accessible through the markets listed below.
-          </p>
-          <h2>Borrow Against Your Holdings</h2>
-          <p>
-            Need liquidity without selling? Deposit collateral and borrow stablecoins or other assets.
-            Monitor your health factor to avoid liquidation, and repay at any time.
-          </p>
-          <p>
-            New to DeFi? Start by <Link to="/">swapping tokens</Link> or read our{' '}
-            <Link to="/docs">documentation</Link> to understand the risks.
-          </p>
-          <h2>Risk Disclaimer</h2>
-          <p>
-            Lending and borrowing involve smart-contract risk and liquidation risk. Collateral values can fluctuate,
-            and positions may be liquidated if health factors drop below safe thresholds. Always DYOR.
+            Supply and borrow crypto assets through <strong>Aave V3</strong> lending markets across
+            Ethereum, Arbitrum, Optimism, Polygon, Base, and Avalanche. Earn yield in <strong>Morpho vaults</strong> with automated strategies.
           </p>
         </SeoContentBlock>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -397,155 +262,118 @@ export default function Earn() {
                 </h1>
                 <Badge variant="outline" className="text-xs px-2 h-5 border-primary/40 text-primary bg-primary/10">
                   <Rocket className="w-3 h-3 mr-1" />
-                  Morpho Blue
+                  Aave V3
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Supply & borrow with permissionless lending markets
+                Supply & borrow across 6 chains • Morpho vaults
               </p>
             </div>
-            
+
             <div className="flex items-center gap-2 flex-wrap">
-              {enabledChains.length === 1 ? (
-                <Badge variant="outline" className="h-10 px-3 gap-2 text-sm font-medium">
-                  <ChainIcon chainId={enabledChains[0].chainId} size="sm" />
-                  {enabledChains[0].label}
-                </Badge>
-              ) : (
-                <Select
-                  value={selectedChainId?.toString() || 'all'}
-                  onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
-                >
-                  <SelectTrigger className="w-[160px] h-10">
-                    <SelectValue placeholder="Select chain" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
+              <Select
+                value={selectedChainId?.toString() || 'all'}
+                onValueChange={(val) => setSelectedChainId(val === 'all' ? undefined : parseInt(val))}
+              >
+                <SelectTrigger className="w-[160px] h-10">
+                  <SelectValue placeholder="Select chain" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <div className="flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4" />
+                      <span>All Chains</span>
+                    </div>
+                  </SelectItem>
+                  {LENDING_CHAINS.map(chain => (
+                    <SelectItem key={chain.id} value={chain.id.toString()}>
                       <div className="flex items-center gap-2">
-                        <LayoutGrid className="w-4 h-4" />
-                        <span>All Chains</span>
+                        <ChainIcon chainId={chain.id} size="sm" />
+                        <span>{chain.name}</span>
                       </div>
                     </SelectItem>
-                    {enabledChains.map(chain => (
-                      <SelectItem 
-                        key={chain.chainId} 
-                        value={chain.chainId.toString()}
-                      >
-                        <div className="flex items-center gap-2">
-                          <ChainIcon chainId={chain.chainId} size="sm" />
-                          <span>{chain.label}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+                  ))}
+                </SelectContent>
+              </Select>
 
               <Button
                 variant="outline"
                 size="icon"
-                onClick={() => {
-                  refreshMarkets();
-                  refreshPositions();
-                  refreshVaults();
-                }}
+                onClick={() => { refreshMarkets(); refreshPositions(); refreshVaults(); }}
                 disabled={marketsLoading || positionsLoading}
                 className="h-10 w-10"
               >
                 <RefreshCw className={cn("w-4 h-4", (marketsLoading || positionsLoading) && "animate-spin")} />
               </Button>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyDebugReport}
-                className="h-10 gap-2 text-muted-foreground"
-              >
-                {copiedDebug ? (
-                  <Check className="w-4 h-4 text-success" />
-                ) : (
-                  <Bug className="w-4 h-4" />
-                )}
-                <span className="hidden sm:inline">Copy Debug</span>
-              </Button>
             </div>
           </div>
 
-          {/* Supported chains badges — clickable to filter */}
+          {/* Chain badges — clickable filter */}
           <div className="flex items-center gap-2 flex-wrap">
             <Badge
               variant="outline"
               className={cn(
                 "h-7 px-3 gap-1.5 text-sm font-medium cursor-pointer transition-colors",
-                !selectedChainId ? "bg-primary/20 border-primary/50 text-primary" : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                !selectedChainId ? "bg-primary/20 border-primary/50 text-primary" : "border-border/50 text-muted-foreground hover:border-primary/30"
               )}
               onClick={() => setSelectedChainId(undefined)}
             >
               All Chains
             </Badge>
-            {getEnabledMorphoChains().map(chain => (
+            {LENDING_CHAINS.map(chain => (
               <Badge
-                key={chain.chainId}
+                key={chain.id}
                 variant="outline"
                 className={cn(
                   "h-7 px-3 gap-1.5 text-sm font-medium cursor-pointer transition-colors",
-                  selectedChainId === chain.chainId
+                  selectedChainId === chain.id
                     ? "bg-primary/20 border-primary/50 text-primary"
-                    : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                    : "border-border/50 text-muted-foreground hover:border-primary/30"
                 )}
-                onClick={() => setSelectedChainId(selectedChainId === chain.chainId ? undefined : chain.chainId)}
+                onClick={() => setSelectedChainId(selectedChainId === chain.id ? undefined : chain.id)}
               >
-                <ChainIcon chainId={chain.chainId} size="sm" />
-                {chain.label}
+                <ChainIcon chainId={chain.id} size="sm" />
+                {chain.name}
               </Badge>
             ))}
           </div>
 
-          {/* Wrong network warning with auto-switch */}
+          {/* Wrong network */}
           {isWrongNetwork && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-warning/10 border border-warning/30">
               <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-warning">Wrong Network</p>
                 <p className="text-xs text-muted-foreground">
-                  Earn is available on {getEnabledMorphoChains().map(c => c.label).join(', ')}.
+                  Earn is available on Ethereum, Arbitrum, Optimism, Polygon, Base, and Avalanche.
                 </p>
               </div>
-              <Button
-                size="sm"
-                onClick={() => handleSwitchChain(1)} // Default to Ethereum
-                className="gap-1.5"
-              >
+              <Button size="sm" onClick={() => handleSwitchChain(1)} className="gap-1.5">
                 Switch to Ethereum
               </Button>
             </div>
           )}
 
-          {/* Disclaimer Banner */}
+          {/* Disclaimer */}
           <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
             <Shield className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="text-xs text-foreground">
-                <strong>Non-custodial lending.</strong> All actions execute directly on Morpho Blue smart contracts.
+                <strong>Non-custodial lending.</strong> Markets powered by Aave V3. Vaults by Morpho Blue.
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                APY is variable and based on market utilization. Smart contract risk applies.
+                APY is variable. Smart contract risk applies. DYOR.
               </p>
             </div>
-            <Link
-              to="/docs"
-              className="text-xs text-primary hover:underline flex items-center gap-1"
-            >
-              Learn more
-              <ExternalLink className="w-3 h-3" />
+            <Link to="/docs" className="text-xs text-primary hover:underline flex items-center gap-1">
+              Learn more <ExternalLink className="w-3 h-3" />
             </Link>
           </div>
 
-          {/* How It Works */}
           <HowItWorksDiagram />
 
-          {/* User Dashboard */}
-          {isConnected && (positions.length > 0 || vaultPositions.length > 0) && (
+          {/* Dashboard */}
+          {isConnected && (totalPositionCount > 0) && (
             <motion.div
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -556,21 +384,11 @@ export default function Earn() {
                   <Wallet className="w-4 h-4 text-primary" />
                   Your Dashboard
                 </h2>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {positions.length + vaultPositions.length} position{positions.length + vaultPositions.length !== 1 ? 's' : ''}
-                  </Badge>
-                  {netApy !== null && (
-                    <Badge variant="outline" className={cn(
-                      "text-xs",
-                      netApy >= 0 ? "bg-success/10 text-success border-success/30" : "bg-warning/10 text-warning border-warning/30"
-                    )}>
-                      Net: {netApy >= 0 ? '+' : ''}{netApy.toFixed(2)}% APY
-                    </Badge>
-                  )}
-                </div>
+                <Badge variant="outline" className="text-xs">
+                  {totalPositionCount} position{totalPositionCount !== 1 ? 's' : ''}
+                </Badge>
               </div>
-              
+
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
@@ -592,23 +410,18 @@ export default function Earn() {
                   <div className="text-xs text-muted-foreground mb-1">Health Factor</div>
                   <div className={cn(
                     "text-lg font-semibold",
-                    aggregateHealthFactor === null ? "text-success" :
-                    aggregateHealthFactor > 1.5 ? "text-success" :
-                    aggregateHealthFactor > 1 ? "text-warning" :
-                    "text-destructive"
+                    lowestHealthFactor === null ? "text-success" :
+                    lowestHealthFactor > 1.5 ? "text-success" :
+                    lowestHealthFactor > 1 ? "text-warning" : "text-destructive"
                   )}>
-                    {aggregateHealthFactor === null ? '∞' : aggregateHealthFactor.toFixed(2)}
+                    {lowestHealthFactor === null ? '∞' : lowestHealthFactor.toFixed(2)}
                   </div>
                 </div>
               </div>
 
               {totalBorrowUsd > 0 && (
                 <div className="mt-4 pt-4 border-t border-border/30">
-                  <RiskBar 
-                    healthFactor={aggregateHealthFactor} 
-                    showLabel 
-                    size="md"
-                  />
+                  <RiskBar healthFactor={lowestHealthFactor} showLabel size="md" />
                 </div>
               )}
             </motion.div>
@@ -620,9 +433,9 @@ export default function Earn() {
               <TabsTrigger value="markets" className="gap-2">
                 <LayoutGrid className="w-4 h-4" />
                 Markets
-                {markets.length > 0 && (
+                {aaveMarkets.length > 0 && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    {markets.length}
+                    {aaveMarkets.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -638,22 +451,22 @@ export default function Earn() {
               <TabsTrigger value="positions" className="gap-2">
                 <List className="w-4 h-4" />
                 Positions
-                {(positions.length + vaultPositions.length) > 0 && (
+                {totalPositionCount > 0 && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    {positions.length + vaultPositions.length}
+                    {totalPositionCount}
                   </Badge>
                 )}
               </TabsTrigger>
             </TabsList>
 
-            {/* Markets Tab */}
+            {/* Markets Tab — Aave V3 */}
             <TabsContent value="markets" className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm">
                     <TrendingUp className="w-4 h-4 text-primary" />
-                    <span className="text-muted-foreground">Markets:</span>
-                    <span className="font-medium">{markets.length}</span>
+                    <span className="text-muted-foreground">Aave V3 Markets:</span>
+                    <span className="font-medium">{aaveMarkets.length}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
@@ -676,18 +489,17 @@ export default function Earn() {
                 </div>
               </div>
 
-              <MorphoMarketsTable
-                markets={markets}
+              <AaveMarketsTable
+                markets={aaveMarkets}
                 loading={marketsLoading}
                 error={marketsError}
                 onRefresh={refreshMarkets}
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
-                onMarketDetails={handleMarketDetails}
               />
             </TabsContent>
 
-            {/* Vaults Tab — filtered by selected chain */}
+            {/* Vaults Tab — Morpho */}
             <TabsContent value="vaults" className="space-y-4">
               <MorphoVaultsTable
                 vaults={vaults}
@@ -706,13 +518,13 @@ export default function Earn() {
                   <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">Connect Your Wallet</h3>
                   <p className="text-muted-foreground mb-4">
-                    Connect your wallet to view your Morpho positions across all chains
+                    Connect your wallet to view positions across all chains
                   </p>
                 </div>
               ) : positionsLoading ? (
                 <div className="space-y-3">
                   {[...Array(3)].map((_, i) => (
-                    <div key={`pos-skeleton-${i}`} className="glass rounded-xl p-4 animate-pulse">
+                    <div key={i} className="glass rounded-xl p-4 animate-pulse">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-muted" />
                         <div className="flex-1 space-y-2">
@@ -723,17 +535,15 @@ export default function Earn() {
                     </div>
                   ))}
                 </div>
-              ) : positions.length === 0 && vaultPositions.length === 0 ? (
+              ) : totalPositionCount === 0 ? (
                 <div className="glass rounded-xl p-8 text-center">
                   <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Positions Yet</h3>
                   <p className="text-muted-foreground mb-4">
-                    Start earning by supplying assets to Morpho markets or depositing into vaults
+                    Start earning by supplying assets to Aave markets or depositing into vaults
                   </p>
                   <div className="flex gap-2 justify-center">
-                    <Button onClick={() => setActiveTab('markets')}>
-                      Browse Markets
-                    </Button>
+                    <Button onClick={() => setActiveTab('markets')}>Browse Markets</Button>
                     <Button variant="outline" onClick={() => navigate('/')}>
                       <Repeat className="w-4 h-4 mr-1" />
                       Get Tokens via Swap
@@ -742,19 +552,73 @@ export default function Earn() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* Market Positions */}
-                  {positions.length > 0 && (
+                  {/* Chain Account Summaries */}
+                  {chainAccountData.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Account Health by Chain
+                      </h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {chainAccountData.map(data => (
+                          <div key={data.chainId} className="glass rounded-lg p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <ChainIcon chainId={data.chainId} size="sm" />
+                              <span className="text-sm font-medium">{data.chainName}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <div className="text-muted-foreground">Collateral</div>
+                                <div className="font-medium">{formatUsd(data.totalCollateralUsd)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Debt</div>
+                                <div className="font-medium text-warning">{formatUsd(data.totalDebtUsd)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Available</div>
+                                <div className="font-medium text-success">{formatUsd(data.availableBorrowsUsd)}</div>
+                              </div>
+                              <div>
+                                <div className="text-muted-foreground">Health</div>
+                                <div className={cn(
+                                  "font-medium",
+                                  data.healthFactor > 1e10 ? "text-success" :
+                                  data.healthFactor > 1.5 ? "text-success" :
+                                  data.healthFactor > 1 ? "text-warning" : "text-destructive"
+                                )}>
+                                  {data.healthFactor > 1e10 ? '∞' : data.healthFactor.toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Aave Positions */}
+                  {aavePositions.length > 0 && (
                     <div className="space-y-3">
                       <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                         <LayoutGrid className="w-4 h-4" />
-                        Market Positions ({positions.length})
+                        Aave Market Positions ({aavePositions.length})
                       </h3>
-                      {positions.map((position) => (
-                        <MorphoPositionCard
-                          key={`${position.chainId}-${position.marketId}`}
-                          position={position}
-                          onManage={handleManagePosition}
-                          onSwap={(chainId, symbol, address) => goToSwap(chainId, symbol, address)}
+                      {aavePositions.map(pos => (
+                        <AavePositionCard
+                          key={`${pos.chainId}-${pos.assetAddress}`}
+                          position={pos}
+                          onSupply={(p) => {
+                            if (p.market) handleSupply(p.market);
+                          }}
+                          onWithdraw={(p) => {
+                            // For now, go to Aave
+                            if (p.market?.protocolUrl) window.open(p.market.protocolUrl, '_blank');
+                          }}
+                          onRepay={(p) => {
+                            if (p.market?.protocolUrl) window.open(p.market.protocolUrl, '_blank');
+                          }}
+                          onSwap={(chainId, symbol, addr) => goToSwap(chainId, symbol, addr)}
                         />
                       ))}
                     </div>
@@ -767,7 +631,7 @@ export default function Earn() {
                         <Shield className="w-4 h-4" />
                         Vault Deposits ({vaultPositions.length})
                       </h3>
-                      {vaultPositions.map((vp) => (
+                      {vaultPositions.map(vp => (
                         <div
                           key={`${vp.chainId}-${vp.vaultAddress}`}
                           className="glass rounded-xl p-4 border border-primary/10"
@@ -791,39 +655,21 @@ export default function Earn() {
                                 {vp.assetsUsd > 0 ? `$${vp.assetsUsd.toFixed(2)}` : '—'}
                               </div>
                               {vp.vault && vp.vault.apy > 0 && (
-                                <div className="text-xs text-success">
-                                  {vp.vault.apy.toFixed(2)}% APY
-                                </div>
+                                <div className="text-xs text-success">{vp.vault.apy.toFixed(2)}% APY</div>
                               )}
                             </div>
                           </div>
-                          {/* Manage buttons */}
                           {vp.vault && (
                             <div className="flex gap-2 mt-3">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 gap-1"
-                                onClick={() => handleVaultAction(vp.vault!, 'deposit')}
-                              >
+                              <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'deposit')}>
                                 <TrendingUp className="w-3 h-3" />
                                 Deposit More
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 gap-1"
-                                onClick={() => handleVaultAction(vp.vault!, 'withdraw')}
-                              >
+                              <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'withdraw')}>
                                 <Wallet className="w-3 h-3" />
                                 Withdraw
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="gap-1"
-                                onClick={() => goToSwap(vp.chainId, vp.vault!.asset.symbol, vp.vault!.asset.address)}
-                              >
+                              <Button size="sm" variant="ghost" className="gap-1" onClick={() => goToSwap(vp.chainId, vp.vault!.asset.symbol, vp.vault!.asset.address)}>
                                 <Repeat className="w-3 h-3" />
                                 Swap
                               </Button>
@@ -840,83 +686,38 @@ export default function Earn() {
 
           {/* Footer */}
           <div className="text-center text-xs text-muted-foreground pt-4 border-t border-border/30">
-            <p>Powered by Morpho Blue protocol. Data via official Morpho API.</p>
+            <p>Markets powered by Aave V3 • Vaults by Morpho Blue</p>
             <p className="mt-1 flex items-center justify-center gap-3">
-              <a 
-                href="https://docs.morpho.org" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                Documentation
-              </a>
+              <a href="https://aave.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Aave</a>
               <span>•</span>
-              <a 
-                href="https://app.morpho.org" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                Official App
-              </a>
+              <a href="https://app.morpho.org" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Morpho</a>
+              <span>•</span>
+              <Link to="/docs" className="text-primary hover:underline">Docs</Link>
             </p>
           </div>
         </motion.div>
       </div>
 
-      {/* Supply Modal */}
-      <MorphoSupplyModal
-        isOpen={isSupplyModalOpen}
+      {/* Modals */}
+      <AaveSupplyModal
+        open={isSupplyModalOpen}
         onClose={handleCloseModal}
         market={selectedMarket}
-        existingSupply={selectedPosition?.supplyAssets}
-        onSuccess={() => {
-          refreshMarkets();
-          refreshPositions();
-          refreshVaults();
-        }}
       />
 
-      {/* Borrow Modal */}
-      <MorphoBorrowModal
-        isOpen={isBorrowModalOpen}
+      <AaveBorrowModal
+        open={isBorrowModalOpen}
         onClose={handleCloseModal}
         market={selectedMarket}
-        existingCollateral={selectedPosition?.collateral}
-        existingCollateralUsd={selectedPosition?.collateralUsd}
-        existingBorrow={selectedPosition?.borrowAssets}
-        existingBorrowUsd={selectedPosition?.borrowAssetsUsd}
-        onSuccess={() => {
-          refreshMarkets();
-          refreshPositions();
-        }}
+        accountData={accountData}
       />
 
-      {/* Market Details Drawer */}
-      <MarketDetailsDrawer
-        isOpen={isDetailsDrawerOpen}
-        onClose={() => setIsDetailsDrawerOpen(false)}
-        market={selectedMarket}
-        onSupply={() => {
-          setIsDetailsDrawerOpen(false);
-          handleSupply(selectedMarket!);
-        }}
-        onBorrow={() => {
-          setIsDetailsDrawerOpen(false);
-          handleBorrow(selectedMarket!);
-        }}
-      />
-
-      {/* Vault Action Modal */}
       <MorphoVaultActionModal
         isOpen={isVaultModalOpen}
         onClose={handleCloseModal}
         vault={selectedVault}
         userPosition={selectedVaultPosition}
-        onSuccess={() => {
-          refreshVaults();
-          refreshPositions();
-        }}
+        onSuccess={() => { refreshVaults(); refreshPositions(); }}
       />
     </Layout>
   );
