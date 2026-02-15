@@ -3,19 +3,21 @@ import { motion } from 'framer-motion';
 import { useAccount } from 'wagmi';
 import { useNavigate } from 'react-router-dom';
 import {
-  Wallet, RefreshCw, Loader2, ChevronDown, ChevronUp, AlertCircle,
-  Search, ArrowRightLeft, Coins, Link2, EyeOff, Eye,
+  Wallet, Search, ArrowRightLeft, Coins, Link2, EyeOff, Eye,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { getChains, Chain, lastFetchMethod, lastFetchDebug } from '@/lib/lifiClient';
-import { usePortfolioTotal, PortfolioTokenBalance } from '@/hooks/usePortfolioTotal';
+import { useBalances, PortfolioTokenBalance } from '@/hooks/useBalances';
 import { buildSwapLink } from '@/lib/swapDeepLink';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
+import { BalanceSyncingState } from '@/components/common/BalanceSyncingState';
 
 // Testnet IDs to exclude from chain filter tabs
 const TESTNET_IDS = new Set([11155111]);
@@ -27,7 +29,10 @@ const PORTFOLIO_CHAIN_IDS = SUPPORTED_CHAINS
 export default function Portfolio() {
   const { address, isConnected } = useAccount();
   const navigate = useNavigate();
-  const { totalUSD, loading, lastUpdated, error, tokenBalances, balancesByChain, refresh, chainIds } = usePortfolioTotal();
+  const {
+    totalUSD, isLoading, lastUpdated, error, tokenBalances,
+    balancesByChain, refreshBalances, chainIds,
+  } = useBalances();
   const [selectedChainFilter, setSelectedChainFilter] = useState<number | 'all'>('all');
   const [chains, setChains] = useState<Chain[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
@@ -58,26 +63,22 @@ export default function Portfolio() {
     return tokens;
   }, [tokenBalances, selectedChainFilter, searchQuery, hideDust]);
 
-  // Calculate filtered total
   const filteredTotal = useMemo(() => {
     return filteredTokens.reduce((sum, t) => sum + t.balanceUSD, 0);
   }, [filteredTokens]);
 
-  // Build chain map for icons/names
   const chainMap = useMemo(() => {
     const map = new Map<number, Chain>();
     chains.forEach((c) => map.set(c.id, c));
     return map;
   }, [chains]);
 
-  // Show all non-testnet supported chains as filter tabs
   const chainFilterTabs = useMemo(() => {
     return chains
       .filter((c) => PORTFOLIO_CHAIN_IDS.includes(c.id))
       .filter((chain, index, self) => index === self.findIndex((c) => c.id === chain.id));
   }, [chains]);
 
-  // Stats
   const uniqueChains = useMemo(() => new Set(tokenBalances.map((t) => t.chainId)).size, [tokenBalances]);
   const dustCount = useMemo(() => tokenBalances.filter((t) => t.balanceUSD < 1 && t.balanceUSD > 0).length, [tokenBalances]);
 
@@ -119,20 +120,18 @@ export default function Portfolio() {
               <h1 className="text-3xl font-bold mb-1">Portfolio</h1>
               <p className="text-muted-foreground font-mono text-sm">{address}</p>
             </div>
-            <Button onClick={() => refresh()} disabled={loading} variant="outline" size="sm">
-              <RefreshCw className={cn('w-4 h-4 mr-2', loading && 'animate-spin')} />
-              Refresh
-            </Button>
+            <SyncBalancesButton
+              isLoading={isLoading}
+              lastUpdated={lastUpdated}
+              onRefresh={refreshBalances}
+            />
           </div>
 
           {/* Error banner */}
-          {error && !loading && (
-            <div className="flex items-center gap-3 p-4 mb-6 rounded-xl bg-destructive/10 border border-destructive/30 text-sm">
-              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
-              <span className="flex-1 text-destructive">{error}</span>
-              <Button onClick={() => refresh()} variant="outline" size="sm" className="text-xs">
-                Retry
-              </Button>
+          {error && !isLoading && tokenBalances.length > 0 && (
+            <div className="flex items-center gap-3 p-4 mb-6 rounded-xl bg-warning/10 border border-warning/30 text-sm">
+              <span className="flex-1 text-warning">{error}</span>
+              <SyncBalancesButton isLoading={isLoading} lastUpdated={lastUpdated} onRefresh={refreshBalances} variant="compact" />
             </div>
           )}
 
@@ -157,11 +156,11 @@ export default function Portfolio() {
               <div className="text-2xl font-bold">{uniqueChains}</div>
             </div>
             <div className="glass rounded-xl p-4">
-              <div className="text-xs text-muted-foreground mb-1">Last Updated</div>
+              <div className="text-xs text-muted-foreground mb-1">Last Synced</div>
               <div className="text-sm font-medium">
                 {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
               </div>
-              {loading && <Loader2 className="w-3 h-3 animate-spin text-primary mt-1" />}
+              <SyncBalancesButton isLoading={isLoading} lastUpdated={lastUpdated} onRefresh={refreshBalances} variant="compact" className="mt-1" />
             </div>
           </div>
 
@@ -235,7 +234,7 @@ export default function Portfolio() {
                   <p><span className="text-foreground">REST debug:</span> {lastFetchDebug.url ? `${lastFetchDebug.status} → ${lastFetchDebug.url}` : 'n/a'}</p>
                   {lastFetchDebug.error && <p><span className="text-foreground">Fetch error:</span> {lastFetchDebug.error}</p>}
                   <p><span className="text-foreground">Chains in response:</span> {Object.keys(balancesByChain).join(', ') || 'none'}</p>
-                  <p><span className="text-foreground">Balances returned:</span> {Object.values(balancesByChain).reduce((s, a) => s + a.length, 0)}</p>
+                  <p><span className="text-foreground">Balances returned:</span> {Object.values(balancesByChain).reduce((s: number, a: any[]) => s + a.length, 0)}</p>
                   <p><span className="text-foreground">Total tokens parsed:</span> {tokenBalances.length}</p>
                   <p><span className="text-foreground">Total USD:</span> ${totalUSD.toFixed(2)}</p>
                   <p><span className="text-foreground">Error:</span> {error || 'none'}</p>
@@ -251,21 +250,15 @@ export default function Portfolio() {
           )}
 
           {/* Balances list */}
-          {loading && tokenBalances.length === 0 ? (
-            <div className="glass rounded-2xl p-12 text-center">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
-              <p className="text-muted-foreground">Loading balances across {chainIds.length} chains...</p>
-            </div>
-          ) : filteredTokens.length === 0 ? (
-            <div className="glass rounded-2xl p-12 text-center">
-              <Wallet className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-              <p className="text-muted-foreground">
-                {searchQuery ? 'No tokens match your search' : error
-                  ? 'Unable to load balances right now'
-                  : `No tokens found on ${selectedChainFilter === 'all' ? 'any chain' : chainMap.get(selectedChainFilter as number)?.name || 'selected chain'}`}
-              </p>
-              <p className="text-xs text-muted-foreground/60 mt-2">Try selecting a different chain or click Refresh</p>
-            </div>
+          {filteredTokens.length === 0 ? (
+            <BalanceSyncingState
+              isLoading={isLoading}
+              error={error}
+              onRefresh={refreshBalances}
+              chainName={selectedChainFilter !== 'all' ? chainMap.get(selectedChainFilter as number)?.name : undefined}
+              walletAddress={address}
+              searchActive={!!searchQuery.trim()}
+            />
           ) : (
             <div className="glass rounded-2xl divide-y divide-border overflow-hidden">
               {filteredTokens.map((item, idx) => {
@@ -278,7 +271,6 @@ export default function Portfolio() {
                     transition={{ delay: Math.min(idx * 0.02, 0.5) }}
                     className="flex items-center gap-3 p-3 sm:p-4 hover:bg-muted/30 transition-colors group"
                   >
-                    {/* Token icon – stable colored circle, no remote images */}
                     <div className="relative flex-shrink-0">
                       <TokenIconStable symbol={item.token.symbol} size="lg" />
                       {chain && (
@@ -289,14 +281,12 @@ export default function Portfolio() {
                         />
                       )}
                     </div>
-                    {/* Token info */}
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm sm:text-base">{item.token.symbol}</div>
                       <div className="text-xs text-muted-foreground truncate">
                         {item.token.name} • {chain?.name || `Chain ${item.chainId}`}
                       </div>
                     </div>
-                    {/* Amounts */}
                     <div className="text-right flex-shrink-0">
                       <div className="font-medium text-sm sm:text-base">{item.balanceFormatted}</div>
                       <div className="text-xs text-muted-foreground">
@@ -307,7 +297,6 @@ export default function Portfolio() {
                             : '—'}
                       </div>
                     </div>
-                    {/* Swap button */}
                     <button
                       onClick={() => handleSwap(item)}
                       className="flex-shrink-0 p-2 rounded-lg opacity-0 group-hover:opacity-100 sm:opacity-60 hover:opacity-100 hover:bg-primary/10 text-primary transition-all"
@@ -328,7 +317,6 @@ export default function Portfolio() {
             </div>
           )}
 
-          {/* Swap CTA at bottom */}
           {tokenBalances.length > 0 && (
             <div className="mt-6 text-center">
               <Button onClick={() => navigate('/')} variant="outline" size="sm">
@@ -342,19 +330,3 @@ export default function Portfolio() {
     </Layout>
   );
 }
-
-/*
- * Manual test instructions:
- * 1. Connect a wallet with Polygon balances (WBTC, USDT, POL, etc.)
- * 2. Navigate to /portfolio
- * 3. Enable debug section (auto in DEV mode)
- * 4. Confirm:
- *    - Balances returned > 0
- *    - Total tokens parsed > 0
- *    - Fetch method shows "on-chain-rpc" or "lifi-rest"
- *    - Total Value is non-zero
- * 5. Click chain filter tabs and verify filtering works
- * 6. Use search bar to find specific tokens
- * 7. Toggle "Hide <$1" to filter dust
- * 8. Click Swap button on a token row to verify swap deep link
- */

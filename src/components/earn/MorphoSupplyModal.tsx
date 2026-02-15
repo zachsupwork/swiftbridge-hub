@@ -64,7 +64,8 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
-import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
+import { useBalances } from '@/hooks/useBalances';
+import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
 interface MorphoSupplyModalProps {
   isOpen: boolean;
@@ -84,7 +85,7 @@ export function MorphoSupplyModal({
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const navigate = useNavigate();
-  const { tokenBalances: portfolioBalances } = usePortfolioTotal();
+  const { tokenBalances: portfolioBalances, isLoading: balSyncing, lastUpdated: balLastUpdated, refreshBalances } = useBalances();
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
@@ -380,12 +381,20 @@ export function MorphoSupplyModal({
                     </Tooltip>
                   </TooltipProvider>
                 </label>
-                <button
-                  onClick={handleSetMax}
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                >
-                  Balance: {parseFloat(balanceFormatted).toFixed(4)} {token.symbol}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSetMax}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    Balance: {balSyncing && !tokenBalance ? '— (syncing)' : `${parseFloat(balanceFormatted).toFixed(4)} ${token.symbol}`}
+                  </button>
+                  <SyncBalancesButton
+                    isLoading={balSyncing}
+                    lastUpdated={balLastUpdated}
+                    onRefresh={() => { refreshBalances(); refetchBalance(); }}
+                    variant="inline"
+                  />
+                </div>
               </div>
               <div className="relative">
                 <Input

@@ -21,6 +21,8 @@ import {
   TransactionValidationError,
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
+import { useBalances } from '@/hooks/useBalances';
+import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
 /** Detect RPC / receipt polling errors that should get friendly messaging */
 function isRpcOrReceiptError(msg: string): boolean {
@@ -78,6 +80,7 @@ export function SwapCard() {
   const publicClient = usePublicClient();
   const { switchChain } = useSwitchChain();
   const wallets = useMultiWallet();
+  const { isLoading: balanceSyncing, lastUpdated: balanceLastUpdated, refreshBalances } = useBalances();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -502,14 +505,28 @@ export function SwapCard() {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs text-muted-foreground">Amount</label>
-              {maxFromAmount && (
-                <button
-                  onClick={() => setFromAmount(maxFromAmount)}
-                  className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
-                >
-                  Balance: {parseFloat(maxFromAmount) < 0.0001 ? parseFloat(maxFromAmount).toFixed(8) : parseFloat(maxFromAmount).toFixed(4)} {fromToken?.symbol ?? ''} · MAX
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {maxFromAmount ? (
+                  <button
+                    onClick={() => setFromAmount(maxFromAmount)}
+                    className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
+                  >
+                    Balance: {parseFloat(maxFromAmount) < 0.0001 ? parseFloat(maxFromAmount).toFixed(8) : parseFloat(maxFromAmount).toFixed(4)} {fromToken?.symbol ?? ''} · MAX
+                  </button>
+                ) : fromToken && isConnected ? (
+                  <span className="text-[11px] text-muted-foreground">
+                    Balance: {balanceSyncing ? '— (syncing)' : '0'}
+                  </span>
+                ) : null}
+                {isConnected && (
+                  <SyncBalancesButton
+                    isLoading={balanceSyncing}
+                    lastUpdated={balanceLastUpdated}
+                    onRefresh={refreshBalances}
+                    variant="inline"
+                  />
+                )}
+              </div>
             </div>
             <input
               type="number"
