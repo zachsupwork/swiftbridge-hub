@@ -85,9 +85,18 @@ export function useMorphoVaults(): UseMorphoVaultsResult {
       }
 
       if (currentId === fetchIdRef.current && isMountedRef.current) {
+        // Deduplicate by chainId+address
+        const seen = new Set<string>();
+        const dedupedVaults = allVaults.filter(v => {
+          const key = `${v.chainId}:${v.address.toLowerCase()}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
         // Sort by TVL descending
-        allVaults.sort((a, b) => b.totalAssetsUsd - a.totalAssetsUsd);
-        setVaults(allVaults);
+        dedupedVaults.sort((a, b) => b.totalAssetsUsd - a.totalAssetsUsd);
+        setVaults(dedupedVaults);
         setVaultPositions(allPositions);
       }
     } catch (err: unknown) {

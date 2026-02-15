@@ -210,8 +210,20 @@ export async function fetchMorphoVaults(options: {
       marketsCount: v.state.allocation?.length || 0,
     }));
 
-  console.log(`[Morpho Vaults] ✓ Loaded ${vaults.length} vaults from ${config.label}`);
-  return vaults;
+  // Deduplicate by address
+  const seen = new Set<string>();
+  const deduped = vaults.filter(v => {
+    const key = v.address.toLowerCase();
+    if (seen.has(key)) {
+      console.warn(`[Morpho Vaults] Duplicate vault filtered: ${v.name} (${key}) on ${config.label}`);
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+
+  console.log(`[Morpho Vaults] ✓ Loaded ${deduped.length} unique vaults from ${config.label}`);
+  return deduped;
 }
 
 export async function fetchMorphoVaultPositions(options: {

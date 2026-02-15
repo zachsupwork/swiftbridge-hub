@@ -177,13 +177,26 @@ export function useMorphoMarkets(): UseMorphoMarketsResult {
 
       // Only update state if this is the latest fetch and component is still mounted
       if (currentFetchId === fetchIdRef.current && isMountedRef.current) {
-        const sorted = sortMarkets(allMarkets);
+        // Defensive dedupe by chainId+uniqueKey across all chains
+        const seen = new Set<string>();
+        const deduped = allMarkets.filter(m => {
+          const key = `${m.chainId}:${m.uniqueKey}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+
+        if (deduped.length !== allMarkets.length) {
+          console.warn(`[Morpho] Removed ${allMarkets.length - deduped.length} cross-chain duplicates`);
+        }
+
+        const sorted = sortMarkets(deduped);
         setMarkets(sorted);
         setLastFetched(Date.now());
         setFetchDurationMs(Date.now() - startTime);
         setError(null);
 
-        console.log(`[Morpho] ✓ Loaded ${allMarkets.length} markets in ${Date.now() - startTime}ms`);
+        console.log(`[Morpho] ✓ Loaded ${deduped.length} unique markets in ${Date.now() - startTime}ms`);
       }
     } catch (err: unknown) {
       console.error('[Morpho] Failed to fetch markets:', err);

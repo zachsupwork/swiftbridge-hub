@@ -641,26 +641,77 @@ export default function Earn() {
                     </div>
                   ))}
                 </div>
-              ) : positions.length === 0 ? (
+              ) : positions.length === 0 && vaultPositions.length === 0 ? (
                 <div className="glass rounded-xl p-8 text-center">
                   <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Positions Yet</h3>
                   <p className="text-muted-foreground mb-4">
-                    Start earning by supplying assets to Morpho markets
+                    Start earning by supplying assets to Morpho markets or depositing into vaults
                   </p>
                   <Button onClick={() => setActiveTab('markets')}>
                     Browse Markets
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {positions.map((position) => (
-                    <MorphoPositionCard
-                      key={`${position.chainId}-${position.marketId}`}
-                      position={position}
-                      onManage={handleManagePosition}
-                    />
-                  ))}
+                <div className="space-y-6">
+                  {/* Market Positions */}
+                  {positions.length > 0 && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <LayoutGrid className="w-4 h-4" />
+                        Market Positions ({positions.length})
+                      </h3>
+                      {positions.map((position) => (
+                        <MorphoPositionCard
+                          key={`${position.chainId}-${position.marketId}`}
+                          position={position}
+                          onManage={handleManagePosition}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Vault Positions */}
+                  {vaultPositions.length > 0 && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                        <Shield className="w-4 h-4" />
+                        Vault Deposits ({vaultPositions.length})
+                      </h3>
+                      {vaultPositions.map((vp) => (
+                        <div
+                          key={`${vp.chainId}-${vp.vaultAddress}`}
+                          className="glass rounded-xl p-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                <Shield className="w-5 h-5 text-primary" />
+                              </div>
+                              <div>
+                                <div className="font-medium text-sm">{vp.vault?.name || 'Vault'}</div>
+                                <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                  <ChainIcon chainId={vp.chainId} size="sm" />
+                                  {vp.vault?.asset.symbol || '???'}
+                                  {vp.vault?.curator && <span>• {vp.vault.curator}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-medium text-sm text-primary">
+                                {vp.assetsUsd > 0 ? `$${vp.assetsUsd.toFixed(2)}` : '—'}
+                              </div>
+                              {vp.vault && vp.vault.apy > 0 && (
+                                <div className="text-xs text-success">
+                                  {vp.vault.apy.toFixed(2)}% APY
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>
