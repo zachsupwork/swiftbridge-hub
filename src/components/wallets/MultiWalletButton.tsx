@@ -8,8 +8,9 @@ import { useBitcoinWallet, useMultiWallet, shortenAddress, WalletType } from '@/
 import { isChainSupported, getChainName } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
+import { useBalances } from '@/hooks/useBalances';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
 const WALLET_CONFIG: Record<WalletType, { label: string; color: string; bgColor: string }> = {
   evm: { label: 'EVM', color: 'text-blue-400', bgColor: 'bg-blue-500/10' },
@@ -30,7 +31,7 @@ export function MultiWalletButton() {
 
   const { address: evmAddr, chainId: currentChainId, isConnected: evmConnected } = useAccount();
   const nativeBalance = useBalance({ address: evmAddr });
-  const { totalUSD: portfolioTotal, loading: portfolioLoading, tokenBalances, refresh: refreshPortfolio } = usePortfolioTotal();
+  const { totalUSD: portfolioTotal, isLoading: portfolioLoading, tokenBalances, refreshBalances, lastUpdated } = useBalances();
   const navigate = useNavigate();
   
   const { disconnect: disconnectEvm } = useDisconnect();
@@ -196,11 +197,19 @@ export function MultiWalletButton() {
                     )}
                   </div>
                 )}
-                <div className="text-xs mt-1.5">
-                  <span className="text-muted-foreground">Portfolio: </span>
-                  <span className="text-foreground font-semibold">
-                    {portfolioLoading ? '...' : `$${portfolioTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  </span>
+                <div className="flex items-center justify-between mt-1.5">
+                  <div className="text-xs">
+                    <span className="text-muted-foreground">Portfolio: </span>
+                    <span className="text-foreground font-semibold">
+                      {portfolioLoading ? '...' : `$${portfolioTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                    </span>
+                  </div>
+                  <SyncBalancesButton
+                    isLoading={portfolioLoading}
+                    lastUpdated={lastUpdated}
+                    onRefresh={refreshBalances}
+                    variant="inline"
+                  />
                 </div>
               </div>
 
