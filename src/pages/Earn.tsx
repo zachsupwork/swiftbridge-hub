@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   RefreshCw, 
@@ -77,7 +77,10 @@ export default function Earn() {
   const isWrongNetwork = isConnected && !enabledChainIds.has(walletChainId);
 
   const [copiedDebug, setCopiedDebug] = useState(false);
-  const [activeTab, setActiveTab] = useState('markets');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'markets';
+  const initialChainId = searchParams.get('chainId') ? parseInt(searchParams.get('chainId')!) : undefined;
+  const [activeTab, setActiveTab] = useState(initialTab);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
   // Modal state - separate for supply, borrow, and details
@@ -127,6 +130,13 @@ export default function Earn() {
 
   // Get only enabled chains
   const enabledChains = availableChains;
+
+  // Sync chain filter from URL param
+  useEffect(() => {
+    if (initialChainId && enabledChainIds.has(initialChainId)) {
+      setSelectedChainId(initialChainId);
+    }
+  }, []);
 
   // Calculate aggregate health factor
   const aggregateHealthFactor = positions.reduce((acc, pos) => {
@@ -733,6 +743,29 @@ export default function Earn() {
                               )}
                             </div>
                           </div>
+                          {/* Manage buttons */}
+                          {vp.vault && (
+                            <div className="flex gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 gap-1"
+                                onClick={() => handleVaultAction(vp.vault!, 'deposit')}
+                              >
+                                <TrendingUp className="w-3 h-3" />
+                                Deposit More
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 gap-1"
+                                onClick={() => handleVaultAction(vp.vault!, 'withdraw')}
+                              >
+                                <Wallet className="w-3 h-3" />
+                                Withdraw
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

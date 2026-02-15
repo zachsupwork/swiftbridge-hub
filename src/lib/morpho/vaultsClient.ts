@@ -107,7 +107,7 @@ const VAULT_POSITIONS_QUERY = `
     vaultPositions(
       first: $first
       where: {
-        userAddress: $userAddress
+        userAddress_in: [$userAddress]
         chainId_in: [$chainId]
       }
     ) {
@@ -122,6 +122,9 @@ const VAULT_POSITIONS_QUERY = `
             decimals
             name
             logoURI
+          }
+          chain {
+            id
           }
           state {
             totalAssetsUsd

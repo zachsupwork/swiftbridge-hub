@@ -7,7 +7,7 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRightLeft, ArrowRight, TrendingUp, ExternalLink, Copy } from 'lucide-react';
+import { X, ArrowRightLeft, ArrowRight, TrendingUp, ExternalLink, Copy, Vault } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TokenIconStable } from '@/components/common/TokenIconStable';
@@ -72,7 +72,12 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
 
   const handleEarn = (tb: PortfolioTokenBalance) => {
     onClose();
-    navigate(`/earn?token=${tb.token.symbol}&chainId=${tb.chainId}`);
+    navigate(`/earn?token=${tb.token.symbol}&chainId=${tb.chainId}&tab=markets`);
+  };
+
+  const handleVaults = (tb: PortfolioTokenBalance) => {
+    onClose();
+    navigate(`/earn?token=${tb.token.symbol}&chainId=${tb.chainId}&tab=vaults`);
   };
 
   const copyAddress = (addr: string) => {
@@ -169,11 +174,11 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
                         )}
 
                         {/* Actions */}
-                        <div className="flex gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 text-xs h-7 gap-1"
+                            className="text-xs h-7 gap-1"
                             onClick={() => handleSwap(tb)}
                           >
                             <ArrowRightLeft className="w-3 h-3" />
@@ -182,7 +187,7 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 text-xs h-7 gap-1"
+                            className="text-xs h-7 gap-1"
                             onClick={() => handleBridge(tb)}
                           >
                             <ArrowRight className="w-3 h-3" />
@@ -191,11 +196,20 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1 text-xs h-7 gap-1"
+                            className="text-xs h-7 gap-1"
                             onClick={() => handleEarn(tb)}
                           >
                             <TrendingUp className="w-3 h-3" />
-                            Earn
+                            Supply / Borrow
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 gap-1"
+                            onClick={() => handleVaults(tb)}
+                          >
+                            <Vault className="w-3 h-3" />
+                            Vaults
                           </Button>
                         </div>
                       </div>
