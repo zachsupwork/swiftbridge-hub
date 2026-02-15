@@ -2,17 +2,16 @@
  * Earn Page - Enhanced Morpho Blue lending interface
  * 
  * Features:
- * - Markets and Positions tabs
- * - In-app supply/borrow actions with platform fee
+ * - Markets, Vaults, and Positions tabs
+ * - In-app supply/borrow actions
  * - User positions dashboard with health monitoring
- * - Before/After simulation in action modals
- * - How It Works educational section
- * - Debug report for troubleshooting
- * - Auto-refresh every 30 seconds
+ * - Auto chain switch (no popup)
+ * - Swap CTA when balance is low
+ * - Vault chain filtering synced with market filter
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   RefreshCw, 
@@ -29,8 +28,10 @@ import {
   ExternalLink,
   Shield,
   Info,
+  ArrowRight,
+  Repeat,
 } from 'lucide-react';
-import { useAccount, useChainId } from 'wagmi';
+import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 
 import { Layout } from '@/components/layout/Layout';
@@ -63,6 +64,7 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { buildSwapLink } from '@/lib/swapDeepLink';
 
 type ActionType = 'supply' | 'withdraw' | 'borrow' | 'repay';
 
@@ -71,6 +73,8 @@ const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 export default function Earn() {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+  const navigate = useNavigate();
 
   // Multi-chain: check if on any enabled Morpho chain
   const enabledChainIds = new Set(getEnabledMorphoChains().map(c => c.chainId));
@@ -83,7 +87,7 @@ export default function Earn() {
   const [activeTab, setActiveTab] = useState(initialTab);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Modal state - separate for supply, borrow, and details
+  // Modal state
   const [selectedMarket, setSelectedMarket] = useState<MorphoMarket | null>(null);
   const [selectedPosition, setSelectedPosition] = useState<MorphoPositionWithHealth | null>(null);
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
@@ -118,9 +122,9 @@ export default function Earn() {
     totalCollateralUsd,
   } = useMorphoPositions();
 
-  // Fetch vaults
+  // Fetch vaults — sync chain filter
   const {
-    vaults,
+    vaults: allVaults,
     vaultPositions,
     loading: vaultsLoading,
     error: vaultsError,
@@ -128,7 +132,11 @@ export default function Earn() {
     totalDepositedUsd,
   } = useMorphoVaults();
 
-  // Get only enabled chains
+  // Filter vaults by selected chain
+  const vaults = selectedChainId
+    ? allVaults.filter(v => v.chainId === selectedChainId)
+    : allVaults;
+
   const enabledChains = availableChains;
 
   // Sync chain filter from URL param
@@ -181,6 +189,17 @@ export default function Earn() {
     };
   }, [refreshMarkets, refreshPositions, isConnected]);
 
+  // Auto switch chain helper — switches without popup
+  const handleSwitchChain = useCallback(async (targetChainId: number) => {
+    try {
+      await switchChainAsync({ chainId: targetChainId });
+      toast({ title: 'Network Switched', description: `Switched to ${getMorphoChainConfig(targetChainId)?.label || 'target network'}` });
+    } catch (err) {
+      console.error('[Earn] Chain switch failed:', err);
+      toast({ title: 'Switch Failed', description: 'Please switch network in your wallet.', variant: 'destructive' });
+    }
+  }, [switchChainAsync]);
+
   // Copy debug report
   const handleCopyDebugReport = useCallback(() => {
     const report = JSON.stringify({
@@ -207,37 +226,33 @@ export default function Earn() {
     setTimeout(() => setCopiedDebug(false), 2000);
   }, [debugReport, positions, totalSupplyUsd, totalBorrowUsd, totalCollateralUsd, aggregateHealthFactor, isConnected, address, walletChainId]);
 
-  // Handle supply action
-  const handleSupply = useCallback((market: MorphoMarket) => {
+  // Handle supply action — auto switch chain if needed
+  const handleSupply = useCallback(async (market: MorphoMarket) => {
     if (!isConnected) {
       toast({ title: 'Connect Wallet', description: 'Please connect your wallet to supply assets.', variant: 'destructive' });
       return;
     }
-    if (isWrongNetwork) {
-      const chainNames = getEnabledMorphoChains().map(c => c.label).join(', ');
-      toast({ title: 'Wrong Network', description: `Earn is available on ${chainNames}. Switch network to continue.`, variant: 'destructive' });
-      return;
+    if (walletChainId !== market.chainId) {
+      await handleSwitchChain(market.chainId);
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
     setIsSupplyModalOpen(true);
-  }, [isConnected, isWrongNetwork]);
+  }, [isConnected, walletChainId, handleSwitchChain]);
 
   // Handle borrow action
-  const handleBorrow = useCallback((market: MorphoMarket) => {
+  const handleBorrow = useCallback(async (market: MorphoMarket) => {
     if (!isConnected) {
       toast({ title: 'Connect Wallet', description: 'Please connect your wallet to borrow assets.', variant: 'destructive' });
       return;
     }
-    if (isWrongNetwork) {
-      const chainNames = getEnabledMorphoChains().map(c => c.label).join(', ');
-      toast({ title: 'Wrong Network', description: `Borrow is available on ${chainNames}. Switch network to continue.`, variant: 'destructive' });
-      return;
+    if (walletChainId !== market.chainId) {
+      await handleSwitchChain(market.chainId);
     }
     setSelectedMarket(market);
     setSelectedPosition(null);
     setIsBorrowModalOpen(true);
-  }, [isConnected, isWrongNetwork]);
+  }, [isConnected, walletChainId, handleSwitchChain]);
 
   // Handle market details
   const handleMarketDetails = useCallback((market: MorphoMarket) => {
@@ -245,13 +260,16 @@ export default function Earn() {
     setIsDetailsDrawerOpen(true);
   }, []);
 
-  // Handle manage position (from positions tab)
-  const handleManagePosition = useCallback((position: MorphoPositionWithHealth, action?: ActionType) => {
+  // Handle manage position
+  const handleManagePosition = useCallback(async (position: MorphoPositionWithHealth, action?: ActionType) => {
+    // Auto switch chain
+    if (walletChainId !== position.chainId) {
+      await handleSwitchChain(position.chainId);
+    }
     setSelectedPosition(position);
     if (position.market) {
       setSelectedMarket(position.market);
     }
-    // Use provided action or default based on position
     if (action === 'supply' || action === 'withdraw') {
       setIsSupplyModalOpen(true);
     } else if (action === 'borrow' || action === 'repay') {
@@ -261,21 +279,23 @@ export default function Earn() {
     } else {
       setIsSupplyModalOpen(true);
     }
-  }, []);
+  }, [walletChainId, handleSwitchChain]);
 
-  // Handle vault deposit/withdraw
-  const handleVaultAction = useCallback((vault: MorphoVault, action: 'deposit' | 'withdraw') => {
+  // Handle vault deposit/withdraw — auto switch chain
+  const handleVaultAction = useCallback(async (vault: MorphoVault, action: 'deposit' | 'withdraw') => {
     if (!isConnected) {
       toast({ title: 'Connect Wallet', description: 'Please connect your wallet first.', variant: 'destructive' });
       return;
     }
+    if (walletChainId !== vault.chainId) {
+      await handleSwitchChain(vault.chainId);
+    }
     setSelectedVault(vault);
     setVaultModalTab(action);
-    // Find user's position for this vault
     const pos = vaultPositions.find(vp => vp.vaultAddress.toLowerCase() === vault.address.toLowerCase() && vp.chainId === vault.chainId);
     setSelectedVaultPosition(pos || null);
     setIsVaultModalOpen(true);
-  }, [isConnected, vaultPositions]);
+  }, [isConnected, vaultPositions, walletChainId, handleSwitchChain]);
 
   // Close modals and refresh
   const handleCloseModal = useCallback(() => {
@@ -287,11 +307,22 @@ export default function Earn() {
     setSelectedPosition(null);
     setSelectedVault(null);
     setSelectedVaultPosition(null);
-    // Refresh data after action
     refreshMarkets();
     refreshPositions();
     refreshVaults();
   }, [refreshMarkets, refreshPositions, refreshVaults]);
+
+  // Navigate to swap with prefill
+  const goToSwap = useCallback((chainId: number, tokenSymbol: string, tokenAddress?: string) => {
+    const link = buildSwapLink({
+      chainId,
+      toTokenAddress: tokenAddress,
+      toTokenSymbol: tokenSymbol,
+      ref: 'earn',
+      action: 'swap',
+    });
+    navigate(link);
+  }, [navigate]);
 
   // Format USD values
   const formatUsd = (value: number) => {
@@ -301,7 +332,7 @@ export default function Earn() {
     return `$${value.toFixed(2)}`;
   };
 
-  // Net APY calculation (simplified)
+  // Net APY calculation
   const netApy = positions.length > 0 && totalSupplyUsd > 0
     ? positions.reduce((acc, pos) => {
         if (pos.market) {
@@ -375,7 +406,6 @@ export default function Earn() {
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Chain badge (single chain) or selector */}
               {enabledChains.length === 1 ? (
                 <Badge variant="outline" className="h-10 px-3 gap-2 text-sm font-medium">
                   <ChainIcon chainId={enabledChains[0].chainId} size="sm" />
@@ -417,6 +447,7 @@ export default function Earn() {
                 onClick={() => {
                   refreshMarkets();
                   refreshPositions();
+                  refreshVaults();
                 }}
                 disabled={marketsLoading || positionsLoading}
                 className="h-10 w-10"
@@ -424,7 +455,6 @@ export default function Earn() {
                 <RefreshCw className={cn("w-4 h-4", (marketsLoading || positionsLoading) && "animate-spin")} />
               </Button>
 
-              {/* Debug report button */}
               <Button
                 variant="ghost"
                 size="sm"
@@ -471,27 +501,23 @@ export default function Earn() {
             ))}
           </div>
 
-          {/* Wrong network warning */}
+          {/* Wrong network warning with auto-switch */}
           {isWrongNetwork && (
             <div className="flex items-center gap-3 p-4 rounded-xl bg-warning/10 border border-warning/30">
               <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-warning">Wrong Network</p>
                 <p className="text-xs text-muted-foreground">
-                  Earn is available on {getEnabledMorphoChains().map(c => c.label).join(', ')}. Switch network to continue.
+                  Earn is available on {getEnabledMorphoChains().map(c => c.label).join(', ')}.
                 </p>
               </div>
-              <ConnectButton.Custom>
-                {({ openChainModal, mounted }) => (
-                  <Button
-                    size="sm"
-                    onClick={() => { if (mounted && openChainModal) openChainModal(); }}
-                    className="gap-1.5"
-                  >
-                    Switch Network
-                  </Button>
-                )}
-              </ConnectButton.Custom>
+              <Button
+                size="sm"
+                onClick={() => handleSwitchChain(1)} // Default to Ethereum
+                className="gap-1.5"
+              >
+                Switch to Ethereum
+              </Button>
             </div>
           )}
 
@@ -518,8 +544,8 @@ export default function Earn() {
           {/* How It Works */}
           <HowItWorksDiagram />
 
-          {/* User Dashboard (if connected and has positions) */}
-          {isConnected && positions.length > 0 && (
+          {/* User Dashboard */}
+          {isConnected && (positions.length > 0 || vaultPositions.length > 0) && (
             <motion.div
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -532,7 +558,7 @@ export default function Earn() {
                 </h2>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
-                    {positions.length} position{positions.length !== 1 ? 's' : ''}
+                    {positions.length + vaultPositions.length} position{positions.length + vaultPositions.length !== 1 ? 's' : ''}
                   </Badge>
                   {netApy !== null && (
                     <Badge variant="outline" className={cn(
@@ -545,7 +571,7 @@ export default function Earn() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
                   <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
@@ -557,6 +583,10 @@ export default function Earn() {
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
                   <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Vault Deposits</div>
+                  <div className="text-lg font-semibold text-primary">{formatUsd(totalDepositedUsd)}</div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground mb-1">Health Factor</div>
@@ -572,7 +602,6 @@ export default function Earn() {
                 </div>
               </div>
 
-              {/* Risk bar for aggregate position */}
               {totalBorrowUsd > 0 && (
                 <div className="mt-4 pt-4 border-t border-border/30">
                   <RiskBar 
@@ -619,7 +648,6 @@ export default function Earn() {
 
             {/* Markets Tab */}
             <TabsContent value="markets" className="space-y-4">
-              {/* Stats row */}
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm">
@@ -648,7 +676,6 @@ export default function Earn() {
                 </div>
               </div>
 
-              {/* Markets Table */}
               <MorphoMarketsTable
                 markets={markets}
                 loading={marketsLoading}
@@ -660,7 +687,7 @@ export default function Earn() {
               />
             </TabsContent>
 
-            {/* Vaults Tab */}
+            {/* Vaults Tab — filtered by selected chain */}
             <TabsContent value="vaults" className="space-y-4">
               <MorphoVaultsTable
                 vaults={vaults}
@@ -703,9 +730,15 @@ export default function Earn() {
                   <p className="text-muted-foreground mb-4">
                     Start earning by supplying assets to Morpho markets or depositing into vaults
                   </p>
-                  <Button onClick={() => setActiveTab('markets')}>
-                    Browse Markets
-                  </Button>
+                  <div className="flex gap-2 justify-center">
+                    <Button onClick={() => setActiveTab('markets')}>
+                      Browse Markets
+                    </Button>
+                    <Button variant="outline" onClick={() => navigate('/')}>
+                      <Repeat className="w-4 h-4 mr-1" />
+                      Get Tokens via Swap
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -721,6 +754,7 @@ export default function Earn() {
                           key={`${position.chainId}-${position.marketId}`}
                           position={position}
                           onManage={handleManagePosition}
+                          onSwap={(chainId, symbol, address) => goToSwap(chainId, symbol, address)}
                         />
                       ))}
                     </div>
@@ -736,7 +770,7 @@ export default function Earn() {
                       {vaultPositions.map((vp) => (
                         <div
                           key={`${vp.chainId}-${vp.vaultAddress}`}
-                          className="glass rounded-xl p-4"
+                          className="glass rounded-xl p-4 border border-primary/10"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -783,6 +817,15 @@ export default function Earn() {
                               >
                                 <Wallet className="w-3 h-3" />
                                 Withdraw
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="gap-1"
+                                onClick={() => goToSwap(vp.chainId, vp.vault!.asset.symbol, vp.vault!.asset.address)}
+                              >
+                                <Repeat className="w-3 h-3" />
+                                Swap
                               </Button>
                             </div>
                           )}
@@ -834,7 +877,7 @@ export default function Earn() {
         }}
       />
 
-      {/* Borrow Modal (handles collateral supply inline) */}
+      {/* Borrow Modal */}
       <MorphoBorrowModal
         isOpen={isBorrowModalOpen}
         onClose={handleCloseModal}

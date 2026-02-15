@@ -5,9 +5,9 @@
  * Uses blue-api.morpho.org/graphql (no API key required).
  * 
  * Key fixes:
- * - Pagination to fetch ALL markets (not just first 50)
- * - Robust deduplication by uniqueKey per chain
- * - Correct field mapping from API response
+ * - No orderBy in query to avoid API returning duplicate entries
+ * - Single large fetch instead of pagination (dedup handles rest)
+ * - Robust BigInt parsing with safeBigInt helper
  */
 
 import { MORPHO_API_URL, getMorphoChainConfig } from './config';
@@ -40,15 +40,16 @@ function getTokenLogo(symbol: string, logoUri?: string): string {
   return TOKEN_LOGOS[normalized] || GENERIC_TOKEN_LOGO;
 }
 
-// GraphQL query for markets — fetch by chain with pagination
+/**
+ * GraphQL query for markets — NO orderBy to avoid API duplication bug.
+ * We sort client-side after dedup.
+ */
 const MARKETS_QUERY = `
   query GetMarkets($chainId: Int!, $first: Int!, $skip: Int!) {
     markets(
       first: $first
       skip: $skip
       where: { chainId_in: [$chainId] }
-      orderBy: SupplyAssetsUsd
-      orderDirection: Desc
     ) {
       items {
         uniqueKey
@@ -261,7 +262,7 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
     let lltv = 0;
     try {
       const lltvVal = market.lltv || '0';
-      if (typeof lltvVal === 'string' && lltvVal.length > 10) {
+      if (typeof lltvVal === 'string' && lltvVal.length > 10 && !lltvVal.includes('.')) {
         // BigInt string (1e18 scale)
         lltv = Number(BigInt(lltvVal)) / 1e18 * 100;
       } else {
@@ -325,7 +326,11 @@ function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
 
 /**
  * Fetch ALL markets for a chain with automatic pagination.
- * Deduplicates by uniqueKey to prevent repeated entries.
+ * Deduplicates by uniqueKey first, then applies filters.
+ * 
+ * KEY FIX: No orderBy in query to avoid the API duplication bug
+ * where Base returns the same market 500 times. We use a "seen" set 
+ * during pagination to detect when the API stops returning new results.
  */
 export async function fetchMorphoMarkets(options: {
   chainId: number;
@@ -342,11 +347,13 @@ export async function fetchMorphoMarkets(options: {
   console.log(`[Morpho API] Fetching markets for ${config.label}...`);
 
   const PAGE_SIZE = 100;
-  const allRaw: ApiMarket[] = [];
+  const seenKeys = new Set<string>();
+  const uniqueRaw: ApiMarket[] = [];
   let skip = 0;
   let hasMore = true;
+  let totalRaw = 0;
 
-  // Paginate through all markets
+  // Paginate but track unique keys to detect API duplication
   while (hasMore) {
     const data = await graphqlFetch<{ markets: { items: ApiMarket[] } }>(
       MARKETS_QUERY,
@@ -354,62 +361,48 @@ export async function fetchMorphoMarkets(options: {
     );
 
     const items = data.markets.items;
-    allRaw.push(...items);
+    totalRaw += items.length;
 
-    if (items.length < PAGE_SIZE) {
+    // Track how many NEW unique markets this page gives us
+    let newUniqueCount = 0;
+    for (const item of items) {
+      if (!seenKeys.has(item.uniqueKey)) {
+        seenKeys.add(item.uniqueKey);
+        uniqueRaw.push(item);
+        newUniqueCount++;
+      }
+    }
+
+    // Stop conditions:
+    // 1. Page returned fewer items than requested (no more data)
+    // 2. Page returned 0 new unique items (all duplicates - API bug)
+    // 3. We've hit 1000 total raw items (safety cap)
+    if (items.length < PAGE_SIZE || newUniqueCount === 0 || totalRaw >= 1000) {
       hasMore = false;
+      if (newUniqueCount === 0 && items.length > 0) {
+        console.warn(`[Morpho API] ${config.label}: page returned ${items.length} items but 0 new unique keys — stopping pagination`);
+      }
     } else {
       skip += PAGE_SIZE;
-      // Safety cap: don't fetch more than 500 markets per chain
-      if (skip >= 500) {
-        console.warn(`[Morpho API] Hit 500 market cap for ${config.label}, stopping pagination`);
-        hasMore = false;
-      }
     }
   }
 
-  console.log(`[Morpho API] Raw API returned ${allRaw.length} markets for ${config.label}`);
+  console.log(`[Morpho API] ${config.label}: ${totalRaw} raw → ${uniqueRaw.length} unique keys`);
 
-  // Debug: log first raw item for Base to diagnose
-  if (allRaw.length > 0) {
-    const first = allRaw[0];
-    console.log(`[Morpho API] First raw market for ${config.label}: loanAsset=${first.loanAsset?.symbol}, state.supplyAssetsUsd=${first.state?.supplyAssetsUsd}, state.supplyApy=${first.state?.supplyApy}`);
-  }
+  // Parse all unique items
+  const parsed = uniqueRaw.map(m => parseMarket(m, chainId));
+  const nonNull = parsed.filter((m): m is MorphoMarket => m !== null);
 
-  // Parse all
-  const allParsed = allRaw.map(m => parseMarket(m, chainId));
-  const nonNull = allParsed.filter((m): m is MorphoMarket => m !== null);
-  
-  console.log(`[Morpho API] Parsed ${nonNull.length}/${allRaw.length} markets for ${config.label}`);
-  if (nonNull.length > 0) {
-    console.log(`[Morpho API] First parsed: ${nonNull[0].loanAsset.symbol}/${nonNull[0].collateralAsset?.symbol}, TVL=$${nonNull[0].totalSupplyUsd.toFixed(0)}`);
-  }
-  if (nonNull.length === 0 && allRaw.length > 0) {
-    // Debug: why are all null?
-    const first = allRaw[0];
-    console.log(`[Morpho API] DEBUG: loanAsset=${JSON.stringify(first.loanAsset?.symbol)}, state exists=${!!first.state}, state.supplyAssetsUsd=${first.state?.supplyAssetsUsd}`);
-  }
-
-  // CRITICAL: Deduplicate by uniqueKey FIRST (Base returns same market 500x)
-  const seen = new Set<string>();
-  const deduped = nonNull.filter(m => {
-    if (seen.has(m.uniqueKey)) return false;
-    seen.add(m.uniqueKey);
-    return true;
-  });
-
-  if (nonNull.length !== deduped.length) {
-    console.warn(`[Morpho API] Removed ${nonNull.length - deduped.length} duplicate markets on ${config.label}`);
-  }
+  console.log(`[Morpho API] Parsed ${nonNull.length}/${uniqueRaw.length} markets for ${config.label}`);
 
   // Filter - only remove the specific GMORPHO/cbBTC pair
-  const markets = deduped.filter(m => {
+  const markets = nonNull.filter(m => {
     if (m.loanAsset.symbol === 'GMORPHO' && m.collateralAsset?.symbol === 'cbBTC') return false;
     if (m.loanAsset.symbol === 'cbBTC' && m.collateralAsset?.symbol === 'GMORPHO') return false;
     return true;
   });
 
-  console.log(`[Morpho API] ✓ Loaded ${markets.length} unique markets from ${config.label}`);
+  console.log(`[Morpho API] ✓ Loaded ${markets.length} markets from ${config.label} (filtered ${nonNull.length - markets.length})`);
   return markets;
 }
 
@@ -447,7 +440,8 @@ export async function fetchMorphoPositions(options: {
       { userAddress: userAddress.toLowerCase(), chainId, first }
     );
 
-    console.log(`[Morpho API] Raw position items for chain ${chainId}:`, data.marketPositions.items.length);
+    const items = data.marketPositions.items;
+    console.log(`[Morpho API] Raw position items for ${config.label}: ${items.length}`);
 
     // Safe BigInt conversion that handles numbers, strings, and floats
     const safeBigInt = (val: string | number | null | undefined): bigint => {
@@ -456,16 +450,24 @@ export async function fetchMorphoPositions(options: {
         if (!Number.isFinite(val)) return 0n;
         return BigInt(Math.floor(val));
       }
-      try { return BigInt(val); } catch { return 0n; }
+      try {
+        // Handle decimal strings by flooring
+        if (val.includes('.')) return BigInt(Math.floor(parseFloat(val)));
+        return BigInt(val);
+      } catch { return 0n; }
     };
 
-    const positions: UserPosition[] = data.marketPositions.items
+    const positions: UserPosition[] = items
       .filter(p => {
         // Use USD values as primary check (always numbers, no BigInt parsing risk)
         const hasSupply = (p.supplyAssetsUsd || 0) > 0.001;
         const hasBorrow = (p.borrowAssetsUsd || 0) > 0.001;
         const hasCollateral = (p.collateralUsd || 0) > 0.001;
-        return hasSupply || hasBorrow || hasCollateral;
+        const hasAny = hasSupply || hasBorrow || hasCollateral;
+        if (hasAny) {
+          console.log(`[Morpho API] Position found: market=${p.market?.loanAsset?.symbol}/${p.market?.collateralAsset?.symbol}, supply=$${p.supplyAssetsUsd?.toFixed(2)}, borrow=$${p.borrowAssetsUsd?.toFixed(2)}, collateral=$${p.collateralUsd?.toFixed(2)}`);
+        }
+        return hasAny;
       })
       .map(p => ({
         marketId: p.market.uniqueKey,
@@ -481,7 +483,7 @@ export async function fetchMorphoPositions(options: {
         collateralUsd: p.collateralUsd || 0,
       }));
 
-    console.log(`[Morpho API] ✓ Found ${positions.length} positions on ${config.label}`);
+    console.log(`[Morpho API] ✓ Found ${positions.length} active positions on ${config.label}`);
     return positions;
   } catch (error) {
     console.error(`[Morpho API] Failed to fetch positions on ${config.label}:`, error);

@@ -1,19 +1,31 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BarChart3, TrendingUp, DollarSign, Download, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, DollarSign, Download, Calendar, Shield, Wallet, Repeat } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead } from '@/components/seo';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { getAnalytics, exportToCSV, getSwapHistory } from '@/lib/swapStorage';
 import { getIntegratorFee, formatFeePercentage } from '@/lib/lifiClient';
+import { useMorphoPositions } from '@/hooks/useMorphoPositions';
+import { useMorphoVaults } from '@/hooks/useMorphoVaults';
+import { getMorphoChainConfig } from '@/lib/morpho/config';
+import { ChainIcon } from '@/components/common/ChainIcon';
+import { cn } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState(30);
+  const navigate = useNavigate();
   
   const analytics = useMemo(() => getAnalytics(timeRange), [timeRange]);
   const history = getSwapHistory();
   const integratorFee = getIntegratorFee();
+
+  // Morpho positions data
+  const { positions, totalSupplyUsd, totalBorrowUsd, totalCollateralUsd } = useMorphoPositions();
+  const { vaultPositions, totalDepositedUsd } = useMorphoVaults();
 
   const handleExport = () => {
     const csv = exportToCSV();
@@ -24,6 +36,13 @@ export default function Analytics() {
     a.download = `crypto-defi-bridge-history-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const formatUsd = (value: number) => {
+    if (!Number.isFinite(value) || value === 0) return '$0.00';
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(2)}K`;
+    return `$${value.toFixed(2)}`;
   };
 
   const stats = [
@@ -53,6 +72,8 @@ export default function Analytics() {
     },
   ];
 
+  const hasLendingPositions = positions.length > 0 || vaultPositions.length > 0;
+
   return (
     <Layout>
       <SeoHead />
@@ -67,11 +88,10 @@ export default function Analytics() {
             <div>
               <h1 className="text-3xl font-bold mb-2">Analytics</h1>
               <p className="text-muted-foreground">
-                Track your swap history and earned fees
+                Track your swap history, earned fees, and lending positions
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {/* Time range selector */}
               <div className="flex items-center gap-1 glass rounded-lg p-1">
                 {[7, 30, 90].map((days) => (
                   <button
@@ -112,6 +132,127 @@ export default function Analytics() {
               </motion.div>
             ))}
           </div>
+
+          {/* Lending Positions Summary */}
+          {hasLendingPositions && (
+            <div className="glass rounded-xl p-6 mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-primary" />
+                  Lending Positions
+                </h3>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/earn?tab=positions')}
+                  className="gap-1"
+                >
+                  Manage Positions
+                </Button>
+              </div>
+
+              {/* Summary stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
+                  <div className="text-xl font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
+                  <div className="text-xl font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
+                  <div className="text-xl font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Vault Deposits</div>
+                  <div className="text-xl font-semibold text-primary">{formatUsd(totalDepositedUsd)}</div>
+                </div>
+              </div>
+
+              {/* Market positions list */}
+              {positions.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  <h4 className="text-sm font-medium text-muted-foreground">Market Positions ({positions.length})</h4>
+                  <div className="divide-y divide-border/30">
+                    {positions.map(pos => {
+                      const chainConfig = getMorphoChainConfig(pos.chainId);
+                      return (
+                        <div key={`${pos.chainId}-${pos.marketId}`} className="flex items-center justify-between py-3">
+                          <div className="flex items-center gap-3">
+                            <ChainIcon chainId={pos.chainId} size="sm" />
+                            <div>
+                              <div className="text-sm font-medium">
+                                {pos.market?.loanAsset.symbol}/{pos.market?.collateralAsset?.symbol || '—'}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{chainConfig?.label}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            {pos.supplyAssetsUsd > 0 && (
+                              <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs">
+                                Supply: {formatUsd(pos.supplyAssetsUsd)}
+                              </Badge>
+                            )}
+                            {pos.collateralUsd > 0 && (
+                              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-xs">
+                                Collateral: {formatUsd(pos.collateralUsd)}
+                              </Badge>
+                            )}
+                            {pos.borrowAssetsUsd > 0 && (
+                              <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30 text-xs">
+                                Borrow: {formatUsd(pos.borrowAssetsUsd)}
+                              </Badge>
+                            )}
+                            {pos.healthFactor !== null && (
+                              <span className={cn(
+                                "text-xs font-medium",
+                                pos.healthFactor > 1.5 ? "text-success" :
+                                pos.healthFactor > 1 ? "text-warning" : "text-destructive"
+                              )}>
+                                HF: {pos.healthFactor.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Vault positions list */}
+              {vaultPositions.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium text-muted-foreground">Vault Deposits ({vaultPositions.length})</h4>
+                  <div className="divide-y divide-border/30">
+                    {vaultPositions.map(vp => (
+                      <div key={`${vp.chainId}-${vp.vaultAddress}`} className="flex items-center justify-between py-3">
+                        <div className="flex items-center gap-3">
+                          <ChainIcon chainId={vp.chainId} size="sm" />
+                          <div>
+                            <div className="text-sm font-medium">{vp.vault?.name || 'Vault'}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {vp.vault?.asset.symbol} {vp.vault?.curator && `• ${vp.vault.curator}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-primary">{formatUsd(vp.assetsUsd)}</span>
+                          {vp.vault && vp.vault.apy > 0 && (
+                            <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs">
+                              {vp.vault.apy.toFixed(2)}% APY
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Charts */}
           <div className="grid lg:grid-cols-2 gap-6 mb-8">
