@@ -1,9 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, AlertTriangle, Lock } from 'lucide-react';
+import { X, ExternalLink, AlertTriangle, Lock, ArrowRight, Repeat } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useEarnAnalytics } from '@/hooks/useEarnAnalytics';
+import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
+import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
 interface SupplyModalProps {
@@ -23,6 +26,8 @@ export function SupplyModal({
 }: SupplyModalProps) {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const { trackSupplyClick } = useEarnAnalytics();
+  const navigate = useNavigate();
+  const { tokenBalances } = usePortfolioTotal();
 
   if (!market) return null;
 
@@ -156,6 +161,53 @@ export function SupplyModal({
                     Supply in-app (Coming soon)
                   </Button>
                 </div>
+
+                {/* Cross-chain balance hints */}
+                {isWalletConnected && (() => {
+                  const otherChainBalances = tokenBalances.filter(
+                    (tb) => tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.chainId !== market.chainId && tb.balance > 0
+                  );
+                  if (otherChainBalances.length > 0) {
+                    return (
+                      <div className="p-3 rounded-lg bg-primary/10 border border-primary/20 space-y-2">
+                        <p className="text-xs text-muted-foreground">
+                          You have <strong>{market.assetSymbol}</strong> on other chains:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {otherChainBalances.map((tb) => (
+                            <Badge key={tb.chainId} variant="outline" className="text-[10px] gap-1">
+                              {tb.token.symbol} · Chain {tb.chainId} · {tb.balanceFormatted}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs gap-1 flex-1"
+                            onClick={() => {
+                              const best = otherChainBalances.reduce((a, b) => a.balanceUSD > b.balanceUSD ? a : b);
+                              const link = buildSwapLink({
+                                chainId: best.chainId,
+                                toTokenAddress: market.assetAddress || best.token.address,
+                                toTokenSymbol: market.assetSymbol,
+                                fromTokenAddress: best.token.address,
+                                ref: 'earn',
+                                action: 'supply',
+                              });
+                              onClose();
+                              navigate(link);
+                            }}
+                          >
+                            <Repeat className="w-3 h-3" />
+                            Bridge to this chain
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Risk Warning */}
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">

@@ -96,16 +96,18 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Poll LI.FI /status until DONE or FAILED (max ~5 min). */
+/** Poll LI.FI /status until DONE or FAILED (max ~10 min).
+ * Uses exponential backoff on rate-limit / RPC errors. */
 async function waitForBridgeCompletion(
   txHash: string,
   fromChainId: number,
   toChainId: number,
   tool: string,
 ): Promise<{ done: boolean; receivingTxHash?: string }> {
-  const maxAttempts = 60;
+  const maxAttempts = 120;
+  let delay = 3000; // start at 3s
   for (let i = 0; i < maxAttempts; i++) {
-    await sleep(5000);
+    await sleep(delay);
     try {
       const status = await getTransactionStatus(txHash, fromChainId, toChainId, tool);
       if (status.status === 'DONE') {
@@ -114,8 +116,11 @@ async function waitForBridgeCompletion(
       if (status.status === 'FAILED') {
         return { done: false };
       }
+      // Success fetch → reset delay
+      delay = 3000;
     } catch {
-      // Transient fetch errors — keep polling
+      // Exponential backoff: 3→6→12→20s max
+      delay = Math.min(delay * 2, 20000);
     }
   }
   // Timeout — treat as success-ish (user can check explorer)
