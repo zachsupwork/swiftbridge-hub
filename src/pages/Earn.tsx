@@ -14,7 +14,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
+import {
   RefreshCw, 
   AlertTriangle, 
   TrendingUp, 
@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MorphoMarketsTable } from '@/components/earn/MorphoMarketsTable';
+import { MorphoVaultsTable } from '@/components/earn/MorphoVaultsTable';
 import { MorphoPositionCard } from '@/components/earn/MorphoPositionCard';
 import { HowItWorksDiagram } from '@/components/earn/HowItWorksDiagram';
 import { MorphoSupplyModal } from '@/components/earn/MorphoSupplyModal';
@@ -53,6 +54,7 @@ import { MorphoBorrowModal } from '@/components/earn/MorphoBorrowModal';
 import { MarketDetailsDrawer } from '@/components/earn/MarketDetailsDrawer';
 import { useMorphoMarkets } from '@/hooks/useMorphoMarkets';
 import { useMorphoPositions, type MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
+import { useMorphoVaults } from '@/hooks/useMorphoVaults';
 import { getEnabledMorphoChains, getMorphoChainConfig } from '@/lib/morpho/config';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
@@ -107,6 +109,16 @@ export default function Earn() {
     totalCollateralUsd,
   } = useMorphoPositions();
 
+  // Fetch vaults
+  const {
+    vaults,
+    vaultPositions,
+    loading: vaultsLoading,
+    error: vaultsError,
+    refresh: refreshVaults,
+    totalDepositedUsd,
+  } = useMorphoVaults();
+
   // Get only enabled chains
   const enabledChains = availableChains;
 
@@ -137,6 +149,7 @@ export default function Earn() {
       autoRefreshRef.current = setInterval(() => {
         console.log('[Earn] Auto-refreshing data...');
         refreshMarkets();
+        refreshVaults();
         if (isConnected) {
           refreshPositions();
         }
@@ -520,7 +533,7 @@ export default function Earn() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsList className="grid w-full max-w-lg grid-cols-3">
               <TabsTrigger value="markets" className="gap-2">
                 <LayoutGrid className="w-4 h-4" />
                 Markets
@@ -530,12 +543,21 @@ export default function Earn() {
                   </Badge>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="vaults" className="gap-2">
+                <Shield className="w-4 h-4" />
+                Vaults
+                {vaults.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                    {vaults.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="positions" className="gap-2">
                 <List className="w-4 h-4" />
-                My Positions
-                {positions.length > 0 && (
+                Positions
+                {(positions.length + vaultPositions.length) > 0 && (
                   <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    {positions.length}
+                    {positions.length + vaultPositions.length}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -581,6 +603,17 @@ export default function Earn() {
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
                 onMarketDetails={handleMarketDetails}
+              />
+            </TabsContent>
+
+            {/* Vaults Tab */}
+            <TabsContent value="vaults" className="space-y-4">
+              <MorphoVaultsTable
+                vaults={vaults}
+                vaultPositions={vaultPositions}
+                loading={vaultsLoading}
+                error={vaultsError}
+                onRefresh={refreshVaults}
               />
             </TabsContent>
 

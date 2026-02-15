@@ -4,7 +4,7 @@ import { useAccount } from 'wagmi';
 import { useNavigate } from 'react-router-dom';
 import {
   Wallet, Search, ArrowRightLeft, Coins, Link2, EyeOff, Eye,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, TrendingUp, TrendingDown, Shield, Vault,
 } from 'lucide-react';
 import { Layout } from '@/components/layout/Layout';
 import { SeoHead } from '@/components/seo';
@@ -20,7 +20,11 @@ import { TokenIconStable } from '@/components/common/TokenIconStable';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 import { BalanceSyncingState } from '@/components/common/BalanceSyncingState';
 import { TokenDetailModal } from '@/components/portfolio/TokenDetailModal';
-
+import { useMorphoPositions } from '@/hooks/useMorphoPositions';
+import { useMorphoVaults } from '@/hooks/useMorphoVaults';
+import { getMorphoChainConfig } from '@/lib/morpho/config';
+import { Badge } from '@/components/ui/badge';
+import { ChainIcon } from '@/components/common/ChainIcon';
 // Testnet IDs to exclude from chain filter tabs
 const TESTNET_IDS = new Set([11155111]);
 
@@ -41,6 +45,20 @@ export default function Portfolio() {
   const [searchQuery, setSearchQuery] = useState('');
   const [hideDust, setHideDust] = useState(false);
   const [selectedToken, setSelectedToken] = useState<PortfolioTokenBalance | null>(null);
+
+  // Morpho positions for Lending section
+  const {
+    positions: morphoPositions,
+    totalSupplyUsd: morphoSupplyUsd,
+    totalBorrowUsd: morphoBorrowUsd,
+    totalCollateralUsd: morphoCollateralUsd,
+    loading: morphoLoading,
+  } = useMorphoPositions();
+  const {
+    vaultPositions,
+    totalDepositedUsd: vaultDepositedUsd,
+    loading: vaultsLoading,
+  } = useMorphoVaults();
 
   useEffect(() => {
     getChains().then(setChains);
@@ -343,6 +361,148 @@ export default function Portfolio() {
                 )}
               </span>
               <span>Total: ${displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          )}
+
+          {/* Lending Positions Section */}
+          {isConnected && (morphoPositions.length > 0 || vaultPositions.length > 0) && (
+            <div className="mt-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-primary" />
+                  Lending Positions
+                </h2>
+                <Button variant="outline" size="sm" onClick={() => navigate('/earn')} className="gap-1.5">
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  Manage
+                </Button>
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                {morphoSupplyUsd > 0 && (
+                  <div className="glass rounded-xl p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Supplied</div>
+                    <div className="text-lg font-semibold text-success">
+                      ${morphoSupplyUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                )}
+                {morphoCollateralUsd > 0 && (
+                  <div className="glass rounded-xl p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Collateral</div>
+                    <div className="text-lg font-semibold text-primary">
+                      ${morphoCollateralUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                )}
+                {morphoBorrowUsd > 0 && (
+                  <div className="glass rounded-xl p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Borrowed</div>
+                    <div className="text-lg font-semibold text-warning">
+                      ${morphoBorrowUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                )}
+                {vaultDepositedUsd > 0 && (
+                  <div className="glass rounded-xl p-3">
+                    <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                      <Vault className="w-3 h-3" /> Vault Deposits
+                    </div>
+                    <div className="text-lg font-semibold text-primary">
+                      ${vaultDepositedUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Market positions */}
+              {morphoPositions.length > 0 && (
+                <div className="glass rounded-2xl divide-y divide-border overflow-hidden mb-4">
+                  {morphoPositions.map((pos) => {
+                    const chain = getMorphoChainConfig(pos.chainId);
+                    return (
+                      <div
+                        key={`${pos.chainId}-${pos.marketId}`}
+                        className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                        onClick={() => navigate('/earn')}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <TrendingUp className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm flex items-center gap-1.5">
+                            {pos.market?.loanAsset.symbol || '?'}
+                            {pos.market?.collateralAsset && (
+                              <span className="text-muted-foreground font-normal">/ {pos.market.collateralAsset.symbol}</span>
+                            )}
+                            {chain && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px] gap-0.5">
+                                <ChainIcon chainId={pos.chainId} size="sm" />
+                                {chain.label}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            {pos.supplyAssetsUsd > 0 && <span className="text-success">Supply ${pos.supplyAssetsUsd.toFixed(2)}</span>}
+                            {pos.borrowAssetsUsd > 0 && <span className="text-warning">Borrow ${pos.borrowAssetsUsd.toFixed(2)}</span>}
+                            {pos.collateralUsd > 0 && <span>Collateral ${pos.collateralUsd.toFixed(2)}</span>}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-medium text-sm">
+                            ${(pos.supplyAssetsUsd + pos.collateralUsd).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </div>
+                          {pos.healthFactor !== null && (
+                            <div className={cn("text-xs", pos.healthFactor > 1.5 ? "text-success" : pos.healthFactor > 1 ? "text-warning" : "text-destructive")}>
+                              HF: {pos.healthFactor.toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Vault positions */}
+              {vaultPositions.length > 0 && (
+                <div className="glass rounded-2xl divide-y divide-border overflow-hidden">
+                  {vaultPositions.map((vp) => {
+                    const chain = getMorphoChainConfig(vp.chainId);
+                    return (
+                      <div
+                        key={`${vp.chainId}-${vp.vaultAddress}`}
+                        className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
+                        onClick={() => navigate('/earn')}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Vault className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm flex items-center gap-1.5">
+                            {vp.vault?.name || 'Vault'}
+                            {chain && (
+                              <Badge variant="outline" className="h-4 px-1 text-[10px] gap-0.5">
+                                <ChainIcon chainId={vp.chainId} size="sm" />
+                                {chain.label}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {vp.vault?.asset.symbol} • {vp.vault?.apy.toFixed(2)}% APY
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-medium text-sm">
+                            ${vp.assetsUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

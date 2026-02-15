@@ -8,6 +8,14 @@
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
 import { MORPHO_BLUE_ADDRESS } from './config';
 import type { MorphoMarket, MorphoMarketParams, FeeInfo } from './types';
+
+/**
+ * Get the Morpho Blue contract address for a specific market.
+ * Uses the market's morphoBlue field (from API) with fallback to default.
+ */
+export function getMorphoBlueForMarket(market: MorphoMarket): `0x${string}` {
+  return (market.morphoBlue as `0x${string}`) || MORPHO_BLUE_ADDRESS;
+}
 import { FEE_WALLET, FEE_BPS, isPlatformFeeConfigured } from '@/lib/env';
 
 // Morpho Blue ABI (minimal subset for our actions)
@@ -285,3 +293,4 @@ export function getStepDescription(step: ActionStep, actionType: string): string
 // Export constants for use in hooks
 export { MORPHO_BLUE_ADDRESS };
 export { erc20Abi };
+export { getMorphoBlueForMarket as getMorphoAddress };

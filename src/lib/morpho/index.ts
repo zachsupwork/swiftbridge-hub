@@ -8,3 +8,4 @@ export * from './types';
 export * from './config';
 export * from './apiClient';
 export * from './blueActions';
+export * from './vaultsClient';
