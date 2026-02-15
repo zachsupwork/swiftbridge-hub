@@ -1,5 +1,6 @@
 /**
- * Enhanced Position Card with detailed market info, contract addresses, and management actions.
+ * Enhanced Position Card with detailed market info, contract addresses, 
+ * management actions, and swap CTA for acquiring more tokens.
  */
 
 import { memo, useState, useCallback } from 'react';
@@ -18,6 +19,7 @@ import {
   Copy,
   Check,
   Info,
+  Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,11 +35,13 @@ import { toast } from '@/hooks/use-toast';
 interface MorphoPositionCardProps {
   position: MorphoPositionWithHealth;
   onManage?: (position: MorphoPositionWithHealth, action?: ActionType) => void;
+  onSwap?: (chainId: number, symbol: string, address?: string) => void;
 }
 
 export const MorphoPositionCard = memo(function MorphoPositionCard({
   position,
   onManage,
+  onSwap,
 }: MorphoPositionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
@@ -114,7 +118,6 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Position value */}
             <div className="text-right">
               <div className="font-semibold">
                 {formatUsd(position.supplyAssetsUsd + position.collateralUsd)}
@@ -122,7 +125,6 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
               <div className="text-xs text-muted-foreground">Total Value</div>
             </div>
 
-            {/* Health factor if borrowing */}
             {hasBorrow && (
               <div className="text-right">
                 <div className={cn("font-semibold flex items-center gap-1 justify-end", getHealthColor(position.healthFactor))}>
@@ -384,6 +386,32 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
               </>
             )}
           </div>
+
+          {/* Swap CTA */}
+          {onSwap && (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onSwap(position.chainId, market.loanAsset.symbol, market.loanAsset.address)}
+                className="gap-1 text-xs flex-1"
+              >
+                <Repeat className="w-3 h-3" />
+                Swap to {market.loanAsset.symbol}
+              </Button>
+              {market.collateralAsset && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onSwap(position.chainId, market.collateralAsset!.symbol, market.collateralAsset!.address)}
+                  className="gap-1 text-xs flex-1"
+                >
+                  <Repeat className="w-3 h-3" />
+                  Swap to {market.collateralAsset.symbol}
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Main manage button */}
           <Button

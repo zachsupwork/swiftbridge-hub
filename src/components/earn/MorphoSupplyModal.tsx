@@ -2,7 +2,10 @@
  * Morpho Supply Modal
  * 
  * Detailed modal for supplying the LOAN TOKEN to a Morpho Blue market.
- * Persistent success screen with full tx details.
+ * Features:
+ * - Auto chain switch (no popup)
+ * - Persistent success screen with full tx details
+ * - Swap CTA when balance is 0
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -27,12 +30,12 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
+  useSwitchChain,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
   Dialog, 
   DialogContent, 
@@ -64,7 +67,7 @@ import { getMorphoChainConfig } from '@/lib/morpho/config';
 import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS, supportedChains } from '@/lib/wagmiConfig';
-import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
+import { buildSwapLink } from '@/lib/swapDeepLink';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 
@@ -88,6 +91,7 @@ export function MorphoSupplyModal({
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const navigate = useNavigate();
+  const { switchChainAsync } = useSwitchChain();
   const { tokenBalances: portfolioBalances, isLoading: balSyncing, lastUpdated: balLastUpdated, refreshBalances } = useBalancesContext();
   const { writeContractAsync } = useWriteContract();
 
@@ -179,12 +183,23 @@ export function MorphoSupplyModal({
   const isValidAmount = parsedAmount > 0n && parsedAmount <= (effectiveBalance || 0n);
   const isInsufficientBalance = parsedAmount > 0n && parsedAmount > (effectiveBalance || 0n);
 
-  // Set max amount — use effective balance
+  // Set max amount
   const handleSetMax = useCallback(() => {
     if (effectiveBalance && effectiveBalance > 0n) {
       setAmount(formatUnits(effectiveBalance, decimals));
     }
   }, [effectiveBalance, decimals]);
+
+  // Auto switch chain
+  const handleSwitchChain = useCallback(async () => {
+    if (!market) return;
+    try {
+      await switchChainAsync({ chainId: market.chainId });
+      toast({ title: 'Network Switched', description: `Switched to ${chainConfig?.label}` });
+    } catch (err) {
+      toast({ title: 'Switch Failed', description: 'Please switch network manually.', variant: 'destructive' });
+    }
+  }, [market, switchChainAsync, chainConfig]);
 
   // Execute supply
   const executeSupply = useCallback(async () => {
@@ -226,7 +241,11 @@ export function MorphoSupplyModal({
     } catch (err: unknown) {
       console.error('Supply failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Transaction failed';
-      setError(errorMessage);
+      if (errorMessage.includes('User rejected') || errorMessage.includes('user rejected')) {
+        setError('Transaction rejected');
+      } else {
+        setError(errorMessage.slice(0, 200));
+      }
       setStep('error');
     }
   }, [market, address, tokenAddress, parsedAmount, needsApproval, writeContractAsync, refetchAllowance]);
@@ -242,7 +261,6 @@ export function MorphoSupplyModal({
     if (isActionConfirmed && step === 'action_pending') {
       setStep('success');
       refetchBalance();
-      // Don't auto-close — let user see success details
     }
   }, [isActionConfirmed, step, refetchBalance]);
 
@@ -283,7 +301,7 @@ export function MorphoSupplyModal({
               </DialogDescription>
             </DialogHeader>
 
-            {/* Wrong chain warning with switch button */}
+            {/* Wrong chain warning with auto-switch */}
             {isWrongChain && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
@@ -291,18 +309,43 @@ export function MorphoSupplyModal({
                   <p className="font-medium text-warning">Wrong Network</p>
                   <p className="text-muted-foreground text-xs">Switch to {chainConfig?.label} to continue.</p>
                 </div>
-                <ConnectButton.Custom>
-                  {({ openChainModal, mounted }) => (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => { if (mounted && openChainModal) openChainModal(); }}
-                      className="gap-1 text-xs shrink-0"
-                    >
-                      Switch
-                    </Button>
-                  )}
-                </ConnectButton.Custom>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSwitchChain}
+                  className="gap-1 text-xs shrink-0"
+                >
+                  Switch to {chainConfig?.label}
+                </Button>
+              </div>
+            )}
+
+            {/* Swap CTA when no balance */}
+            {hasNoBalance && !isWrongChain && step === 'idle' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                <Repeat className="w-4 h-4 text-primary flex-shrink-0" />
+                <div className="flex-1 text-sm">
+                  <p className="font-medium">No {token.symbol} balance</p>
+                  <p className="text-xs text-muted-foreground">Get {token.symbol} via cross-chain swap</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onClose();
+                    navigate(buildSwapLink({
+                      chainId: market.chainId,
+                      toTokenAddress: token.address,
+                      toTokenSymbol: token.symbol,
+                      ref: 'earn',
+                      action: 'swap',
+                    }));
+                  }}
+                  className="gap-1 text-xs shrink-0"
+                >
+                  <Repeat className="w-3 h-3" />
+                  Get {token.symbol}
+                </Button>
               </div>
             )}
 
@@ -328,7 +371,7 @@ export function MorphoSupplyModal({
                     <div>
                       <p className="text-sm font-medium">You supply the loan asset ({token.symbol})</p>
                       <p className="text-xs text-muted-foreground">
-                        Your {token.symbol} goes into THIS specific market, not spread across multiple tokens.
+                        Your {token.symbol} goes into THIS specific market.
                       </p>
                     </div>
                   </div>
@@ -339,7 +382,7 @@ export function MorphoSupplyModal({
                     <div>
                       <p className="text-sm font-medium">Borrowers borrow your {token.symbol}</p>
                       <p className="text-xs text-muted-foreground">
-                        They must deposit {market.collateralAsset?.symbol || 'collateral'} first. You earn interest from their borrow fees.
+                        They must deposit {market.collateralAsset?.symbol || 'collateral'} first. You earn interest.
                       </p>
                     </div>
                   </div>
@@ -359,7 +402,7 @@ export function MorphoSupplyModal({
                       <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                       <span>
                         <strong>Note:</strong> Supplying the loan token does NOT give you borrow power. 
-                        To borrow, you must deposit collateral in this market.
+                        To borrow, you must deposit collateral.
                       </span>
                     </p>
                   </div>
@@ -435,196 +478,112 @@ export function MorphoSupplyModal({
                 </div>
               </div>
               {isInsufficientBalance && (
-                <p className="text-xs text-destructive">
-                  {hasNoBalance ? `No ${token.symbol} balance` : 'Insufficient balance'}
-                </p>
-              )}
-              {hasNoBalance && (
-                <>
-                  <button
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-destructive">Insufficient {token.symbol} balance</p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs gap-1 text-primary"
                     onClick={() => {
-                      const link = buildSwapLink({
+                      onClose();
+                      navigate(buildSwapLink({
                         chainId: market.chainId,
                         toTokenAddress: token.address,
                         toTokenSymbol: token.symbol,
-                        fromTokenAddress: getDefaultFromToken(market.chainId),
-                        marketId: market.uniqueKey,
                         ref: 'earn',
-                        action: 'supply',
-                      });
-                      onClose();
-                      navigate(link);
+                        action: 'swap',
+                      }));
                     }}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline"
                   >
                     <Repeat className="w-3 h-3" />
-                    Swap to get {token.symbol}
-                  </button>
-                  {/* Cross-chain balance hint */}
-                  {(() => {
-                    const otherChains = portfolioBalances.filter(
-                      (tb) => tb.token.symbol.toUpperCase() === token.symbol.toUpperCase() && tb.chainId !== market.chainId && tb.balance > 0
-                    );
-                    if (otherChains.length === 0) return null;
-                    return (
-                      <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 space-y-1.5">
-                        <p className="text-xs text-muted-foreground">
-                          You have <strong>{token.symbol}</strong> on:
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {otherChains.map((tb) => (
-                            <Badge key={tb.chainId} variant="outline" className="text-[10px]">
-                              {chainNameMap.get(tb.chainId) || `Chain ${tb.chainId}`} · {tb.balanceFormatted}
-                            </Badge>
-                          ))}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-xs gap-1 h-7"
-                          onClick={() => {
-                            const best = otherChains.reduce((a, b) => a.balanceUSD > b.balanceUSD ? a : b);
-                            const link = buildSwapLink({
-                              chainId: best.chainId,
-                              toTokenAddress: token.address,
-                              toTokenSymbol: token.symbol,
-                              fromTokenAddress: best.token.address,
-                              ref: 'earn',
-                              action: 'supply',
-                            });
-                            onClose();
-                            navigate(link);
-                          }}
-                        >
-                          <Repeat className="w-3 h-3" />
-                          Bridge from chain with balance
-                        </Button>
-                      </div>
-                    );
-                  })()}
-                </>
+                    Get more via Swap
+                  </Button>
+                </div>
               )}
             </div>
 
-            {/* Transaction Preview */}
-            <div className="p-4 rounded-lg bg-muted/30 border border-border/50 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Zap className="w-4 h-4 text-primary" />
-                Transaction Preview
-              </div>
-              
-              {!isValidAmount ? (
-                <div className="flex items-center gap-3 p-2 rounded bg-muted/30">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-muted text-muted-foreground">
-                    —
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {isInsufficientBalance 
-                      ? `Insufficient ${token.symbol} balance` 
-                      : 'Enter an amount to preview'}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Step 1: Approval */}
-                  <div className={cn(
-                    "flex items-center gap-3 p-2 rounded",
-                    needsApproval ? "bg-warning/10" : "bg-success/10"
-                  )}>
-                    <div className={cn(
-                      "w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold",
-                      needsApproval ? "bg-warning/20 text-warning" : "bg-success/20 text-success"
-                    )}>
-                      {needsApproval ? '1' : <Check className="w-3 h-3" />}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm">{needsApproval ? 'Approve token spending' : 'Allowance sufficient'}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {needsApproval ? `Allow Morpho to use your ${token.symbol}` : 'No approval needed'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Step 2: Supply */}
-                  <div className="flex items-center gap-3 p-2 rounded bg-primary/10">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold bg-primary/20 text-primary">
-                      {needsApproval ? '2' : '1'}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm">Supply {amount} {token.symbol}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Your position will increase by this amount
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-2 border-t border-border/30">
-                <p className="text-xs text-muted-foreground">
-                  No platform fee on Earn actions. Fees only apply to swap/bridge.
-                </p>
-              </div>
-            </div>
-
-            {/* Transaction Status */}
-            {step !== 'idle' && step !== 'success' && (
-              <div className="p-3 rounded-lg bg-muted/30 space-y-2">
-                <div className="flex items-center gap-2">
-                  {step === 'error' ? (
-                    <AlertTriangle className="w-4 h-4 text-destructive" />
-                  ) : (
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  )}
-                  <span className="text-sm font-medium">
-                    {getStepDescription(step, 'supply')}
-                  </span>
-                </div>
-                
-                {actionTxHash && (
-                  <a
-                    href={`${CHAIN_EXPLORERS[market.chainId] || 'https://etherscan.io/tx/'}${actionTxHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-primary hover:underline"
-                  >
-                    View transaction
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
+            {/* Approval info */}
+            {needsApproval && step === 'idle' && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg">
+                <Info className="w-3 h-3 flex-shrink-0" />
+                <span>This will require 2 transactions: approval + supply</span>
               </div>
             )}
 
-            {/* Persistent Success Summary */}
-            {step === 'success' && (
-              <div className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
-                    <Check className="w-5 h-5 text-success" />
-                  </div>
+            {/* Progress steps */}
+            {isLoading && (
+              <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
                   <div>
-                    <p className="font-semibold text-success">Supply Successful</p>
-                    <p className="text-xs text-muted-foreground">You supplied {amount} {token.symbol} to this market.</p>
+                    <p className="text-sm font-medium">{getStepDescription(step, 'supply')}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {step === 'approval' && 'Confirm the approval transaction in your wallet'}
+                      {step === 'approval_pending' && 'Waiting for approval to confirm on-chain...'}
+                      {step === 'action' && 'Confirm the supply transaction in your wallet'}
+                      {step === 'action_pending' && 'Waiting for supply transaction to confirm...'}
+                    </p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Error state */}
+            {step === 'error' && error && (
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { setStep('idle'); setError(null); }}
+                  className="mt-2"
+                >
+                  Try Again
+                </Button>
+              </div>
+            )}
+
+            {/* Success state — persistent */}
+            {step === 'success' && (
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
+                    <Check className="w-6 h-6 text-success" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-success text-lg">Supply Successful!</p>
+                    <p className="text-sm text-muted-foreground">
+                      {amount} {token.symbol} supplied to {market.collateralAsset?.symbol || ''}/{token.symbol} market
+                    </p>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="p-2 rounded-lg bg-muted/30">
                     <span className="text-muted-foreground">Amount</span>
                     <div className="font-medium">{amount} {token.symbol}</div>
                   </div>
                   <div className="p-2 rounded-lg bg-muted/30">
-                    <span className="text-muted-foreground">Market</span>
-                    <div className="font-medium">{market.collateralAsset?.symbol || '—'} / {token.symbol}</div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-muted/30">
-                    <span className="text-muted-foreground">Supply APY</span>
+                    <span className="text-muted-foreground">APY</span>
                     <div className="font-medium text-success">{formatAPY(market.supplyApy)}</div>
                   </div>
                   <div className="p-2 rounded-lg bg-muted/30">
                     <span className="text-muted-foreground">Chain</span>
                     <div className="font-medium">{chainConfig?.label}</div>
                   </div>
+                  <div className="p-2 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground">Market</span>
+                    <div className="font-medium truncate">{token.symbol}/{market.collateralAsset?.symbol || '—'}</div>
+                  </div>
                 </div>
+
                 {actionTxHash && (
                   <a
                     href={`${CHAIN_EXPLORERS[market.chainId] || 'https://etherscan.io/tx/'}${actionTxHash}`}
@@ -636,15 +595,14 @@ export function MorphoSupplyModal({
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
+
                 <div className="flex gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="outline"
-                    className="flex-1 gap-1"
+                    className="flex-1"
                     onClick={() => {
                       onClose();
-                      // Navigate to positions tab
-                      window.location.hash = '';
                       const params = new URLSearchParams(window.location.search);
                       params.set('tab', 'positions');
                       window.history.replaceState(null, '', `/earn?${params.toString()}`);
@@ -655,11 +613,12 @@ export function MorphoSupplyModal({
                   </Button>
                   <Button
                     size="sm"
-                    className="flex-1 gap-1"
+                    className="flex-1"
                     onClick={() => {
                       setStep('idle');
                       setAmount('');
                       setActionTxHash(undefined);
+                      setApprovalTxHash(undefined);
                       refetchBalance();
                       refetchAllowance();
                     }}
@@ -667,42 +626,42 @@ export function MorphoSupplyModal({
                     Supply More
                   </Button>
                 </div>
-              </div>
+              </motion.div>
             )}
 
-            {/* Error */}
-            {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
-                <p className="text-sm text-destructive">{error}</p>
-              </div>
-            )}
-
-            {/* Action Button - only show when not in success state */}
+            {/* Action button */}
             {step !== 'success' && (
               <Button
-                onClick={executeSupply}
-                disabled={!canExecute}
-                className="w-full gap-2"
-                size="lg"
+                onClick={isWrongChain ? handleSwitchChain : executeSupply}
+                disabled={isWrongChain ? false : !canExecute}
+                className="w-full h-12 text-base gap-2"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     {getStepDescription(step, 'supply')}
                   </>
+                ) : isWrongChain ? (
+                  <>Switch to {chainConfig?.label}</>
+                ) : !isConnected ? (
+                  'Connect Wallet'
+                ) : parsedAmount === 0n ? (
+                  'Enter Amount'
+                ) : isInsufficientBalance ? (
+                  `Insufficient ${token.symbol}`
+                ) : needsApproval ? (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Approve & Supply {token.symbol}
+                  </>
                 ) : (
                   <>
-                    <TrendingUp className="w-4 h-4" />
-                    Confirm supply
+                    <ArrowRight className="w-4 h-4" />
+                    Supply {token.symbol}
                   </>
                 )}
               </Button>
             )}
-
-            {/* Disclaimer */}
-            <p className="text-xs text-muted-foreground text-center">
-              Non-custodial. Smart contract risk. APY is variable.
-            </p>
           </div>
         </ScrollArea>
       </DialogContent>

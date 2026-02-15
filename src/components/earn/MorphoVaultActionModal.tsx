@@ -2,10 +2,14 @@
  * Morpho Vault Action Modal
  * 
  * In-app deposit/withdraw for Morpho Vaults (ERC-4626).
- * Users can deposit underlying assets or withdraw their shares.
+ * Features:
+ * - Auto chain switch (no popup)
+ * - Swap CTA when balance is 0
+ * - Persistent success screen
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   X,
@@ -17,6 +21,7 @@ import {
   TrendingUp,
   Vault,
   ExternalLink,
+  Repeat,
 } from 'lucide-react';
 import {
   useAccount,
@@ -24,9 +29,9 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useReadContract,
+  useSwitchChain,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +47,7 @@ import { ChainIcon } from '@/components/common/ChainIcon';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
+import { buildSwapLink } from '@/lib/swapDeepLink';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
 // ERC-4626 ABI (minimal for deposit/withdraw/redeem)
@@ -78,41 +84,6 @@ const ERC4626_ABI = [
     ],
     outputs: [{ name: 'assets', type: 'uint256' }],
   },
-  {
-    name: 'maxDeposit',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'receiver', type: 'address' }],
-    outputs: [{ name: 'maxAssets', type: 'uint256' }],
-  },
-  {
-    name: 'maxRedeem',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'owner', type: 'address' }],
-    outputs: [{ name: 'maxShares', type: 'uint256' }],
-  },
-  {
-    name: 'previewDeposit',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'assets', type: 'uint256' }],
-    outputs: [{ name: 'shares', type: 'uint256' }],
-  },
-  {
-    name: 'previewRedeem',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'shares', type: 'uint256' }],
-    outputs: [{ name: 'assets', type: 'uint256' }],
-  },
-  {
-    name: 'convertToAssets',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'shares', type: 'uint256' }],
-    outputs: [{ name: 'assets', type: 'uint256' }],
-  },
 ] as const;
 
 type ActionStep = 'idle' | 'approval' | 'approval_pending' | 'action' | 'action_pending' | 'success' | 'error';
@@ -141,6 +112,8 @@ export function MorphoVaultActionModal({
 }: MorphoVaultActionModalProps) {
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
+  const navigate = useNavigate();
 
   const [tab, setTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
@@ -205,22 +178,20 @@ export function MorphoVaultActionModal({
     return '0';
   }, [tab, assetBalance, userPosition, decimals]);
 
+  const hasNoBalance = tab === 'deposit' && (!assetBalance || assetBalance === 0n);
+
   // Write hooks
   const { writeContractAsync: writeApproval } = useWriteContract();
   const { writeContractAsync: writeVaultAction } = useWriteContract();
 
   const { isLoading: approvalConfirming } = useWaitForTransactionReceipt({
     hash: approvalTxHash,
-    query: {
-      enabled: !!approvalTxHash,
-    },
+    query: { enabled: !!approvalTxHash },
   });
 
   const { isLoading: actionConfirming, isSuccess: actionSuccess } = useWaitForTransactionReceipt({
     hash: actionTxHash,
-    query: {
-      enabled: !!actionTxHash,
-    },
+    query: { enabled: !!actionTxHash },
   });
 
   // Handle success
@@ -234,6 +205,17 @@ export function MorphoVaultActionModal({
       onSuccess?.();
     }
   }, [actionSuccess, step]);
+
+  // Auto switch chain
+  const handleSwitchChain = useCallback(async () => {
+    if (!vault) return;
+    try {
+      await switchChainAsync({ chainId: vault.chainId });
+      toast({ title: 'Network Switched', description: `Switched to the correct network` });
+    } catch (err) {
+      toast({ title: 'Switch Failed', description: 'Please switch network manually.', variant: 'destructive' });
+    }
+  }, [vault, switchChainAsync]);
 
   const handleAction = useCallback(async () => {
     if (!vault || !address || !vaultAddress || !assetAddress || parsedAmount === 0n) return;
@@ -251,8 +233,6 @@ export function MorphoVaultActionModal({
         } as any);
         setApprovalTxHash(hash);
         setStep('approval_pending');
-
-        // Wait briefly then proceed
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
 
@@ -283,7 +263,6 @@ export function MorphoVaultActionModal({
     } catch (err: unknown) {
       console.error(`[Vault] ${tab} failed:`, err);
       const msg = err instanceof Error ? err.message : 'Transaction failed';
-      // Clean up user rejection messages
       if (msg.includes('User rejected') || msg.includes('user rejected')) {
         setErrorMsg('Transaction rejected by user');
       } else {
@@ -291,7 +270,7 @@ export function MorphoVaultActionModal({
       }
       setStep('error');
     }
-  }, [vault, address, vaultAddress, assetAddress, parsedAmount, needsApproval, tab, userPosition, writeApproval, writeVaultAction]);
+  }, [vault, address, vaultAddress, assetAddress, parsedAmount, needsApproval, tab, writeApproval, writeVaultAction]);
 
   const handleSetMax = useCallback(() => {
     setAmount(formattedBalance);
@@ -356,18 +335,43 @@ export function MorphoVaultActionModal({
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
                 <span className="flex-1">Switch to the correct network to deposit</span>
-                <ConnectButton.Custom>
-                  {({ openChainModal, mounted }) => (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => { if (mounted && openChainModal) openChainModal(); }}
-                      className="gap-1 text-xs shrink-0"
-                    >
-                      Switch
-                    </Button>
-                  )}
-                </ConnectButton.Custom>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSwitchChain}
+                  className="gap-1 text-xs shrink-0"
+                >
+                  Switch Network
+                </Button>
+              </div>
+            )}
+
+            {/* Swap CTA when no balance */}
+            {hasNoBalance && isCorrectChain && step === 'idle' && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
+                <Repeat className="w-4 h-4 text-primary flex-shrink-0" />
+                <div className="flex-1 text-sm">
+                  <p className="font-medium">No {vault.asset.symbol} balance</p>
+                  <p className="text-xs text-muted-foreground">Get tokens via cross-chain swap</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    onClose();
+                    navigate(buildSwapLink({
+                      chainId: vault.chainId,
+                      toTokenAddress: vault.asset.address,
+                      toTokenSymbol: vault.asset.symbol,
+                      ref: 'earn',
+                      action: 'swap',
+                    }));
+                  }}
+                  className="gap-1 text-xs shrink-0"
+                >
+                  <Repeat className="w-3 h-3" />
+                  Get {vault.asset.symbol}
+                </Button>
               </div>
             )}
 
@@ -398,6 +402,21 @@ export function MorphoVaultActionModal({
           </TabsContent>
 
           <TabsContent value="withdraw" className="space-y-4 mt-4">
+            {!isCorrectChain && isConnected && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm">
+                <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
+                <span className="flex-1">Switch to the correct network to withdraw</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSwitchChain}
+                  className="gap-1 text-xs shrink-0"
+                >
+                  Switch Network
+                </Button>
+              </div>
+            )}
+
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Amount ({vault.asset.symbol})</span>
@@ -428,7 +447,11 @@ export function MorphoVaultActionModal({
 
         {/* Success message */}
         {step === 'success' && (
-          <div className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3"
+          >
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
                 <Check className="w-5 h-5 text-success" />
@@ -493,47 +516,54 @@ export function MorphoVaultActionModal({
                   setStep('idle');
                   setAmount('');
                   setActionTxHash(undefined);
+                  setApprovalTxHash(undefined);
                 }}
               >
                 {tab === 'deposit' ? 'Deposit More' : 'Withdraw More'}
               </Button>
             </div>
+          </motion.div>
+        )}
+
+        {/* Loading state */}
+        {(step === 'approval' || step === 'approval_pending' || step === 'action' || step === 'action_pending') && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <div className="text-sm">
+              {step === 'approval' && 'Confirm approval in your wallet...'}
+              {step === 'approval_pending' && 'Waiting for approval...'}
+              {step === 'action' && `Confirm ${tab} in your wallet...`}
+              {step === 'action_pending' && `Waiting for ${tab} to confirm...`}
+            </div>
           </div>
         )}
 
-        {/* Action button - only show when not in success state */}
+        {/* Main action button */}
         {step !== 'success' && (
           <Button
-            onClick={handleAction}
-            disabled={isActionDisabled}
+            onClick={!isCorrectChain && isConnected ? handleSwitchChain : handleAction}
+            disabled={isCorrectChain ? isActionDisabled : false}
             className="w-full h-12 gap-2"
-            size="lg"
           >
-            {step === 'approval' || step === 'approval_pending' ? (
+            {(step === 'approval_pending' || step === 'action_pending') ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Approving...
+                Processing...
               </>
-            ) : step === 'action' || step === 'action_pending' ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                {tab === 'deposit' ? 'Depositing...' : 'Withdrawing...'}
-              </>
+            ) : !isConnected ? (
+              'Connect Wallet'
+            ) : !isCorrectChain ? (
+              'Switch Network'
+            ) : parsedAmount === 0n ? (
+              'Enter Amount'
             ) : (
               <>
-                {tab === 'deposit' ? 'Deposit' : 'Withdraw'}
                 <ArrowRight className="w-4 h-4" />
+                {tab === 'deposit' ? 'Deposit' : 'Withdraw'} {vault.asset.symbol}
               </>
             )}
           </Button>
         )}
-
-        {/* Info footer */}
-        <p className="text-xs text-muted-foreground text-center">
-          {tab === 'deposit'
-            ? `Deposit ${vault.asset.symbol} into this vault to earn yield via curated market allocations.`
-            : `Withdraw your ${vault.asset.symbol} from the vault back to your wallet.`}
-        </p>
       </DialogContent>
     </Dialog>
   );
