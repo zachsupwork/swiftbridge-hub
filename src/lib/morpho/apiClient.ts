@@ -291,11 +291,27 @@ export async function fetchMorphoMarkets(options: {
     { chainId, first, skip }
   );
 
-  const markets = data.markets.items
+  const parsed = data.markets.items
     .map(m => parseMarket(m, chainId))
     .filter((m): m is MorphoMarket => m !== null && m.totalSupplyUsd > 0);
 
-  console.log(`[Morpho API] ✓ Loaded ${markets.length} markets from ${config.label}`);
+  // Deduplicate by uniqueKey (API can return duplicates across pages)
+  const seen = new Set<string>();
+  const markets = parsed.filter(m => {
+    const key = m.uniqueKey;
+    if (seen.has(key)) {
+      console.warn(`[Morpho API] Duplicate market filtered: ${key} on ${config.label}`);
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+
+  if (parsed.length !== markets.length) {
+    console.warn(`[Morpho API] Removed ${parsed.length - markets.length} duplicate markets on ${config.label}`);
+  }
+
+  console.log(`[Morpho API] ✓ Loaded ${markets.length} unique markets from ${config.label}`);
   return markets;
 }
 
