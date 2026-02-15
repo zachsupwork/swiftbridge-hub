@@ -13,30 +13,40 @@ const CHAIN_LOGOS: Record<number, string> = {
   10: 'https://icons.llamao.fi/icons/chains/rsz_optimism.jpg',
   56: 'https://icons.llamao.fi/icons/chains/rsz_binance.jpg',
   100: 'https://icons.llamao.fi/icons/chains/rsz_gnosis.jpg',
+  130: 'https://raw.githubusercontent.com/uniswap/assets/master/blockchains/unichain/info/logo.png',
   137: 'https://icons.llamao.fi/icons/chains/rsz_polygon.jpg',
+  143: 'https://icons.llamao.fi/icons/chains/rsz_ronin.jpg',
   250: 'https://icons.llamao.fi/icons/chains/rsz_fantom.jpg',
   324: 'https://icons.llamao.fi/icons/chains/rsz_zksync.jpg',
+  999: 'https://icons.llamao.fi/icons/chains/rsz_hyperliquid.jpg',
   8453: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
   42161: 'https://icons.llamao.fi/icons/chains/rsz_arbitrum.jpg',
   43114: 'https://icons.llamao.fi/icons/chains/rsz_avalanche.jpg',
   59144: 'https://icons.llamao.fi/icons/chains/rsz_linea.jpg',
+  98866: 'https://icons.llamao.fi/icons/chains/rsz_stable.jpg',
   534352: 'https://icons.llamao.fi/icons/chains/rsz_scroll.jpg',
+  747474: 'https://icons.llamao.fi/icons/chains/rsz_monad.jpg',
 };
 
 // Chain names
 const CHAIN_NAMES: Record<number, string> = {
   1: 'Ethereum',
-  10: 'Optimism',
+  10: 'OP Mainnet',
   56: 'BNB Chain',
   100: 'Gnosis',
+  130: 'Unichain',
   137: 'Polygon',
+  143: 'Katana',
   250: 'Fantom',
   324: 'zkSync Era',
+  999: 'HyperEVM',
   8453: 'Base',
   42161: 'Arbitrum',
   43114: 'Avalanche',
   59144: 'Linea',
+  98866: 'Stable',
   534352: 'Scroll',
+  747474: 'Monad',
 };
 
 // Generic chain icon placeholder

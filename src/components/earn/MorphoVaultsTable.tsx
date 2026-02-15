@@ -1,7 +1,7 @@
 /**
  * Morpho Vaults Table Component
  * 
- * Displays curated Morpho vaults with deposit/withdraw actions.
+ * Displays curated Morpho vaults with in-app deposit/withdraw actions.
  */
 
 import { useState, useMemo, memo } from 'react';
@@ -12,8 +12,9 @@ import {
   RefreshCw,
   AlertCircle,
   TrendingUp,
-  ExternalLink,
   Vault,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +31,7 @@ interface MorphoVaultsTableProps {
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  onVaultAction?: (vault: MorphoVault, action: 'deposit' | 'withdraw') => void;
 }
 
 function formatUsd(value: number): string {
@@ -46,7 +48,15 @@ function formatAPY(apy: number): string {
   return `${apy.toFixed(2)}%`;
 }
 
-const VaultRow = memo(function VaultRow({ vault, userPosition }: { vault: MorphoVault; userPosition?: VaultPosition }) {
+const VaultRow = memo(function VaultRow({
+  vault,
+  userPosition,
+  onAction,
+}: {
+  vault: MorphoVault;
+  userPosition?: VaultPosition;
+  onAction?: (vault: MorphoVault, action: 'deposit' | 'withdraw') => void;
+}) {
   const chainConfig = getMorphoChainConfig(vault.chainId);
 
   return (
@@ -114,16 +124,29 @@ const VaultRow = memo(function VaultRow({ vault, userPosition }: { vault: Morpho
           </div>
         )}
 
-        {/* Link to Morpho app */}
-        <a
-          href={`https://app.morpho.org/vault?vault=${vault.address}&network=${vault.chainId === 1 ? 'mainnet' : vault.chainId === 8453 ? 'base' : 'mainnet'}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-shrink-0 p-2 rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-          title="Open in Morpho App"
-        >
-          <ExternalLink className="w-4 h-4" />
-        </a>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-3 gap-1 text-xs"
+            onClick={() => onAction?.(vault, 'deposit')}
+          >
+            <ArrowUpRight className="w-3 h-3" />
+            Deposit
+          </Button>
+          {userPosition && userPosition.assetsUsd > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-3 gap-1 text-xs"
+              onClick={() => onAction?.(vault, 'withdraw')}
+            >
+              <ArrowDownLeft className="w-3 h-3" />
+              Withdraw
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Mobile stats */}
@@ -153,6 +176,7 @@ export function MorphoVaultsTable({
   loading,
   error,
   onRefresh,
+  onVaultAction,
 }: MorphoVaultsTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -241,6 +265,7 @@ export function MorphoVaultsTable({
             key={`${vault.chainId}-${vault.address}`}
             vault={vault}
             userPosition={positionMap.get(`${vault.chainId}-${vault.address}`)}
+            onAction={onVaultAction}
           />
         ))}
       </div>
