@@ -449,24 +449,35 @@ export async function fetchMorphoPositions(options: {
 
     console.log(`[Morpho API] Raw position items for chain ${chainId}:`, data.marketPositions.items.length);
 
+    // Safe BigInt conversion that handles numbers, strings, and floats
+    const safeBigInt = (val: string | number | null | undefined): bigint => {
+      if (val == null) return 0n;
+      if (typeof val === 'number') {
+        if (!Number.isFinite(val)) return 0n;
+        return BigInt(Math.floor(val));
+      }
+      try { return BigInt(val); } catch { return 0n; }
+    };
+
     const positions: UserPosition[] = data.marketPositions.items
       .filter(p => {
-        const hasSupply = BigInt(p.supplyAssets || '0') > 0n;
-        const hasBorrow = BigInt(p.borrowAssets || '0') > 0n;
-        const hasCollateral = BigInt(p.collateral || '0') > 0n;
+        // Use USD values as primary check (always numbers, no BigInt parsing risk)
+        const hasSupply = (p.supplyAssetsUsd || 0) > 0.001;
+        const hasBorrow = (p.borrowAssetsUsd || 0) > 0.001;
+        const hasCollateral = (p.collateralUsd || 0) > 0.001;
         return hasSupply || hasBorrow || hasCollateral;
       })
       .map(p => ({
         marketId: p.market.uniqueKey,
         chainId,
         market: parseMarket(p.market, chainId),
-        supplyShares: BigInt(p.supplyShares || '0'),
-        supplyAssets: BigInt(p.supplyAssets || '0'),
+        supplyShares: safeBigInt(p.supplyShares),
+        supplyAssets: safeBigInt(p.supplyAssets),
         supplyAssetsUsd: p.supplyAssetsUsd || 0,
-        borrowShares: BigInt(p.borrowShares || '0'),
-        borrowAssets: BigInt(p.borrowAssets || '0'),
+        borrowShares: safeBigInt(p.borrowShares),
+        borrowAssets: safeBigInt(p.borrowAssets),
         borrowAssetsUsd: p.borrowAssetsUsd || 0,
-        collateral: BigInt(p.collateral || '0'),
+        collateral: safeBigInt(p.collateral),
         collateralUsd: p.collateralUsd || 0,
       }));
 

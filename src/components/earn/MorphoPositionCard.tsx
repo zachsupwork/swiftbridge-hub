@@ -1,5 +1,5 @@
 /**
- * Enhanced Position Card with TokenIcon
+ * Enhanced Position Card with detailed market info, contract addresses, and management actions.
  */
 
 import { memo, useState, useCallback } from 'react';
@@ -14,14 +14,21 @@ import {
   Shield,
   Plus,
   Minus,
+  ExternalLink,
+  Copy,
+  Check,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
+import { getExplorerAddressUrl } from '@/lib/wagmiConfig';
 import { RiskBar } from '@/components/common/RiskBar';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import type { MorphoPositionWithHealth } from '@/hooks/useMorphoPositions';
 import type { ActionType } from './EnhancedActionModal';
+import { toast } from '@/hooks/use-toast';
 
 interface MorphoPositionCardProps {
   position: MorphoPositionWithHealth;
@@ -33,6 +40,7 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
   onManage,
 }: MorphoPositionCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const chainConfig = getMorphoChainConfig(position.chainId);
   const market = position.market;
 
@@ -56,6 +64,15 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
     return 'text-destructive';
   }, []);
 
+  const copyAddress = useCallback((addr: string) => {
+    navigator.clipboard.writeText(addr);
+    setCopiedAddr(addr);
+    toast({ title: 'Copied', description: 'Address copied to clipboard' });
+    setTimeout(() => setCopiedAddr(null), 1500);
+  }, []);
+
+  const truncAddr = (addr: string) => addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '—';
+
   const hasSupply = position.supplyAssetsUsd > 0;
   const hasBorrow = position.borrowAssetsUsd > 0;
   const hasCollateral = position.collateralUsd > 0;
@@ -68,7 +85,7 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass rounded-xl overflow-hidden"
+      className="glass rounded-xl overflow-hidden border border-primary/20"
     >
       {/* Header */}
       <div 
@@ -89,7 +106,8 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
                   </span>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <ChainIcon chainId={position.chainId} size="sm" />
                 {chainConfig?.label || 'Unknown Chain'} • LLTV: {market.lltv.toFixed(0)}%
               </div>
             </div>
@@ -196,6 +214,97 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
             )}
           </div>
 
+          {/* Market details */}
+          <div className="p-3 rounded-lg bg-muted/20 border border-border/30 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+              <Info className="w-3.5 h-3.5" />
+              Market Details
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Supply</span>
+                <span className="font-medium">{formatUsd(market.totalSupplyUsd)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Total Borrow</span>
+                <span className="font-medium">{formatUsd(market.totalBorrowUsd)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Utilization</span>
+                <span className="font-medium">{market.utilization.toFixed(1)}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Liquidity</span>
+                <span className="font-medium">{formatUsd(market.availableLiquidityUsd)}</span>
+              </div>
+            </div>
+
+            {/* Contract addresses */}
+            <div className="pt-2 border-t border-border/20 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Morpho Blue</span>
+                <div className="flex items-center gap-1">
+                  <a
+                    href={getExplorerAddressUrl(position.chainId, market.morphoBlue)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-primary hover:underline"
+                  >
+                    {truncAddr(market.morphoBlue)}
+                  </a>
+                  <button onClick={(e) => { e.stopPropagation(); copyAddress(market.morphoBlue); }} className="p-0.5 text-muted-foreground hover:text-foreground">
+                    {copiedAddr === market.morphoBlue ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+              {market.oracle && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Oracle</span>
+                  <div className="flex items-center gap-1">
+                    <a
+                      href={getExplorerAddressUrl(position.chainId, market.oracle)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-primary hover:underline"
+                    >
+                      {truncAddr(market.oracle)}
+                    </a>
+                    <button onClick={(e) => { e.stopPropagation(); copyAddress(market.oracle); }} className="p-0.5 text-muted-foreground hover:text-foreground">
+                      {copiedAddr === market.oracle ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {market.irm && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">IRM</span>
+                  <div className="flex items-center gap-1">
+                    <a
+                      href={getExplorerAddressUrl(position.chainId, market.irm)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-primary hover:underline"
+                    >
+                      {truncAddr(market.irm)}
+                    </a>
+                    <button onClick={(e) => { e.stopPropagation(); copyAddress(market.irm); }} className="p-0.5 text-muted-foreground hover:text-foreground">
+                      {copiedAddr === market.irm ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Market ID</span>
+                <div className="flex items-center gap-1">
+                  <span className="font-mono text-[10px]">{truncAddr(market.uniqueKey)}</span>
+                  <button onClick={(e) => { e.stopPropagation(); copyAddress(market.uniqueKey); }} className="p-0.5 text-muted-foreground hover:text-foreground">
+                    {copiedAddr === market.uniqueKey ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Risk bar */}
           {hasBorrow && (
             <RiskBar 
@@ -249,6 +358,28 @@ export const MorphoPositionCard = memo(function MorphoPositionCard({
                 >
                   <Wallet className="w-3 h-3" />
                   Borrow More
+                </Button>
+              </>
+            )}
+            {!hasSupply && !hasBorrow && hasCollateral && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'supply')}
+                  className="gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Supply
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onManage?.(position, 'borrow')}
+                  className="gap-1"
+                >
+                  <Wallet className="w-3 h-3" />
+                  Borrow
                 </Button>
               </>
             )}

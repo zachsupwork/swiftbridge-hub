@@ -441,10 +441,30 @@ export default function Earn() {
             </div>
           </div>
 
-          {/* Supported chains badges */}
+          {/* Supported chains badges — clickable to filter */}
           <div className="flex items-center gap-2 flex-wrap">
+            <Badge
+              variant="outline"
+              className={cn(
+                "h-7 px-3 gap-1.5 text-sm font-medium cursor-pointer transition-colors",
+                !selectedChainId ? "bg-primary/20 border-primary/50 text-primary" : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+              )}
+              onClick={() => setSelectedChainId(undefined)}
+            >
+              All Chains
+            </Badge>
             {getEnabledMorphoChains().map(chain => (
-              <Badge key={chain.chainId} variant="outline" className="h-7 px-3 gap-1.5 text-sm font-medium border-primary/30 bg-primary/10 text-primary">
+              <Badge
+                key={chain.chainId}
+                variant="outline"
+                className={cn(
+                  "h-7 px-3 gap-1.5 text-sm font-medium cursor-pointer transition-colors",
+                  selectedChainId === chain.chainId
+                    ? "bg-primary/20 border-primary/50 text-primary"
+                    : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                )}
+                onClick={() => setSelectedChainId(selectedChainId === chain.chainId ? undefined : chain.chainId)}
+              >
                 <ChainIcon chainId={chain.chainId} size="sm" />
                 {chain.label}
               </Badge>
@@ -807,7 +827,11 @@ export default function Earn() {
         onClose={handleCloseModal}
         market={selectedMarket}
         existingSupply={selectedPosition?.supplyAssets}
-        onSuccess={handleCloseModal}
+        onSuccess={() => {
+          refreshMarkets();
+          refreshPositions();
+          refreshVaults();
+        }}
       />
 
       {/* Borrow Modal (handles collateral supply inline) */}

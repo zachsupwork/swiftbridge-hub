@@ -16,6 +16,7 @@ import {
   Info,
   TrendingUp,
   Vault,
+  ExternalLink,
 } from 'lucide-react';
 import {
   useAccount,
@@ -25,6 +26,7 @@ import {
   useReadContract,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
 // ERC-4626 ABI (minimal for deposit/withdraw/redeem)
@@ -352,7 +355,19 @@ export function MorphoVaultActionModal({
             {!isCorrectChain && isConnected && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-sm">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
-                <span>Switch to the correct network to deposit</span>
+                <span className="flex-1">Switch to the correct network to deposit</span>
+                <ConnectButton.Custom>
+                  {({ openChainModal, mounted }) => (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { if (mounted && openChainModal) openChainModal(); }}
+                      className="gap-1 text-xs shrink-0"
+                    >
+                      Switch
+                    </Button>
+                  )}
+                </ConnectButton.Custom>
               </div>
             )}
 
@@ -413,41 +428,105 @@ export function MorphoVaultActionModal({
 
         {/* Success message */}
         {step === 'success' && (
-          <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/30 text-sm text-success">
-            <Check className="w-4 h-4 flex-shrink-0" />
-            <span>{tab === 'deposit' ? 'Deposit' : 'Withdrawal'} confirmed!</span>
+          <div className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
+                <Check className="w-5 h-5 text-success" />
+              </div>
+              <div>
+                <p className="font-semibold text-success">
+                  {tab === 'deposit' ? 'Deposit' : 'Withdrawal'} Successful
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {amount} {vault?.asset.symbol} {tab === 'deposit' ? 'deposited to' : 'withdrawn from'} {vault?.name}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground">Amount</span>
+                <div className="font-medium">{amount} {vault?.asset.symbol}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground">Vault</span>
+                <div className="font-medium truncate">{vault?.name}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground">APY</span>
+                <div className="font-medium text-success">{vault?.apy ? `${vault.apy.toFixed(2)}%` : '—'}</div>
+              </div>
+              <div className="p-2 rounded-lg bg-muted/30">
+                <span className="text-muted-foreground">Curator</span>
+                <div className="font-medium">{vault?.curator || '—'}</div>
+              </div>
+            </div>
+            {actionTxHash && (
+              <a
+                href={`${CHAIN_EXPLORERS[vault?.chainId || 1] || 'https://etherscan.io/tx/'}${actionTxHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                View transaction on explorer
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  onClose();
+                  const params = new URLSearchParams(window.location.search);
+                  params.set('tab', 'positions');
+                  window.history.replaceState(null, '', `/earn?${params.toString()}`);
+                  window.location.reload();
+                }}
+              >
+                View Positions
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setStep('idle');
+                  setAmount('');
+                  setActionTxHash(undefined);
+                }}
+              >
+                {tab === 'deposit' ? 'Deposit More' : 'Withdraw More'}
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* Action button */}
-        <Button
-          onClick={handleAction}
-          disabled={isActionDisabled}
-          className="w-full h-12 gap-2"
-          size="lg"
-        >
-          {step === 'approval' || step === 'approval_pending' ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Approving...
-            </>
-          ) : step === 'action' || step === 'action_pending' ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {tab === 'deposit' ? 'Depositing...' : 'Withdrawing...'}
-            </>
-          ) : step === 'success' ? (
-            <>
-              <Check className="w-4 h-4" />
-              Done
-            </>
-          ) : (
-            <>
-              {tab === 'deposit' ? 'Deposit' : 'Withdraw'}
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </Button>
+        {/* Action button - only show when not in success state */}
+        {step !== 'success' && (
+          <Button
+            onClick={handleAction}
+            disabled={isActionDisabled}
+            className="w-full h-12 gap-2"
+            size="lg"
+          >
+            {step === 'approval' || step === 'approval_pending' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Approving...
+              </>
+            ) : step === 'action' || step === 'action_pending' ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {tab === 'deposit' ? 'Depositing...' : 'Withdrawing...'}
+              </>
+            ) : (
+              <>
+                {tab === 'deposit' ? 'Deposit' : 'Withdraw'}
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
+          </Button>
+        )}
 
         {/* Info footer */}
         <p className="text-xs text-muted-foreground text-center">
