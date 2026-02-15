@@ -81,6 +81,11 @@ export default function Portfolio() {
 
   const uniqueChains = useMemo(() => new Set(tokenBalances.map((t) => t.chainId)).size, [tokenBalances]);
   const dustCount = useMemo(() => tokenBalances.filter((t) => t.balanceUSD < 1 && t.balanceUSD > 0).length, [tokenBalances]);
+  const failedChains = useMemo(() => {
+    // Chains we queried but got 0 tokens back (likely RPC failure)
+    const chainsWithTokens = new Set(tokenBalances.map((t) => t.chainId));
+    return chainIds.filter(id => !chainsWithTokens.has(id) && !new Set([11155111]).has(id));
+  }, [tokenBalances, chainIds]);
 
   const displayTotal = selectedChainFilter === 'all' ? totalUSD : filteredTotal;
   const showDebugEnv = import.meta.env.DEV || import.meta.env.VITE_PORTFOLIO_DEBUG === 'true';
@@ -131,6 +136,16 @@ export default function Portfolio() {
           {error && !isLoading && tokenBalances.length > 0 && (
             <div className="flex items-center gap-3 p-4 mb-6 rounded-xl bg-warning/10 border border-warning/30 text-sm">
               <span className="flex-1 text-warning">{error}</span>
+              <SyncBalancesButton isLoading={isLoading} lastUpdated={lastUpdated} onRefresh={refreshBalances} variant="compact" />
+            </div>
+          )}
+
+          {/* Failed chains banner */}
+          {!isLoading && failedChains.length > 0 && tokenBalances.length > 0 && (
+            <div className="flex items-center gap-3 p-3 mb-6 rounded-xl bg-muted/50 border border-border text-xs text-muted-foreground">
+              <span className="flex-1">
+                Some chains may be temporarily unavailable ({failedChains.length} chain{failedChains.length > 1 ? 's' : ''} returned no tokens). Tap Refresh to retry.
+              </span>
               <SyncBalancesButton isLoading={isLoading} lastUpdated={lastUpdated} onRefresh={refreshBalances} variant="compact" />
             </div>
           )}
@@ -212,7 +227,7 @@ export default function Portfolio() {
               className="whitespace-nowrap"
             >
               {hideDust ? <Eye className="w-4 h-4 mr-1.5" /> : <EyeOff className="w-4 h-4 mr-1.5" />}
-              {hideDust ? 'Show All' : `Hide <$1${dustCount > 0 ? ` (${dustCount})` : ''}`}
+              {hideDust ? `Show All (${dustCount} hidden)` : `Hide <$1${dustCount > 0 ? ` (${dustCount})` : ''}`}
             </Button>
           </div>
 
@@ -312,7 +327,14 @@ export default function Portfolio() {
 
           {filteredTokens.length > 0 && (
             <div className="flex items-center justify-between text-xs text-muted-foreground mt-4 px-2">
-              <span>Showing {filteredTokens.length} token{filteredTokens.length !== 1 ? 's' : ''}</span>
+              <span>
+                Showing {filteredTokens.length} token{filteredTokens.length !== 1 ? 's' : ''}
+                {hideDust && dustCount > 0 && (
+                  <button onClick={() => setHideDust(false)} className="ml-2 underline hover:text-foreground transition-colors">
+                    + {dustCount} hidden (tap to view)
+                  </button>
+                )}
+              </span>
               <span>Total: ${displayTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
             </div>
           )}

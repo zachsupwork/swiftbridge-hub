@@ -335,15 +335,33 @@ interface KnownToken {
 }
 
 const KNOWN_TOKENS: Record<number, KnownToken[]> = {
-  1: [ // Ethereum
+  1: [ // Ethereum — top 25
     { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', symbol: 'WBTC', decimals: 8, name: 'Wrapped BTC' },
     { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
     { address: '0x514910771AF9Ca656af840dff83E8264EcF986CA', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9', symbol: 'AAVE', decimals: 18, name: 'Aave' },
+    { address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', symbol: 'UNI', decimals: 18, name: 'Uniswap' },
+    { address: '0xc00e94Cb662C3520282E6f5717214004A7f26888', symbol: 'COMP', decimals: 18, name: 'Compound' },
+    { address: '0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2', symbol: 'MKR', decimals: 18, name: 'Maker' },
+    { address: '0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F', symbol: 'SNX', decimals: 18, name: 'Synthetix' },
+    { address: '0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e', symbol: 'YFI', decimals: 18, name: 'yearn.finance' },
+    { address: '0xD533a949740bb3306d119CC777fa900bA034cd52', symbol: 'CRV', decimals: 18, name: 'Curve DAO' },
+    { address: '0xba100000625a3754423978a60c9317c58a424e3D', symbol: 'BAL', decimals: 18, name: 'Balancer' },
+    { address: '0x4d224452801ACEd8B2F0aebE155379bb5D594381', symbol: 'APE', decimals: 18, name: 'ApeCoin' },
+    { address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE', symbol: 'SHIB', decimals: 18, name: 'Shiba Inu' },
+    { address: '0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32', symbol: 'LDO', decimals: 18, name: 'Lido DAO' },
+    { address: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84', symbol: 'stETH', decimals: 18, name: 'Lido Staked ETH' },
+    { address: '0xBe9895146f7AF43049ca1c1AE358B0541Ea49704', symbol: 'cbETH', decimals: 18, name: 'Coinbase Wrapped Staked ETH' },
+    { address: '0xae78736Cd615f374D3085123A210448E74Fc6393', symbol: 'rETH', decimals: 18, name: 'Rocket Pool ETH' },
+    { address: '0x111111111117dC0aa78b770fA6A738034120C302', symbol: '1INCH', decimals: 18, name: '1inch' },
+    { address: '0x6982508145454Ce325dDbE47a25d4ec3d2311933', symbol: 'PEPE', decimals: 18, name: 'Pepe' },
+    { address: '0x163f8C2467924be0ae7B5347228CABF260318753', symbol: 'WLD', decimals: 18, name: 'Worldcoin' },
+    { address: '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0', symbol: 'MATIC', decimals: 18, name: 'Polygon (Matic)' },
   ],
-  137: [ // Polygon
+  137: [ // Polygon — top 20
     { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
@@ -351,8 +369,17 @@ const KNOWN_TOKENS: Record<number, KnownToken[]> = {
     { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
     { address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', symbol: 'WPOL', decimals: 18, name: 'Wrapped POL' },
+    { address: '0xD6DF932A45C0f255f85145f286eA0b292B21C90B', symbol: 'AAVE', decimals: 18, name: 'Aave' },
+    { address: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0xb33EaAd8d922B1083446DC23f610c2567fB5180f', symbol: 'UNI', decimals: 18, name: 'Uniswap' },
+    { address: '0x172370d5Cd63279eFa6d502DAB29171933a610AF', symbol: 'CRV', decimals: 18, name: 'Curve DAO' },
+    { address: '0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3', symbol: 'BAL', decimals: 18, name: 'Balancer' },
+    { address: '0x50B728D8D964fd00C2d0AAD81718b71311feF68a', symbol: 'SNX', decimals: 18, name: 'Synthetix' },
+    { address: '0x6f8a06447Ff6FcF75d803135a7de15CE88C1d4ec', symbol: 'SHIB', decimals: 18, name: 'Shiba Inu' },
+    { address: '0xE111178A87A3BFf0c8d18DECBa5798827539Ae99', symbol: 'EURS', decimals: 2, name: 'STASIS EURO' },
+    { address: '0xa3Fa99A148fA48D14Ed51d610c367C61876997F1', symbol: 'miMATIC', decimals: 18, name: 'MAI' },
   ],
-  42161: [ // Arbitrum
+  42161: [ // Arbitrum — top 18
     { address: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
@@ -360,34 +387,73 @@ const KNOWN_TOKENS: Record<number, KnownToken[]> = {
     { address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
     { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x912CE59144191C1204E64559FE8253a0e49E6548', symbol: 'ARB', decimals: 18, name: 'Arbitrum' },
+    { address: '0xba5DdD1f9d7F570dc94a51479a000E3BCE967196', symbol: 'AAVE', decimals: 18, name: 'Aave' },
+    { address: '0xf97f4df75117a78c1A5a0DBb814Af92458539FB4', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0xFa7F8980b0f1E64A2062791cc3b0871572f1F7f0', symbol: 'UNI', decimals: 18, name: 'Uniswap' },
+    { address: '0x11cDb42B0EB46D95f990BeDD4695A6e3fA034978', symbol: 'CRV', decimals: 18, name: 'Curve DAO' },
+    { address: '0x040d1EdC9569d4Bab2D15287Dc5A4F10F56a56B8', symbol: 'BAL', decimals: 18, name: 'Balancer' },
+    { address: '0x3E6648C5a70A150A88bCE65F4aD4d506Fe15d2AF', symbol: 'SPELL', decimals: 18, name: 'Spell Token' },
+    { address: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a', symbol: 'GMX', decimals: 18, name: 'GMX' },
+    { address: '0x5979D7b546E38E9aB8950fce0075BcACE80C2774', symbol: 'wstETH', decimals: 18, name: 'Wrapped stETH' },
+    { address: '0xEC70Dcb4A1EFa46b8F2D97C310C9c4790ba5ffA8', symbol: 'rETH', decimals: 18, name: 'Rocket Pool ETH' },
   ],
-  8453: [ // Base
+  8453: [ // Base — top 15
     { address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
     { address: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22', symbol: 'cbETH', decimals: 18, name: 'Coinbase Wrapped Staked ETH' },
+    { address: '0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452', symbol: 'wstETH', decimals: 18, name: 'Wrapped stETH' },
+    { address: '0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c', symbol: 'rETH', decimals: 18, name: 'Rocket Pool ETH' },
+    { address: '0x940181a94A35A4569E4529A3CDfB74e38FD98631', symbol: 'AERO', decimals: 18, name: 'Aerodrome' },
+    { address: '0x236aa50979D5f3De3Bd1Eeb40E81137F22ab794b', symbol: 'tBTC', decimals: 8, name: 'tBTC v2' },
+    { address: '0x548f93779fBC992010C07467cBaf329DD5F059B7', symbol: 'BRETT', decimals: 18, name: 'Brett' },
+    { address: '0x532f27101965dd16442E59d40670FaF5eBB142E4', symbol: 'WELL', decimals: 18, name: 'Moonwell' },
+    { address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA', symbol: 'USDbC', decimals: 6, name: 'USD Base Coin' },
+    { address: '0x0555E30da8f98308EdB960aa94C0Db47230d2B9c', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0x3bB4445D30AC020a84c1b5A8A2C6248ebC9779D0', symbol: 'AAVE', decimals: 18, name: 'Aave' },
   ],
-  10: [ // Optimism
+  10: [ // Optimism — top 15
     { address: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', symbol: 'USDC.e', decimals: 6, name: 'Bridged USDC' },
     { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18, name: 'Wrapped Ether' },
     { address: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', symbol: 'DAI', decimals: 18, name: 'Dai' },
     { address: '0x4200000000000000000000000000000000000042', symbol: 'OP', decimals: 18, name: 'Optimism' },
+    { address: '0x76FB31fb4af56892A25e32cFC43De717950c9278', symbol: 'AAVE', decimals: 18, name: 'Aave' },
+    { address: '0x350a791Bfc2C21F9Ed5d10980Dad2e2638ffa7f6', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0x6fd9d7AD17242c41f7131d257212c54A0e816691', symbol: 'UNI', decimals: 18, name: 'Uniswap' },
+    { address: '0x1F32b1c2345538c0c6f582fCB022739c4A194Ebb', symbol: 'wstETH', decimals: 18, name: 'Wrapped stETH' },
+    { address: '0x9Bcef72be871e61ED4fBbc7630889beE758eb81D', symbol: 'rETH', decimals: 18, name: 'Rocket Pool ETH' },
+    { address: '0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4', symbol: 'SNX', decimals: 18, name: 'Synthetix' },
+    { address: '0x68f180fcCe6836688e9084f035309E29Bf0A2095', symbol: 'WBTC', decimals: 8, name: 'Wrapped BTC' },
   ],
-  56: [ // BSC
+  56: [ // BSC — top 15
     { address: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT', decimals: 18, name: 'Tether USD' },
     { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', symbol: 'USDC', decimals: 18, name: 'USD Coin' },
     { address: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', symbol: 'ETH', decimals: 18, name: 'Ethereum' },
     { address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', symbol: 'WBNB', decimals: 18, name: 'Wrapped BNB' },
     { address: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', symbol: 'BTCB', decimals: 18, name: 'Bitcoin BEP2' },
+    { address: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3', symbol: 'DAI', decimals: 18, name: 'Dai' },
+    { address: '0xfb6115445Bff7b52FeB98650C87f44907E58f802', symbol: 'AAVE', decimals: 18, name: 'Aave' },
+    { address: '0xF8A0BF9cF54Bb92F17374d9e9A321E6a111a51bD', symbol: 'LINK', decimals: 18, name: 'Chainlink' },
+    { address: '0xBf5140A22578168FD562DCcF235E5D43A02ce9B1', symbol: 'UNI', decimals: 18, name: 'Uniswap' },
+    { address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', symbol: 'CAKE', decimals: 18, name: 'PancakeSwap' },
+    { address: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE', symbol: 'XRP', decimals: 18, name: 'XRP Token' },
+    { address: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47', symbol: 'ADA', decimals: 18, name: 'Cardano' },
+    { address: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402', symbol: 'DOT', decimals: 18, name: 'Polkadot' },
   ],
-  43114: [ // Avalanche
+  43114: [ // Avalanche — top 12
     { address: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', symbol: 'USDT', decimals: 6, name: 'Tether USD' },
     { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', symbol: 'USDC', decimals: 6, name: 'USD Coin' },
     { address: '0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB', symbol: 'WETH.e', decimals: 18, name: 'Wrapped Ether' },
     { address: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', symbol: 'WAVAX', decimals: 18, name: 'Wrapped AVAX' },
+    { address: '0x63a72806098Bd3D9520cC43356dD78afe5D386D9', symbol: 'AAVE.e', decimals: 18, name: 'Aave' },
+    { address: '0x5947BB275c521040051D82396192181b413227A3', symbol: 'LINK.e', decimals: 18, name: 'Chainlink' },
+    { address: '0x50b7545627a5162F82A992c33b87aDc75187B218', symbol: 'WBTC.e', decimals: 8, name: 'Wrapped BTC' },
+    { address: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70', symbol: 'DAI.e', decimals: 18, name: 'Dai' },
+    { address: '0x2b2C81e08f1Af8835a78Bb2A90AE924ACE0eA4bE', symbol: 'sAVAX', decimals: 18, name: 'Staked AVAX' },
+    { address: '0x152b9d0FdC40C096DE345963aE19DB304Aa1FcB9', symbol: 'BTC.b', decimals: 8, name: 'Bitcoin' },
   ],
 };
 
@@ -410,24 +476,63 @@ const NATIVE_TOKEN_META: Record<number, { symbol: string; name: string; decimals
   5000: { symbol: 'MNT', name: 'Mantle', decimals: 18 },
 };
 
-// RPC URLs per chain (reuse from wagmiConfig or fallback publics)
-const CHAIN_RPCS: Record<number, string> = {
-  1: 'https://eth.llamarpc.com',
-  10: 'https://mainnet.optimism.io',
-  137: 'https://polygon-rpc.com',
-  42161: 'https://arb1.arbitrum.io/rpc',
-  8453: 'https://mainnet.base.org',
-  56: 'https://bsc-dataseed1.binance.org',
-  43114: 'https://api.avax.network/ext/bc/C/rpc',
-  250: 'https://rpc.ftm.tools',
-  100: 'https://rpc.gnosischain.com',
-  42220: 'https://forno.celo.org',
-  1284: 'https://rpc.api.moonbeam.network',
-  324: 'https://mainnet.era.zksync.io',
-  59144: 'https://rpc.linea.build',
-  534352: 'https://rpc.scroll.io',
-  5000: 'https://rpc.mantle.xyz',
+// RPC URLs per chain — multiple endpoints for failover
+const CHAIN_RPC_LIST: Record<number, string[]> = {
+  1: ['https://eth.llamarpc.com', 'https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org', 'https://rpc.ankr.com/eth'],
+  10: ['https://mainnet.optimism.io', 'https://optimism-rpc.publicnode.com', 'https://optimism.drpc.org'],
+  137: ['https://polygon-rpc.com', 'https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org'],
+  42161: ['https://arb1.arbitrum.io/rpc', 'https://arbitrum-one-rpc.publicnode.com', 'https://arbitrum.drpc.org'],
+  8453: ['https://mainnet.base.org', 'https://base-rpc.publicnode.com', 'https://base.drpc.org'],
+  56: ['https://bsc-dataseed1.binance.org', 'https://bsc-dataseed2.binance.org', 'https://bsc-rpc.publicnode.com'],
+  43114: ['https://api.avax.network/ext/bc/C/rpc', 'https://avalanche-c-chain-rpc.publicnode.com', 'https://avax.meowrpc.com'],
+  250: ['https://rpc.ftm.tools', 'https://fantom-rpc.publicnode.com'],
+  100: ['https://rpc.gnosischain.com', 'https://gnosis-rpc.publicnode.com'],
+  42220: ['https://forno.celo.org', 'https://celo-rpc.publicnode.com'],
+  1284: ['https://rpc.api.moonbeam.network'],
+  324: ['https://mainnet.era.zksync.io', 'https://zksync-era-rpc.publicnode.com'],
+  59144: ['https://rpc.linea.build', 'https://linea-rpc.publicnode.com'],
+  534352: ['https://rpc.scroll.io', 'https://scroll-rpc.publicnode.com'],
+  5000: ['https://rpc.mantle.xyz', 'https://mantle-rpc.publicnode.com'],
 };
+
+// Legacy compat — first RPC per chain
+const CHAIN_RPCS: Record<number, string> = Object.fromEntries(
+  Object.entries(CHAIN_RPC_LIST).map(([k, v]) => [k, v[0]])
+);
+
+// ─── Token discovery cache (localStorage) ────────────────────────
+const DISCOVERED_TOKENS_KEY = 'cdb_discovered_tokens';
+
+interface DiscoveredToken {
+  address: string;
+  symbol: string;
+  decimals: number;
+  name: string;
+}
+
+function loadDiscoveredTokens(chainId: number): DiscoveredToken[] {
+  try {
+    const raw = localStorage.getItem(DISCOVERED_TOKENS_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw) as Record<string, DiscoveredToken[]>;
+    return all[String(chainId)] || [];
+  } catch { return []; }
+}
+
+function saveDiscoveredTokens(chainId: number, tokens: DiscoveredToken[]): void {
+  try {
+    const raw = localStorage.getItem(DISCOVERED_TOKENS_KEY);
+    const all = raw ? JSON.parse(raw) as Record<string, DiscoveredToken[]> : {};
+    // Merge with existing, dedup by address
+    const existing = all[String(chainId)] || [];
+    const merged = new Map<string, DiscoveredToken>();
+    for (const t of [...existing, ...tokens]) {
+      merged.set(t.address.toLowerCase(), t);
+    }
+    all[String(chainId)] = Array.from(merged.values());
+    localStorage.setItem(DISCOVERED_TOKENS_KEY, JSON.stringify(all));
+  } catch { /* localStorage full or unavailable */ }
+}
 
 // Track the fetch method used for debugging
 export let lastFetchMethod = '';
@@ -481,35 +586,49 @@ export async function getTokenBalances(
     lastFetchDebug.error = msg;
   }
 
-  // Step 2: On-chain fallback via JSON-RPC batch calls
-  if (isDev) console.debug('[LiFi Balances] Using on-chain multicall fallback');
+  // Step 2: On-chain fallback via JSON-RPC calls with RPC failover
+  if (isDev) console.debug('[LiFi Balances] Using on-chain RPC fallback with multi-endpoint failover');
   lastFetchMethod = 'on-chain-rpc';
 
-  // Fetch token prices from LI.FI /v1/tokens for price data
-  let tokenPrices: Record<string, string> = {}; // key: `${chainId}:${address.toLowerCase()}`
+  // Fetch token prices + discover additional token addresses from LI.FI token list
+  let tokenPrices: Record<string, string> = {};
+  const lifiDiscoveredTokens: Record<number, KnownToken[]> = {};
   try {
-    const priceChains = chainIds.slice(0, 8).join(','); // limit to avoid huge response
+    const priceChains = chainIds.slice(0, 10).join(',');
     const priceData = await fetchWithTimeout<Record<string, unknown>>(
       `${LIFI_BASE_URL}/v1/tokens?chains=${priceChains}`,
       undefined,
-      10000
+      12000
     );
-    // Response shape: { tokens: { "137": [...tokens], "1": [...tokens] } } or { "137": [...], ... }
     const tokensMap = (priceData as any)?.tokens || priceData;
     if (tokensMap && typeof tokensMap === 'object') {
       for (const [cid, tokens] of Object.entries(tokensMap)) {
-        if (Array.isArray(tokens)) {
-          for (const t of tokens) {
-            if (t?.address && t?.priceUSD) {
-              tokenPrices[`${cid}:${t.address.toLowerCase()}`] = String(t.priceUSD);
-            }
+        const chainIdNum = parseInt(cid, 10);
+        if (isNaN(chainIdNum) || !Array.isArray(tokens)) continue;
+        const knownSet = new Set((KNOWN_TOKENS[chainIdNum] || []).map(t => t.address.toLowerCase()));
+        const discovered: KnownToken[] = [];
+        for (const t of tokens) {
+          if (t?.address && t?.priceUSD) {
+            tokenPrices[`${cid}:${t.address.toLowerCase()}`] = String(t.priceUSD);
           }
+          // Collect tokens not already in KNOWN_TOKENS for discovery
+          if (t?.address && t?.symbol && !knownSet.has(t.address.toLowerCase())) {
+            discovered.push({
+              address: t.address,
+              symbol: t.symbol,
+              decimals: typeof t.decimals === 'number' ? t.decimals : 18,
+              name: t.name || t.symbol,
+            });
+          }
+        }
+        if (discovered.length > 0) {
+          lifiDiscoveredTokens[chainIdNum] = discovered;
         }
       }
     }
-    if (isDev) console.debug('[LiFi Balances] Loaded prices for', Object.keys(tokenPrices).length, 'tokens');
+    if (isDev) console.debug('[LiFi Balances] Loaded prices for', Object.keys(tokenPrices).length, 'tokens, discovered extra tokens for', Object.keys(lifiDiscoveredTokens).length, 'chains');
   } catch (e) {
-    if (isDev) console.warn('[LiFi Balances] Price fetch failed, USD values will be missing');
+    if (isDev) console.warn('[LiFi Balances] Price/discovery fetch failed, using known tokens only');
   }
 
   // Fetch balances on-chain per chain (batched 3 at a time)
@@ -519,7 +638,7 @@ export async function getTokenBalances(
   for (let i = 0; i < chainIds.length; i += batchSize) {
     const batch = chainIds.slice(i, i + batchSize);
     const batchResults = await Promise.allSettled(
-      batch.map((chainId) => fetchChainBalancesOnChain(walletAddress, chainId, tokenPrices))
+      batch.map((chainId) => fetchChainBalancesOnChain(walletAddress, chainId, tokenPrices, lifiDiscoveredTokens[chainId]))
     );
 
     for (let j = 0; j < batchResults.length; j++) {
@@ -539,50 +658,79 @@ export async function getTokenBalances(
 }
 
 /**
- * Fetch native + ERC20 balances for one chain using individual JSON-RPC calls.
- * Does NOT use batch requests since many public RPCs reject them.
+ * Fetch native + ERC20 balances for one chain with RPC failover + token discovery.
+ * Tries multiple RPC endpoints. Also checks LI.FI-discovered tokens + localStorage cached tokens.
  */
 async function fetchChainBalancesOnChain(
   walletAddress: string,
   chainId: number,
-  tokenPrices: Record<string, string>
+  tokenPrices: Record<string, string>,
+  extraDiscoveredTokens?: KnownToken[]
 ): Promise<TokenAmount[]> {
-  const rpc = CHAIN_RPCS[chainId];
-  if (!rpc) return [];
+  const rpcList = CHAIN_RPC_LIST[chainId];
+  if (!rpcList || rpcList.length === 0) return [];
 
   const nativeMeta = NATIVE_TOKEN_META[chainId] || { symbol: 'ETH', name: 'Native', decimals: 18 };
+  
+  // Merge: known tokens + localStorage discovered + LI.FI discovered (dedup by address)
   const knownTokens = KNOWN_TOKENS[chainId] || [];
-  const tokens: TokenAmount[] = [];
-
-  const balanceOfData = '0x70a08231000000000000000000000000' + walletAddress.slice(2).toLowerCase();
-
-  // Helper: single JSON-RPC call (no batching)
-  async function rpcCall(method: string, params: unknown[]): Promise<string | null> {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const resp = await fetch(rpc, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (!resp.ok) return null;
-      const json = await resp.json();
-      const result = json?.result;
-      if (typeof result === 'string' && result !== '0x' && result !== '0x0') return result;
-      return null;
-    } catch {
-      return null;
+  const cachedDiscovered = loadDiscoveredTokens(chainId);
+  const allExtra = [...cachedDiscovered, ...(extraDiscoveredTokens || [])];
+  
+  const seenAddresses = new Set(knownTokens.map(t => t.address.toLowerCase()));
+  const discoveryTokens: KnownToken[] = [];
+  for (const t of allExtra) {
+    const addr = t.address.toLowerCase();
+    if (!seenAddresses.has(addr)) {
+      seenAddresses.add(addr);
+      discoveryTokens.push(t);
     }
   }
 
-  // Fire all calls in parallel with Promise.allSettled
+  const allTokensToCheck = [...knownTokens, ...discoveryTokens];
+  const balanceOfData = '0x70a08231000000000000000000000000' + walletAddress.slice(2).toLowerCase();
+
+  // RPC call with failover across multiple endpoints
+  async function rpcCallWithFailover(method: string, params: unknown[]): Promise<string | null> {
+    for (const rpc of rpcList) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(rpc, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!resp.ok) {
+          if (resp.status === 429) {
+            // Rate limited — try next RPC
+            if (import.meta.env.DEV) console.warn(`[RPC Failover] ${chainId} rate limited on ${new URL(rpc).hostname}, trying next`);
+            continue;
+          }
+          continue;
+        }
+        const json = await resp.json();
+        if (json?.error) continue;
+        const result = json?.result;
+        if (typeof result === 'string') return result === '0x' || result === '0x0' ? null : result;
+        return null;
+      } catch {
+        // Network error — try next
+        continue;
+      }
+    }
+    return null; // All RPCs failed
+  }
+
+  const tokens: TokenAmount[] = [];
+
+  // Fire all balance checks in parallel (native + all ERC20s)
   const allCalls = [
-    rpcCall('eth_getBalance', [walletAddress, 'latest']),
-    ...knownTokens.map((tk) =>
-      rpcCall('eth_call', [{ to: tk.address, data: balanceOfData }, 'latest'])
+    rpcCallWithFailover('eth_getBalance', [walletAddress, 'latest']),
+    ...allTokensToCheck.map((tk) =>
+      rpcCallWithFailover('eth_call', [{ to: tk.address, data: balanceOfData }, 'latest'])
     ),
   ];
 
@@ -594,11 +742,10 @@ async function fetchChainBalancesOnChain(
     try {
       const amount = BigInt(nativeResult.value);
       if (amount > 0n) {
-      // Try both native address conventions for price lookup
-      const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`]
-        || tokenPrices[`${chainId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`]
-        || '';
-      tokens.push({
+        const nativePrice = tokenPrices[`${chainId}:0x0000000000000000000000000000000000000000`]
+          || tokenPrices[`${chainId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`]
+          || '';
+        tokens.push({
           address: '0x0000000000000000000000000000000000000000',
           symbol: nativeMeta.symbol,
           decimals: nativeMeta.decimals,
@@ -612,14 +759,15 @@ async function fetchChainBalancesOnChain(
     } catch { /* skip */ }
   }
 
-  // ERC20 balances (index 1..N)
-  for (let i = 0; i < knownTokens.length; i++) {
+  // ERC20 balances
+  const newlyDiscovered: DiscoveredToken[] = [];
+  for (let i = 0; i < allTokensToCheck.length; i++) {
     const r = results[i + 1];
     if (r.status !== 'fulfilled' || !r.value) continue;
     try {
       const amount = BigInt(r.value);
       if (amount > 0n) {
-        const tk = knownTokens[i];
+        const tk = allTokensToCheck[i];
         const priceKey = `${chainId}:${tk.address.toLowerCase()}`;
         tokens.push({
           address: tk.address,
@@ -631,14 +779,26 @@ async function fetchChainBalancesOnChain(
           priceUSD: tokenPrices[priceKey] || undefined,
           amount: amount.toString(),
         });
+        // If this was a discovered token (not in KNOWN_TOKENS), cache it
+        if (i >= knownTokens.length) {
+          newlyDiscovered.push({ address: tk.address, symbol: tk.symbol, decimals: tk.decimals, name: tk.name });
+        }
       }
     } catch { /* skip invalid hex */ }
   }
 
+  // Persist newly discovered tokens to localStorage for faster future loads
+  if (newlyDiscovered.length > 0) {
+    saveDiscoveredTokens(chainId, newlyDiscovered);
+    if (import.meta.env.DEV) {
+      console.debug(`[Token Discovery] Chain ${chainId}: cached ${newlyDiscovered.length} new tokens:`, newlyDiscovered.map(t => t.symbol));
+    }
+  }
+
   if (import.meta.env.DEV) {
-    console.debug(`[LiFi Balances] Chain ${chainId}: found ${tokens.length} token(s) via individual RPC calls`, tokens.map(t => `${t.symbol}=${t.amount}`));
+    console.debug(`[LiFi Balances] Chain ${chainId}: found ${tokens.length} token(s) (checked ${allTokensToCheck.length} ERC20s + native)`, tokens.map(t => `${t.symbol}=${t.amount}`));
     if (tokens.length === 0) {
-      console.warn(`[LiFi Balances] Chain ${chainId}: 0 tokens returned. RPC=${rpc}, knownTokens=${knownTokens.length}`);
+      console.warn(`[LiFi Balances] Chain ${chainId}: 0 tokens. RPCs tried: ${rpcList.map(r => new URL(r).hostname).join(', ')}`);
     }
   }
 
