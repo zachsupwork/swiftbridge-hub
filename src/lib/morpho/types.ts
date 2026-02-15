@@ -44,6 +44,7 @@ export interface MorphoMarket {
   rateAtTarget: number | null; // IRM rate at target utilization (percentage)
   fee: number; // Protocol fee as percentage (e.g., 10 = 10%)
   morphoBlue: string; // Morpho Blue core contract
+  whitelisted: boolean; // Whether the market is verified/whitelisted by Morpho
 }
 
 export interface MorphoPosition {

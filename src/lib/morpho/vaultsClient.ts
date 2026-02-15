@@ -1,7 +1,8 @@
 /**
  * Morpho Vaults API Client
  * 
- * Fetches vault data from the official Morpho API.
+ * Fetches vault data from the official Morpho Blue API.
+ * Uses blue-api.morpho.org/graphql with pagination and dedup.
  */
 
 import { MORPHO_API_URL, getMorphoChainConfig } from './config';
@@ -46,11 +47,13 @@ const TOKEN_LOGOS: Record<string, string> = {
   USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
   DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
   WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
+  PYUSD: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
 };
 
 const GENERIC_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
 
-function getTokenLogo(symbol: string): string {
+function getTokenLogo(symbol: string, logoUri?: string): string {
+  if (logoUri) return logoUri;
   return TOKEN_LOGOS[symbol.toUpperCase()] || GENERIC_LOGO;
 }
 
@@ -59,7 +62,7 @@ const VAULTS_QUERY = `
     vaults(
       first: $first
       skip: $skip
-      where: { chainId_in: [$chainId], totalAssetsUsd_gte: 1000 }
+      where: { chainId_in: [$chainId], totalAssetsUsd_gte: 100 }
       orderBy: TotalAssetsUsd
       orderDirection: Desc
     ) {
@@ -72,6 +75,7 @@ const VAULTS_QUERY = `
           symbol
           decimals
           name
+          logoURI
         }
         chain {
           id
@@ -81,6 +85,7 @@ const VAULTS_QUERY = `
           totalAssets
           apy
           fee
+          allTimeApy
           allocation {
             market {
               uniqueKey
@@ -116,6 +121,7 @@ const VAULT_POSITIONS_QUERY = `
             symbol
             decimals
             name
+            logoURI
           }
           state {
             totalAssetsUsd
@@ -143,9 +149,15 @@ interface GraphQLResponse<T> {
 }
 
 async function gqlFetch<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const apiKey = import.meta.env.VITE_MORPHO_API_KEY;
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
   const response = await fetch(MORPHO_API_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 
@@ -166,12 +178,15 @@ async function gqlFetch<T>(query: string, variables: Record<string, unknown>): P
   return json.data;
 }
 
+/**
+ * Fetch all vaults for a chain with pagination and dedup.
+ */
 export async function fetchMorphoVaults(options: {
   chainId: number;
   first?: number;
   skip?: number;
 }): Promise<MorphoVault[]> {
-  const { chainId, first = 50, skip = 0 } = options;
+  const { chainId } = options;
 
   const config = getMorphoChainConfig(chainId);
   if (!config?.enabled) {
@@ -180,12 +195,31 @@ export async function fetchMorphoVaults(options: {
 
   console.log(`[Morpho Vaults] Fetching for ${config.label}...`);
 
-  const data = await gqlFetch<{ vaults: { items: any[] } }>(
-    VAULTS_QUERY,
-    { chainId, first, skip }
-  );
+  const PAGE_SIZE = 100;
+  const allRaw: any[] = [];
+  let skip = 0;
+  let hasMore = true;
 
-  const vaults: MorphoVault[] = data.vaults.items
+  while (hasMore) {
+    const data = await gqlFetch<{ vaults: { items: any[] } }>(
+      VAULTS_QUERY,
+      { chainId, first: PAGE_SIZE, skip }
+    );
+
+    const items = data.vaults.items;
+    allRaw.push(...items);
+
+    if (items.length < PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      skip += PAGE_SIZE;
+      if (skip >= 300) {
+        hasMore = false;
+      }
+    }
+  }
+
+  const vaults: MorphoVault[] = allRaw
     .filter((v: any) => v.asset && v.state)
     .map((v: any) => ({
       address: v.address,
@@ -198,7 +232,7 @@ export async function fetchMorphoVaults(options: {
         symbol: v.asset.symbol || 'UNKNOWN',
         decimals: v.asset.decimals || 18,
         name: v.asset.name || 'Unknown',
-        logoUrl: getTokenLogo(v.asset.symbol || ''),
+        logoUrl: getTokenLogo(v.asset.symbol || '', v.asset.logoURI),
       },
       totalAssetsUsd: v.state.totalAssetsUsd || 0,
       totalAssets: parseFloat(v.state.totalAssets || '0') / Math.pow(10, v.asset.decimals || 18),
@@ -210,14 +244,11 @@ export async function fetchMorphoVaults(options: {
       marketsCount: v.state.allocation?.length || 0,
     }));
 
-  // Deduplicate by address
+  // Deduplicate by address (lowercase)
   const seen = new Set<string>();
   const deduped = vaults.filter(v => {
     const key = v.address.toLowerCase();
-    if (seen.has(key)) {
-      console.warn(`[Morpho Vaults] Duplicate vault filtered: ${v.name} (${key}) on ${config.label}`);
-      return false;
-    }
+    if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -258,7 +289,7 @@ export async function fetchMorphoVaultPositions(options: {
             symbol: p.vault.asset.symbol || 'UNKNOWN',
             decimals: p.vault.asset.decimals || 18,
             name: p.vault.asset.name || 'Unknown',
-            logoUrl: getTokenLogo(p.vault.asset.symbol || ''),
+            logoUrl: getTokenLogo(p.vault.asset.symbol || '', p.vault.asset.logoURI),
           },
           totalAssetsUsd: p.vault.state?.totalAssetsUsd || 0,
           totalAssets: 0,

@@ -4,7 +4,8 @@
  * Uses official Morpho API at api.morpho.org - no API key required.
  */
 
-import { MORPHO_API_URL, getMorphoChainConfig, type MorphoChainConfig } from './morphoConfig';
+import { MORPHO_API_URL, getMorphoChainConfig } from './morpho/config';
+import type { MorphoChainConfig } from './morpho/types';
 
 export interface MorphoMarket {
   id: string;
