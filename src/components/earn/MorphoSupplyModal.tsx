@@ -2,7 +2,7 @@
  * Morpho Supply Modal
  * 
  * Detailed modal for supplying the LOAN TOKEN to a Morpho Blue market.
- * Explains clearly that supply goes to ONE market, not split across tokens.
+ * Persistent success screen with full tx details.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -32,7 +32,8 @@ import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { 
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import {
   Dialog, 
   DialogContent, 
   DialogHeader, 
@@ -241,13 +242,9 @@ export function MorphoSupplyModal({
     if (isActionConfirmed && step === 'action_pending') {
       setStep('success');
       refetchBalance();
-      toast({
-        title: 'Supply Successful',
-        description: `You supplied ${amount} ${token?.symbol} to this market.`,
-      });
-      onSuccess?.();
+      // Don't auto-close — let user see success details
     }
-  }, [isActionConfirmed, step, amount, token?.symbol, refetchBalance, onSuccess]);
+  }, [isActionConfirmed, step, refetchBalance]);
 
   const isLoading = step !== 'idle' && step !== 'success' && step !== 'error';
   const canExecute = parsedAmount > 0n && !isLoading && !isWrongChain && isConnected && parsedAmount <= (effectiveBalance || 0n);
@@ -286,14 +283,26 @@ export function MorphoSupplyModal({
               </DialogDescription>
             </DialogHeader>
 
-            {/* Wrong chain warning */}
+            {/* Wrong chain warning with switch button */}
             {isWrongChain && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30">
                 <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
                 <div className="flex-1 text-sm">
                   <p className="font-medium text-warning">Wrong Network</p>
-                  <p className="text-muted-foreground text-xs">Please switch to {chainConfig?.label} in your wallet to continue.</p>
+                  <p className="text-muted-foreground text-xs">Switch to {chainConfig?.label} to continue.</p>
                 </div>
+                <ConnectButton.Custom>
+                  {({ openChainModal, mounted }) => (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { if (mounted && openChainModal) openChainModal(); }}
+                      className="gap-1 text-xs shrink-0"
+                    >
+                      Switch
+                    </Button>
+                  )}
+                </ConnectButton.Custom>
               </div>
             )}
 
@@ -559,12 +568,10 @@ export function MorphoSupplyModal({
             </div>
 
             {/* Transaction Status */}
-            {step !== 'idle' && (
+            {step !== 'idle' && step !== 'success' && (
               <div className="p-3 rounded-lg bg-muted/30 space-y-2">
                 <div className="flex items-center gap-2">
-                  {step === 'success' ? (
-                    <Check className="w-4 h-4 text-success" />
-                  ) : step === 'error' ? (
+                  {step === 'error' ? (
                     <AlertTriangle className="w-4 h-4 text-destructive" />
                   ) : (
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -588,6 +595,81 @@ export function MorphoSupplyModal({
               </div>
             )}
 
+            {/* Persistent Success Summary */}
+            {step === 'success' && (
+              <div className="p-4 rounded-xl bg-success/10 border border-success/30 space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
+                    <Check className="w-5 h-5 text-success" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-success">Supply Successful</p>
+                    <p className="text-xs text-muted-foreground">You supplied {amount} {token.symbol} to this market.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground">Amount</span>
+                    <div className="font-medium">{amount} {token.symbol}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground">Market</span>
+                    <div className="font-medium">{market.collateralAsset?.symbol || '—'} / {token.symbol}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground">Supply APY</span>
+                    <div className="font-medium text-success">{formatAPY(market.supplyApy)}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-muted/30">
+                    <span className="text-muted-foreground">Chain</span>
+                    <div className="font-medium">{chainConfig?.label}</div>
+                  </div>
+                </div>
+                {actionTxHash && (
+                  <a
+                    href={`${CHAIN_EXPLORERS[market.chainId] || 'https://etherscan.io/tx/'}${actionTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    View transaction on explorer
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 gap-1"
+                    onClick={() => {
+                      onClose();
+                      // Navigate to positions tab
+                      window.location.hash = '';
+                      const params = new URLSearchParams(window.location.search);
+                      params.set('tab', 'positions');
+                      window.history.replaceState(null, '', `/earn?${params.toString()}`);
+                      window.location.reload();
+                    }}
+                  >
+                    View Positions
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 gap-1"
+                    onClick={() => {
+                      setStep('idle');
+                      setAmount('');
+                      setActionTxHash(undefined);
+                      refetchBalance();
+                      refetchAllowance();
+                    }}
+                  >
+                    Supply More
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Error */}
             {error && (
               <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
@@ -595,41 +677,26 @@ export function MorphoSupplyModal({
               </div>
             )}
 
-            {/* Action Button */}
-            <Button
-              onClick={executeSupply}
-              disabled={!canExecute}
-              className="w-full gap-2"
-              size="lg"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {getStepDescription(step, 'supply')}
-                </>
-              ) : step === 'success' ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  Supply Complete
-                </>
-              ) : (
-                <>
-                  <TrendingUp className="w-4 h-4" />
-                  Supply {token.symbol}
-                </>
-              )}
-            </Button>
-
-            {/* Post-supply CTA */}
-            {step === 'success' && market.collateralAsset && (
-              <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                <p className="text-sm text-center">
-                  Want to borrow? You need to deposit <strong>{market.collateralAsset.symbol}</strong> as collateral first.
-                </p>
-                <Button variant="outline" className="w-full mt-2" onClick={onClose}>
-                  Go to Borrow
-                </Button>
-              </div>
+            {/* Action Button - only show when not in success state */}
+            {step !== 'success' && (
+              <Button
+                onClick={executeSupply}
+                disabled={!canExecute}
+                className="w-full gap-2"
+                size="lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {getStepDescription(step, 'supply')}
+                  </>
+                ) : (
+                  <>
+                    <TrendingUp className="w-4 h-4" />
+                    Confirm supply
+                  </>
+                )}
+              </Button>
             )}
 
             {/* Disclaimer */}
