@@ -425,7 +425,7 @@ export default function Portfolio() {
                       <div
                         key={`${pos.chainId}-${pos.marketId}`}
                         className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
-                        onClick={() => navigate('/earn')}
+                        onClick={() => navigate(`/earn?tab=positions`)}
                       >
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <TrendingUp className="w-4 h-4 text-primary" />
@@ -474,7 +474,7 @@ export default function Portfolio() {
                       <div
                         key={`${vp.chainId}-${vp.vaultAddress}`}
                         className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors cursor-pointer"
-                        onClick={() => navigate('/earn')}
+                        onClick={() => navigate(`/earn?tab=positions`)}
                       >
                         <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                           <Vault className="w-4 h-4 text-primary" />

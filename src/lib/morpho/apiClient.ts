@@ -92,13 +92,13 @@ const MARKETS_QUERY = `
   }
 `;
 
-// GraphQL query for user positions
+// GraphQL query for user positions — uses marketPositions (NOT "positions")
 const POSITIONS_QUERY = `
-  query GetPositions($userAddress: String!, $chainId: Int!, $first: Int!) {
-    positions(
+  query GetMarketPositions($userAddress: String!, $chainId: Int!, $first: Int!) {
+    marketPositions(
       first: $first
       where: { 
-        userAddress: $userAddress
+        userAddress_in: [$userAddress]
         chainId_in: [$chainId]
       }
     ) {
@@ -108,6 +108,9 @@ const POSITIONS_QUERY = `
           lltv
           oracleAddress
           irmAddress
+          morphoBlue {
+            address
+          }
           loanAsset {
             address
             symbol
@@ -129,6 +132,12 @@ const POSITIONS_QUERY = `
             supplyAssetsUsd
             borrowAssetsUsd
             liquidityAssetsUsd
+            supplyAssets
+            borrowAssets
+            liquidityAssets
+            collateralAssetsUsd
+            rateAtUTarget
+            fee
           }
         }
         supplyShares
@@ -236,65 +245,82 @@ function parseAsset(asset: ApiAsset | null, chainId: number): MorphoAsset | null
 }
 
 function parseMarket(market: ApiMarket, chainId: number): MorphoMarket | null {
-  if (!market.loanAsset || !market.state) return null;
+  try {
+    if (!market.loanAsset || !market.state) return null;
 
-  const loanAsset = parseAsset(market.loanAsset, chainId);
-  if (!loanAsset) return null;
+    const loanAsset = parseAsset(market.loanAsset, chainId);
+    if (!loanAsset) return null;
 
-  // Convert APY from decimal to percentage, cap at 1000%
-  const rawSupplyApy = (market.state.supplyApy || 0) * 100;
-  const rawBorrowApy = (market.state.borrowApy || 0) * 100;
-  const supplyApy = Math.min(rawSupplyApy, 1000);
-  const borrowApy = Math.min(rawBorrowApy, 1000);
+    // Convert APY from decimal to percentage, cap at 1000%
+    const rawSupplyApy = (market.state.supplyApy || 0) * 100;
+    const rawBorrowApy = (market.state.borrowApy || 0) * 100;
+    const supplyApy = Math.min(rawSupplyApy, 1000);
+    const borrowApy = Math.min(rawBorrowApy, 1000);
 
-  // Parse LLTV from bigint string (1e18 scale)
-  const lltvRaw = BigInt(market.lltv || '0');
-  const lltv = Number(lltvRaw) / 1e18 * 100;
-
-  // Parse token-denominated amounts using loan asset decimals
-  const decimals = loanAsset.decimals;
-  const parseTokenAmount = (val: string | number | null | undefined): number => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
+    // Parse LLTV — can be bigint string (1e18 scale) or decimal
+    let lltv = 0;
     try {
-      return parseFloat(val) / Math.pow(10, decimals);
+      const lltvVal = market.lltv || '0';
+      if (typeof lltvVal === 'string' && lltvVal.length > 10) {
+        // BigInt string (1e18 scale)
+        lltv = Number(BigInt(lltvVal)) / 1e18 * 100;
+      } else {
+        // Decimal or small number
+        const numVal = Number(lltvVal);
+        lltv = numVal > 1 ? numVal / 1e16 : numVal * 100;
+      }
     } catch {
-      return 0;
+      lltv = 0;
     }
-  };
 
-  // Rate at target utilization (comes as decimal, convert to %)
-  const rateAtTarget = market.state.rateAtUTarget != null
-    ? market.state.rateAtUTarget * 100
-    : null;
+    // Parse token-denominated amounts using loan asset decimals
+    const decimals = loanAsset.decimals;
+    const parseTokenAmount = (val: string | number | null | undefined): number => {
+      if (val == null) return 0;
+      if (typeof val === 'number') return val;
+      try {
+        return parseFloat(val) / Math.pow(10, decimals);
+      } catch {
+        return 0;
+      }
+    };
 
-  // Protocol fee (comes as decimal 0-1, convert to %)
-  const fee = (market.state.fee || 0) * 100;
+    // Rate at target utilization (comes as decimal, convert to %)
+    const rateAtTarget = market.state.rateAtUTarget != null
+      ? market.state.rateAtUTarget * 100
+      : null;
 
-  return {
-    id: market.uniqueKey,
-    uniqueKey: market.uniqueKey,
-    chainId,
-    loanAsset,
-    collateralAsset: parseAsset(market.collateralAsset, chainId),
-    lltv,
-    supplyApy,
-    borrowApy,
-    totalSupplyUsd: market.state.supplyAssetsUsd || 0,
-    totalBorrowUsd: market.state.borrowAssetsUsd || 0,
-    availableLiquidityUsd: market.state.liquidityAssetsUsd || 0,
-    utilization: (market.state.utilization || 0) * 100,
-    oracle: market.oracleAddress,
-    irm: market.irmAddress,
-    totalSupplyAssets: parseTokenAmount(market.state.supplyAssets),
-    totalBorrowAssets: parseTokenAmount(market.state.borrowAssets),
-    liquidityAssets: parseTokenAmount(market.state.liquidityAssets),
-    totalCollateralUsd: market.state.collateralAssetsUsd || 0,
-    rateAtTarget,
-    fee,
-    morphoBlue: market.morphoBlue?.address || '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb',
-    whitelisted: market.whitelisted ?? false,
-  };
+    // Protocol fee (comes as decimal 0-1, convert to %)
+    const fee = (market.state.fee || 0) * 100;
+
+    return {
+      id: market.uniqueKey,
+      uniqueKey: market.uniqueKey,
+      chainId,
+      loanAsset,
+      collateralAsset: parseAsset(market.collateralAsset, chainId),
+      lltv,
+      supplyApy,
+      borrowApy,
+      totalSupplyUsd: market.state.supplyAssetsUsd || 0,
+      totalBorrowUsd: market.state.borrowAssetsUsd || 0,
+      availableLiquidityUsd: market.state.liquidityAssetsUsd || 0,
+      utilization: (market.state.utilization || 0) * 100,
+      oracle: market.oracleAddress,
+      irm: market.irmAddress,
+      totalSupplyAssets: parseTokenAmount(market.state.supplyAssets),
+      totalBorrowAssets: parseTokenAmount(market.state.borrowAssets),
+      liquidityAssets: parseTokenAmount(market.state.liquidityAssets),
+      totalCollateralUsd: market.state.collateralAssetsUsd || 0,
+      rateAtTarget,
+      fee,
+      morphoBlue: market.morphoBlue?.address || '0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb',
+      whitelisted: market.whitelisted ?? false,
+    };
+  } catch (err) {
+    console.warn(`[Morpho API] Failed to parse market ${market.uniqueKey}:`, err);
+    return null;
+  }
 }
 
 /**
@@ -344,31 +370,44 @@ export async function fetchMorphoMarkets(options: {
 
   console.log(`[Morpho API] Raw API returned ${allRaw.length} markets for ${config.label}`);
 
-  // Parse and filter
-  const parsed = allRaw
-    .map(m => parseMarket(m, chainId))
-    .filter((m): m is MorphoMarket => {
-      if (!m) return false;
-      // Require minimum TVL ($1000) to filter out empty/dead markets
-      if (m.totalSupplyUsd < 1000) return false;
-      // Filter out GMORPHO/cbBTC market
-      if (m.loanAsset.symbol === 'GMORPHO' || m.collateralAsset?.symbol === 'GMORPHO') return false;
-      return true;
-    });
+  // Debug: log first raw item for Base to diagnose
+  if (allRaw.length > 0) {
+    const first = allRaw[0];
+    console.log(`[Morpho API] First raw market for ${config.label}: loanAsset=${first.loanAsset?.symbol}, state.supplyAssetsUsd=${first.state?.supplyAssetsUsd}, state.supplyApy=${first.state?.supplyApy}`);
+  }
 
-  // CRITICAL: Deduplicate by uniqueKey (the API can return duplicates)
+  // Parse all
+  const allParsed = allRaw.map(m => parseMarket(m, chainId));
+  const nonNull = allParsed.filter((m): m is MorphoMarket => m !== null);
+  
+  console.log(`[Morpho API] Parsed ${nonNull.length}/${allRaw.length} markets for ${config.label}`);
+  if (nonNull.length > 0) {
+    console.log(`[Morpho API] First parsed: ${nonNull[0].loanAsset.symbol}/${nonNull[0].collateralAsset?.symbol}, TVL=$${nonNull[0].totalSupplyUsd.toFixed(0)}`);
+  }
+  if (nonNull.length === 0 && allRaw.length > 0) {
+    // Debug: why are all null?
+    const first = allRaw[0];
+    console.log(`[Morpho API] DEBUG: loanAsset=${JSON.stringify(first.loanAsset?.symbol)}, state exists=${!!first.state}, state.supplyAssetsUsd=${first.state?.supplyAssetsUsd}`);
+  }
+
+  // CRITICAL: Deduplicate by uniqueKey FIRST (Base returns same market 500x)
   const seen = new Set<string>();
-  const markets = parsed.filter(m => {
-    if (seen.has(m.uniqueKey)) {
-      return false;
-    }
+  const deduped = nonNull.filter(m => {
+    if (seen.has(m.uniqueKey)) return false;
     seen.add(m.uniqueKey);
     return true;
   });
 
-  if (parsed.length !== markets.length) {
-    console.warn(`[Morpho API] Removed ${parsed.length - markets.length} duplicate markets on ${config.label}`);
+  if (nonNull.length !== deduped.length) {
+    console.warn(`[Morpho API] Removed ${nonNull.length - deduped.length} duplicate markets on ${config.label}`);
   }
+
+  // Filter - only remove the specific GMORPHO/cbBTC pair
+  const markets = deduped.filter(m => {
+    if (m.loanAsset.symbol === 'GMORPHO' && m.collateralAsset?.symbol === 'cbBTC') return false;
+    if (m.loanAsset.symbol === 'cbBTC' && m.collateralAsset?.symbol === 'GMORPHO') return false;
+    return true;
+  });
 
   console.log(`[Morpho API] ✓ Loaded ${markets.length} unique markets from ${config.label}`);
   return markets;
@@ -403,12 +442,14 @@ export async function fetchMorphoPositions(options: {
   console.log(`[Morpho API] Fetching positions for ${userAddress.slice(0, 8)}... on ${config.label}`);
 
   try {
-    const data = await graphqlFetch<{ positions: { items: ApiPosition[] } }>(
+    const data = await graphqlFetch<{ marketPositions: { items: ApiPosition[] } }>(
       POSITIONS_QUERY,
       { userAddress: userAddress.toLowerCase(), chainId, first }
     );
 
-    const positions: UserPosition[] = data.positions.items
+    console.log(`[Morpho API] Raw position items for chain ${chainId}:`, data.marketPositions.items.length);
+
+    const positions: UserPosition[] = data.marketPositions.items
       .filter(p => {
         const hasSupply = BigInt(p.supplyAssets || '0') > 0n;
         const hasBorrow = BigInt(p.borrowAssets || '0') > 0n;
