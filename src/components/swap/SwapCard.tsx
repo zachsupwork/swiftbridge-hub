@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown } from 'lucide-react';
+import { ArrowDown, ArrowUpDown, Settings, Loader2, AlertTriangle, Zap, Bug, Info, Wallet, Clock, CheckCircle2, XCircle, RefreshCw, ChevronDown, ExternalLink } from 'lucide-react';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useAccount, useSendTransaction, useBalance, useReadContract, useSwitchChain, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
@@ -21,6 +21,37 @@ import {
   TransactionValidationError,
   type TransactionSimulation,
 } from '@/lib/transactionHelper';
+
+/** Detect RPC / receipt polling errors that should get friendly messaging */
+function isRpcOrReceiptError(msg: string): boolean {
+  const patterns = [
+    'RPC request failed', 'RPC Request failed',
+    'eth_getTransactionReceipt', 'Too many requests',
+    'rate limit', '429', 'receipt', 'timeout',
+    'could not coalesce',
+  ];
+  const lower = msg.toLowerCase();
+  return patterns.some((p) => lower.includes(p.toLowerCase()));
+}
+
+/** Get block explorer URL for a chain + hash */
+function getExplorerUrl(chainId: number, hash: string): string {
+  const explorers: Record<number, string> = {
+    1: 'https://etherscan.io/tx/',
+    10: 'https://optimistic.etherscan.io/tx/',
+    137: 'https://polygonscan.com/tx/',
+    42161: 'https://arbiscan.io/tx/',
+    8453: 'https://basescan.org/tx/',
+    43114: 'https://snowtrace.io/tx/',
+    56: 'https://bscscan.com/tx/',
+    100: 'https://gnosisscan.io/tx/',
+    324: 'https://era.zksync.network/tx/',
+    59144: 'https://lineascan.build/tx/',
+    534352: 'https://scrollscan.com/tx/',
+    5000: 'https://explorer.mantle.xyz/tx/',
+  };
+  return `${explorers[chainId] || 'https://etherscan.io/tx/'}${hash}`;
+}
 import { isChainSupported, getChainName, getSupportedChainIds } from '@/lib/wagmiConfig';
 import { useMultiWallet } from '@/lib/wallets';
 import {
@@ -245,6 +276,9 @@ export function SwapCard() {
     setTxSimulation(null);
     setStepResults([]);
     setExecutionMessage('');
+    // Clear quote countdown so "Expired" never appears after submission
+    setQuoteTimestamp(0);
+    setQuoteTimeRemaining('');
 
     try {
       if (!isChainSupported(fromChainId)) {
@@ -473,7 +507,7 @@ export function SwapCard() {
                   onClick={() => setFromAmount(maxFromAmount)}
                   className="text-[11px] font-medium text-primary hover:text-primary/80 transition-colors"
                 >
-                  MAX
+                  Balance: {parseFloat(maxFromAmount) < 0.0001 ? parseFloat(maxFromAmount).toFixed(8) : parseFloat(maxFromAmount).toFixed(4)} {fromToken?.symbol ?? ''} · MAX
                 </button>
               )}
             </div>
@@ -551,15 +585,63 @@ export function SwapCard() {
           </div>
         </div>
 
-        {/* Error */}
+        {/* Error — friendly RPC / quote messaging */}
         {error && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg flex items-center gap-2 border border-destructive/20"
+            className={cn(
+              "text-sm p-3 rounded-lg flex flex-col gap-2 border",
+              isRpcOrReceiptError(error)
+                ? "bg-warning/10 text-warning border-warning/20"
+                : error.includes('Quote expired') && txHash
+                  ? "bg-warning/10 text-warning border-warning/20"
+                  : "bg-destructive/10 text-destructive border-destructive/20"
+            )}
           >
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
+            {isRpcOrReceiptError(error) ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-medium">Network status check delayed</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  During cross-chain swaps, the app may temporarily show an error while confirming your transaction.
+                  Please verify the result in your wallet or with your transaction hash.
+                </p>
+                {txHash && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <code className="text-xs bg-muted/30 px-2 py-1 rounded font-mono break-all">{txHash.slice(0, 10)}…{txHash.slice(-8)}</code>
+                    <button onClick={() => navigator.clipboard.writeText(txHash)} className="text-xs underline text-primary">Copy Tx</button>
+                    <a href={getExplorerUrl(fromChainId, txHash)} target="_blank" rel="noopener noreferrer" className="text-xs underline text-primary flex items-center gap-1">
+                      Explorer <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+                <a href="/support" className="text-xs text-primary hover:underline">Contact Support →</a>
+              </>
+            ) : error.includes('Quote expired') && txHash ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span className="font-medium">Quote expired (for new swaps only)</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Your submitted transaction may still confirm — check your wallet or tx hash below.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="text-xs bg-muted/30 px-2 py-1 rounded font-mono break-all">{txHash.slice(0, 10)}…{txHash.slice(-8)}</code>
+                  <a href={getExplorerUrl(fromChainId, txHash)} target="_blank" rel="noopener noreferrer" className="text-xs underline text-primary flex items-center gap-1">
+                    Explorer <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
           </motion.div>
         )}
 

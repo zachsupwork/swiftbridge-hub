@@ -26,12 +26,16 @@ export function TransactionTracker({ txHash, route, swapId, stepResults, onCompl
   useEffect(() => {
     let interval: NodeJS.Timeout;
     let attempts = 0;
-    const maxAttempts = 60;
+    const maxAttempts = 120; // longer polling window
+    let consecutiveErrors = 0;
+    let currentDelay = 3000; // start at 3s
 
     const checkStatus = async () => {
       try {
         const data = await getTransactionStatus(txHash, route.fromChainId, route.toChainId, stepTool);
         setStatusData(data);
+        consecutiveErrors = 0; // reset on success
+        currentDelay = 3000; // reset delay
 
         if (data.status === 'DONE') {
           setStatus('completed');
@@ -57,12 +61,19 @@ export function TransactionTracker({ txHash, route, swapId, stepResults, onCompl
           clearInterval(interval);
         }
       } catch (err) {
-        console.error('Failed to fetch status:', err);
+        consecutiveErrors++;
+        // Exponential backoff: 3s → 6s → 12s → max 20s
+        currentDelay = Math.min(currentDelay * 2, 20000);
+        console.warn(`[TransactionTracker] Status check error #${consecutiveErrors}, next retry in ${currentDelay}ms`, err);
+        // Keep polling — do NOT set failed status for transient RPC errors
+        // Re-schedule with backoff
+        clearInterval(interval);
+        interval = setInterval(checkStatus, currentDelay);
       }
     };
 
     checkStatus();
-    interval = setInterval(checkStatus, 5000);
+    interval = setInterval(checkStatus, currentDelay);
 
     return () => clearInterval(interval);
   }, [txHash, route, swapId, stepTool, onComplete]);

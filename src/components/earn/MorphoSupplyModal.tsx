@@ -64,6 +64,7 @@ import type { MorphoMarket } from '@/lib/morpho/types';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
 import { buildSwapLink, getDefaultFromToken } from '@/lib/swapDeepLink';
+import { usePortfolioTotal } from '@/hooks/usePortfolioTotal';
 
 interface MorphoSupplyModalProps {
   isOpen: boolean;
@@ -83,7 +84,7 @@ export function MorphoSupplyModal({
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const navigate = useNavigate();
-  
+  const { tokenBalances: portfolioBalances } = usePortfolioTotal();
   const { writeContractAsync } = useWriteContract();
 
   const [amount, setAmount] = useState('');
@@ -405,25 +406,69 @@ export function MorphoSupplyModal({
                 </p>
               )}
               {hasNoBalance && (
-                <button
-                  onClick={() => {
-                    const link = buildSwapLink({
-                      chainId: market.chainId,
-                      toTokenAddress: token.address,
-                      toTokenSymbol: token.symbol,
-                      fromTokenAddress: getDefaultFromToken(market.chainId),
-                      marketId: market.uniqueKey,
-                      ref: 'earn',
-                      action: 'supply',
-                    });
-                    onClose();
-                    navigate(link);
-                  }}
-                  className="flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  <Repeat className="w-3 h-3" />
-                  Swap to get {token.symbol}
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      const link = buildSwapLink({
+                        chainId: market.chainId,
+                        toTokenAddress: token.address,
+                        toTokenSymbol: token.symbol,
+                        fromTokenAddress: getDefaultFromToken(market.chainId),
+                        marketId: market.uniqueKey,
+                        ref: 'earn',
+                        action: 'supply',
+                      });
+                      onClose();
+                      navigate(link);
+                    }}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <Repeat className="w-3 h-3" />
+                    Swap to get {token.symbol}
+                  </button>
+                  {/* Cross-chain balance hint */}
+                  {(() => {
+                    const otherChains = portfolioBalances.filter(
+                      (tb) => tb.token.symbol.toUpperCase() === token.symbol.toUpperCase() && tb.chainId !== market.chainId && tb.balance > 0
+                    );
+                    if (otherChains.length === 0) return null;
+                    return (
+                      <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/20 space-y-1.5">
+                        <p className="text-xs text-muted-foreground">
+                          You have <strong>{token.symbol}</strong> on:
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {otherChains.map((tb) => (
+                            <Badge key={tb.chainId} variant="outline" className="text-[10px]">
+                              Chain {tb.chainId} · {tb.balanceFormatted}
+                            </Badge>
+                          ))}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-xs gap-1 h-7"
+                          onClick={() => {
+                            const best = otherChains.reduce((a, b) => a.balanceUSD > b.balanceUSD ? a : b);
+                            const link = buildSwapLink({
+                              chainId: best.chainId,
+                              toTokenAddress: token.address,
+                              toTokenSymbol: token.symbol,
+                              fromTokenAddress: best.token.address,
+                              ref: 'earn',
+                              action: 'supply',
+                            });
+                            onClose();
+                            navigate(link);
+                          }}
+                        >
+                          <Repeat className="w-3 h-3" />
+                          Bridge from chain with balance
+                        </Button>
+                      </div>
+                    );
+                  })()}
+                </>
               )}
             </div>
 
