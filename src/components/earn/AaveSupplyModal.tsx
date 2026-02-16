@@ -5,15 +5,13 @@
  * and swap CTA when balance is low.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowUpRight,
   CheckCircle2,
   Loader2,
   AlertCircle,
   ExternalLink,
-  Repeat,
-  X,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 import { formatUnits } from 'viem';
@@ -27,7 +25,7 @@ import { ChainIcon } from '@/components/common/ChainIcon';
 import { TokenIcon } from '@/components/common/TokenIcon';
 import { useAaveSupply } from '@/hooks/useAaveSupply';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
-import { openSwapIntent } from '@/lib/swapIntent';
+import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { AaveMarket } from '@/lib/aaveMarkets';
@@ -42,7 +40,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const { getBalance, tokenBalances } = useBalancesContext();
+  const { getBalance } = useBalancesContext();
 
   const [amount, setAmount] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -99,46 +97,29 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
   }, [amount, supply]);
 
   const handleSetMax = useCallback(() => {
-    // Prefer BalancesProvider (works cross-chain), fallback to hook balance
+    // Address-only lookup — never use symbol matching
     if (market) {
       const sb = getBalance(market.chainId, market.assetAddress);
-      const sbFallback = !sb ? tokenBalances.find(
-        tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
-      ) : undefined;
-      const effective = sb || sbFallback;
-      if (effective && effective.balance > 0) {
-        setAmount(effective.balanceFormatted);
+      if (sb && sb.balance > 0) {
+        setAmount(sb.balanceFormatted);
         return;
       }
     }
+    // Fallback to on-chain hook (same chain only)
     const bal = parseFloat(balanceFormatted);
     if (bal > 0) setAmount(bal.toString());
-  }, [balanceFormatted, market, getBalance, tokenBalances]);
+  }, [balanceFormatted, market, getBalance]);
 
-  const goToSwap = useCallback(() => {
-    if (!market) return;
-    onClose();
-    openSwapIntent({
-      intentType: 'acquire_token',
-      targetChainId: market.chainId,
-      targetTokenAddress: market.assetAddress,
-      targetSymbol: market.assetSymbol,
-      returnTo: { view: 'earn', tab: 'markets', marketId: market.id },
-    });
-  }, [market, onClose]);
 
   if (!market) return null;
 
-  // PRIMARY: Use BalancesProvider (works cross-chain). FALLBACK: hook's on-chain read (same-chain only).
+  // ADDRESS-ONLY balance lookup — no symbol fallback to prevent USDC/USDC.e confusion
   const sharedBal = market ? getBalance(market.chainId, market.assetAddress) : undefined;
-  const symbolFallback = (!sharedBal && market) ? tokenBalances.find(
-    tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
-  ) : undefined;
-  const effectiveSharedBal = sharedBal || symbolFallback;
-  const sharedBalValue = effectiveSharedBal ? effectiveSharedBal.balance : 0;
+  const sharedBalValue = sharedBal ? sharedBal.balance : 0;
   const hookBalance = parseFloat(balanceFormatted);
-  // Use whichever is higher (BalancesProvider may have data even when hook reads wrong chain)
-  const displayBalance = Math.max(sharedBalValue, hookBalance);
+  const isChainMatch = walletChainId === market.chainId;
+  // When on same chain, prefer on-chain read (most accurate). Otherwise use BalancesProvider.
+  const displayBalance = isChainMatch && hookBalance > 0 ? hookBalance : sharedBalValue;
   const parsedAmount = parseFloat(amount) || 0;
   const isInsufficientBalance = parsedAmount > displayBalance;
   const explorerUrl = supplyState.supplyTxHash ? getExplorerTxUrl(market.chainId, supplyState.supplyTxHash) : '';
@@ -283,14 +264,12 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
 
             {/* Swap CTA if no balance */}
             {displayBalance === 0 && !needsChainSwitch && (
-              <Button
-                variant="outline"
-                className="w-full gap-2 text-sm"
-                onClick={goToSwap}
-              >
-                <Repeat className="w-4 h-4" />
-                Get {market.assetSymbol} via Swap
-              </Button>
+              <InlineAcquireSwapPanel
+                targetChainId={market.chainId}
+                targetTokenAddress={market.assetAddress}
+                targetSymbol={market.assetSymbol}
+                closeParentOnSwap={onClose}
+              />
             )}
 
             {/* Error message */}

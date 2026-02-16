@@ -11,8 +11,6 @@ import {
   CheckCircle2,
   Loader2,
   AlertCircle,
-  ExternalLink,
-  Repeat,
   Shield,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
@@ -27,7 +25,7 @@ import { TokenIcon } from '@/components/common/TokenIcon';
 import { RiskBar } from '@/components/common/RiskBar';
 import { useAaveBorrow, type UserAccountData } from '@/hooks/useAaveBorrow';
 import { useBalancesContext } from '@/providers/BalancesProvider';
-import { openSwapIntent } from '@/lib/swapIntent';
+import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 
@@ -42,7 +40,7 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
   const { address } = useAccount();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const { getBalance, tokenBalances: ctxTokenBalances } = useBalancesContext();
+  const { getBalance } = useBalancesContext();
 
   const {
     borrowStep,
@@ -89,27 +87,12 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
     await borrow(borrowMarket, amount, 'variable');
   }, [market, amount, borrowMarkets, borrow]);
 
-  const goToSwap = useCallback(() => {
-    if (!market) return;
-    onClose();
-    openSwapIntent({
-      intentType: 'acquire_token',
-      targetChainId: market.chainId,
-      targetTokenAddress: market.assetAddress,
-      targetSymbol: market.assetSymbol,
-      returnTo: { view: 'earn', tab: 'markets', marketId: market.id },
-    });
-  }, [market, onClose]);
 
   if (!market) return null;
 
-  // Get wallet balance from BalancesProvider — address match first, then symbol+chain fallback
+  // ADDRESS-ONLY balance lookup — no symbol fallback
   const sharedBal = getBalance(market.chainId, market.assetAddress);
-  const symbolFallback = !sharedBal ? ctxTokenBalances.find(
-    tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
-  ) : undefined;
-  const effectiveBal = sharedBal || symbolFallback;
-  const walletBalance = effectiveBal ? parseFloat(effectiveBal.balanceFormatted) : 0;
+  const walletBalance = sharedBal ? parseFloat(sharedBal.balanceFormatted) : 0;
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -208,14 +191,12 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                     <span>Supply collateral first to enable borrowing</span>
                   </div>
                 </div>
-                <Button
-                  variant="outline"
-                  className="w-full gap-2 text-sm"
-                  onClick={goToSwap}
-                >
-                  <Repeat className="w-4 h-4" />
-                  Get {market.assetSymbol} via Cross-Chain Swap
-                </Button>
+                <InlineAcquireSwapPanel
+                  targetChainId={market.chainId}
+                  targetTokenAddress={market.assetAddress}
+                  targetSymbol={market.assetSymbol}
+                  closeParentOnSwap={onClose}
+                />
               </div>
             )}
 
