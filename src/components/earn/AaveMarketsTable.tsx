@@ -623,7 +623,10 @@ export function AaveMarketsTable({
                       onSwap={handleSwapForToken}
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
-                      walletBalanceUsd={walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]}
+                      walletBalanceUsd={
+                        walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]
+                        || walletBalances?.[`${market.chainId}:sym:${market.assetSymbol.toUpperCase()}`]
+                      }
                     />
                   ) : (
                     <BorrowRow
@@ -651,7 +654,10 @@ export function AaveMarketsTable({
                 onSwap={handleSwapForToken}
                 mode={marketMode}
                 hasCollateral={hasCollateral}
-                walletBalanceUsd={walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]}
+                walletBalanceUsd={
+                  walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]
+                  || walletBalances?.[`${market.chainId}:sym:${market.assetSymbol.toUpperCase()}`]
+                }
               />
             ))}
           </div>

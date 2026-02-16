@@ -172,7 +172,13 @@ export function MorphoVaultActionModal({
   const needsApproval = tab === 'deposit' && parsedAmount > 0n && (allowance ?? 0n) < parsedAmount;
 
   // Use BalancesProvider as fallback when on-chain read returns 0 (e.g. wrong chain)
+  const { tokenBalances: allTokenBalances } = useBalancesContext();
   const sharedBalance = vault ? getBalance(vault.chainId, vault.asset.address) : undefined;
+  // Symbol+chain fallback if address lookup misses
+  const vaultSymbolFallback = (!sharedBalance && vault) ? allTokenBalances.find(
+    tb => tb.chainId === vault.chainId && tb.token.symbol.toUpperCase() === vault.asset.symbol.toUpperCase() && tb.balance > 0
+  ) : undefined;
+  const effectiveSharedBalance = sharedBalance || vaultSymbolFallback;
 
   const formattedBalance = useMemo(() => {
     if (tab === 'deposit') {
@@ -180,8 +186,8 @@ export function MorphoVaultActionModal({
       if (assetBalance !== undefined && assetBalance > 0n) {
         return formatUnits(assetBalance, decimals);
       }
-      if (sharedBalance && sharedBalance.balance > 0) {
-        return sharedBalance.balanceFormatted;
+      if (effectiveSharedBalance && effectiveSharedBalance.balance > 0) {
+        return effectiveSharedBalance.balanceFormatted;
       }
       return '0';
     }
@@ -189,7 +195,7 @@ export function MorphoVaultActionModal({
       return formatUnits(userPosition.assets, decimals);
     }
     return '0';
-  }, [tab, assetBalance, sharedBalance, userPosition, decimals]);
+  }, [tab, assetBalance, effectiveSharedBalance, userPosition, decimals]);
 
   const hasNoBalance = tab === 'deposit' && parseFloat(formattedBalance) === 0;
 
