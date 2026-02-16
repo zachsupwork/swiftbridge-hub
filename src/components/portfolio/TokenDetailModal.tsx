@@ -3,12 +3,13 @@
  * 
  * Per-chain focused view: shows the clicked token's chain by default.
  * "Other chains" section is collapsed. Swap uses inline panel (no navigation).
+ * Includes Contracts & Verification section.
  */
 
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRightLeft, TrendingUp, ExternalLink, Copy, Vault, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, ArrowRightLeft, TrendingUp, ExternalLink, Copy, Vault, ChevronDown, ChevronUp, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TokenIcon } from '@/components/common/TokenIcon';
@@ -28,6 +29,18 @@ interface TokenDetailModalProps {
 }
 
 const chainNameMap = new Map(supportedChains.map(c => [c.id, c.name]));
+
+function getExplorerBase(chainId: number): string {
+  const map: Record<number, string> = {
+    1: 'https://etherscan.io',
+    42161: 'https://arbiscan.io',
+    10: 'https://optimistic.etherscan.io',
+    137: 'https://polygonscan.com',
+    8453: 'https://basescan.org',
+    43114: 'https://snowtrace.io',
+  };
+  return map[chainId] || 'https://etherscan.io';
+}
 
 export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalProps) {
   const navigate = useNavigate();
@@ -168,7 +181,7 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center justify-between p-3 border-b border-border">
                 <div className="flex items-center gap-2.5">
                   <TokenIcon
                     address={token.token.address}
@@ -193,8 +206,8 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
               </div>
 
               {/* Primary balance */}
-              <div className="px-4 pt-3 pb-1.5">
-                <div className="text-xs text-muted-foreground mb-0.5">{chainName} balance</div>
+              <div className="px-3 pt-2.5 pb-1">
+                <div className="text-[11px] text-muted-foreground mb-0.5">{chainName} balance</div>
                 <div className="text-2xl font-bold text-gradient">
                   ${token.balanceUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
@@ -202,13 +215,34 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
               </div>
 
               {/* Primary token card */}
-              <div className="px-4 pb-2">
+              <div className="px-3 pb-2">
                 {renderTokenCard(token, true)}
               </div>
 
+              {/* Contract info */}
+              {!isNative && (
+                <div className="px-3 pb-2">
+                  <div className="border border-border/30 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => {}}
+                      className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-[10px] text-muted-foreground"
+                    >
+                      <ShieldCheck className="w-3 h-3" />
+                      <span className="font-mono">{token.token.address.slice(0, 10)}…{token.token.address.slice(-6)}</span>
+                      <button onClick={() => copyAddress(token.token.address)} className="ml-auto hover:text-foreground">
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      <a href={`${getExplorerBase(token.chainId)}/token/${token.token.address}`} target="_blank" rel="noopener noreferrer" className="hover:text-primary">
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Other chains (collapsed) */}
               {otherChainBalances.length > 0 && (
-                <div className="px-4 pb-2">
+                <div className="px-3 pb-2">
                   <button
                     onClick={() => setShowOtherChains(!showOtherChains)}
                     className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full py-1.5"
@@ -235,7 +269,7 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
               )}
 
               {/* Footer */}
-              <div className="p-4 pt-2 border-t border-border/50">
+              <div className="p-3 pt-2 border-t border-border/50">
                 <Button onClick={onClose} variant="outline" className="w-full h-8 text-sm">
                   Close
                 </Button>
