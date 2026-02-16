@@ -336,8 +336,7 @@ export default function Earn() {
               All Chains
             </Badge>
             {LENDING_CHAINS.map(chain => {
-              const chainResult = chainResults.find(r => r.chainId === chain.id);
-              const isOk = chainResult?.success;
+              const chainMarketCount = allAaveMarkets.filter(m => m.chainId === chain.id).length;
               return (
                 <Badge
                   key={chain.id}
@@ -346,14 +345,12 @@ export default function Earn() {
                     "h-7 px-3 gap-1.5 text-sm font-medium cursor-pointer transition-colors",
                     selectedChainId === chain.id
                       ? "bg-primary/20 border-primary/50 text-primary"
-                      : "border-border/50 text-muted-foreground hover:border-primary/30",
-                    !isOk && chainResult && "opacity-50"
+                      : "border-border/50 text-muted-foreground hover:border-primary/30"
                   )}
                   onClick={() => setSelectedChainId(selectedChainId === chain.id ? undefined : chain.id)}
                 >
                   <ChainIcon chainId={chain.id} size="sm" />
                   {chain.name}
-                  {chainResult && !isOk && <AlertCircle className="w-3 h-3 text-destructive" />}
                 </Badge>
               );
             })}
@@ -553,6 +550,7 @@ export default function Earn() {
                 onRefresh={refreshMarkets}
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
+                hasCollateral={totalCollateralUsd > 0}
               />
             </TabsContent>
 

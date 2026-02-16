@@ -2,10 +2,12 @@
  * Aave V3 Markets Table — Aave-style layout
  * 
  * Shows supply and borrow sections with on-chain reserve data.
- * Matches app.aave.com UX with oracle price, LTV, utilization.
+ * Matches app.aave.com UX: borrow tab shows all borrowable assets
+ * with "supply collateral first" banner, swap CTAs.
  */
 
 import { useState, useMemo, memo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUpDown,
@@ -20,14 +22,16 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { buildSwapLink } from '@/lib/swapDeepLink';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
 interface AaveMarketsTableProps {
@@ -39,6 +43,7 @@ interface AaveMarketsTableProps {
   onBorrow?: (market: LendingMarket) => void;
   onDetails?: (market: LendingMarket) => void;
   walletBalances?: Record<string, number>;
+  hasCollateral?: boolean;
 }
 
 function formatAPY(apy: number): string {
@@ -81,7 +86,7 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="glass rounded-lg p-2.5">
             <div className="text-muted-foreground mb-0.5">Oracle Price</div>
-            <div className="font-medium">{formatPrice(market.priceUsd)}</div>
+            <div className="font-medium">{market.priceUsd > 0 ? formatPrice(market.priceUsd) : '—'}</div>
           </div>
           <div className="glass rounded-lg p-2.5">
             <div className="text-muted-foreground mb-0.5">LTV</div>
@@ -101,7 +106,7 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
           </div>
           <div className="glass rounded-lg p-2.5">
             <div className="text-muted-foreground mb-0.5">Reserve Factor</div>
-            <div className="font-medium">{market.reserveFactor.toFixed(0)}%</div>
+            <div className="font-medium">{market.reserveFactor > 0 ? `${market.reserveFactor.toFixed(0)}%` : '—'}</div>
           </div>
           <div className="glass rounded-lg p-2.5">
             <div className="text-muted-foreground mb-0.5">Supply Cap</div>
@@ -149,10 +154,11 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
 // ============================================
 
 const SupplyRow = memo(function SupplyRow({
-  market, onSupply, expanded, onToggle,
+  market, onSupply, onSwap, expanded, onToggle,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
+  onSwap?: (m: LendingMarket) => void;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -218,10 +224,11 @@ const SupplyRow = memo(function SupplyRow({
 // ============================================
 
 const BorrowRow = memo(function BorrowRow({
-  market, onBorrow, expanded, onToggle,
+  market, onBorrow, hasCollateral, expanded, onToggle,
 }: {
   market: LendingMarket;
   onBorrow?: (m: LendingMarket) => void;
+  hasCollateral: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -246,12 +253,20 @@ const BorrowRow = memo(function BorrowRow({
           </div>
         </td>
         <td className="p-3 text-right">
-          <span className="font-medium text-sm text-warning">
-            {formatAPY(market.borrowAPY)}
-          </span>
+          <div>
+            <div className="text-xs text-muted-foreground">Available to borrow</div>
+            <div className="text-sm font-medium">
+              {hasCollateral ? formatUsd(market.availableLiquidityUsd) : '0'}
+            </div>
+          </div>
         </td>
         <td className="p-3 text-right hidden md:table-cell">
-          <span className="text-sm">{formatUsd(market.availableLiquidityUsd)}</span>
+          <div>
+            <div className="text-xs text-muted-foreground">APY, variable</div>
+            <span className="font-medium text-sm text-warning">
+              {formatAPY(market.borrowAPY)}
+            </span>
+          </div>
         </td>
         <td className="p-3 text-right hidden lg:table-cell">
           <span className="text-sm">{market.utilizationRate.toFixed(1)}%</span>
@@ -259,12 +274,15 @@ const BorrowRow = memo(function BorrowRow({
         <td className="p-3 text-right">
           <div className="flex items-center gap-1.5 justify-end">
             <Button size="sm" variant="outline" className="h-7 px-3 text-xs gap-1"
-              disabled={!market.borrowingEnabled || market.isFrozen}
+              disabled={!hasCollateral || !market.borrowingEnabled || market.isFrozen}
               onClick={(e) => { e.stopPropagation(); onBorrow?.(market); }}>
               <ArrowDownLeft className="w-3 h-3" />
               Borrow
             </Button>
-            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
+              onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+              Details
+            </Button>
           </div>
         </td>
       </tr>
@@ -284,12 +302,14 @@ const BorrowRow = memo(function BorrowRow({
 // ============================================
 
 const MobileCard = memo(function MobileCard({
-  market, onSupply, onBorrow, mode,
+  market, onSupply, onBorrow, onSwap, mode, hasCollateral,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
   onBorrow?: (m: LendingMarket) => void;
+  onSwap?: (m: LendingMarket) => void;
   mode: 'supply' | 'borrow';
+  hasCollateral: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -313,7 +333,7 @@ const MobileCard = memo(function MobileCard({
             {mode === 'supply' ? formatAPY(market.supplyAPY) : formatAPY(market.borrowAPY)}
           </div>
           <div className="text-[11px] text-muted-foreground">
-            {mode === 'supply' ? 'Supply APY' : 'Borrow APY'}
+            {mode === 'supply' ? 'Supply APY' : 'APY, variable'}
           </div>
         </div>
       </div>
@@ -321,11 +341,13 @@ const MobileCard = memo(function MobileCard({
       <div className="grid grid-cols-3 gap-2 mb-2.5 text-xs">
         <div>
           <div className="text-muted-foreground">{mode === 'supply' ? 'Total Size' : 'Available'}</div>
-          <div className="font-medium">{mode === 'supply' ? formatUsd(market.tvl) : formatUsd(market.availableLiquidityUsd)}</div>
+          <div className="font-medium">
+            {mode === 'supply' ? formatUsd(market.tvl) : (hasCollateral ? formatUsd(market.availableLiquidityUsd) : '0')}
+          </div>
         </div>
         <div>
           <div className="text-muted-foreground">Price</div>
-          <div className="font-medium">{formatPrice(market.priceUsd)}</div>
+          <div className="font-medium">{market.priceUsd > 0 ? formatPrice(market.priceUsd) : '—'}</div>
         </div>
         <div>
           <div className="text-muted-foreground">{mode === 'supply' ? 'Collateral' : 'Utilization'}</div>
@@ -348,7 +370,7 @@ const MobileCard = memo(function MobileCard({
             <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/30">
               <div><span className="text-muted-foreground">LTV:</span> {market.ltv > 0 ? `${market.ltv.toFixed(0)}%` : '—'}</div>
               <div><span className="text-muted-foreground">Liq. Threshold:</span> {market.liquidationThreshold > 0 ? `${market.liquidationThreshold.toFixed(0)}%` : '—'}</div>
-              <div><span className="text-muted-foreground">Reserve Factor:</span> {market.reserveFactor.toFixed(0)}%</div>
+              <div><span className="text-muted-foreground">Reserve Factor:</span> {market.reserveFactor > 0 ? `${market.reserveFactor.toFixed(0)}%` : '—'}</div>
               <div><span className="text-muted-foreground">Liq. Bonus:</span> {market.liquidationBonus > 0 ? `${market.liquidationBonus.toFixed(1)}%` : '—'}</div>
               <div><span className="text-muted-foreground">Supply Cap:</span> {market.supplyCap > 0 ? market.supplyCap.toLocaleString() : '∞'}</div>
               <div><span className="text-muted-foreground">Borrow Cap:</span> {market.borrowCap > 0 ? market.borrowCap.toLocaleString() : '∞'}</div>
@@ -357,22 +379,34 @@ const MobileCard = memo(function MobileCard({
         )}
       </AnimatePresence>
 
-      <Button
-        size="sm"
-        variant="outline"
-        className="w-full h-8 text-xs gap-1"
-        disabled={mode === 'borrow' && (!market.borrowingEnabled || market.isFrozen)}
-        onClick={(e) => {
-          e.stopPropagation();
-          mode === 'supply' ? onSupply?.(market) : onBorrow?.(market);
-        }}
-      >
-        {mode === 'supply' ? (
-          <><ArrowUpRight className="w-3 h-3" /> Supply</>
-        ) : (
-          <><ArrowDownLeft className="w-3 h-3" /> Borrow</>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="flex-1 h-8 text-xs gap-1"
+          disabled={mode === 'borrow' && (!hasCollateral || !market.borrowingEnabled || market.isFrozen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            mode === 'supply' ? onSupply?.(market) : onBorrow?.(market);
+          }}
+        >
+          {mode === 'supply' ? (
+            <><ArrowUpRight className="w-3 h-3" /> Supply</>
+          ) : (
+            <><ArrowDownLeft className="w-3 h-3" /> Borrow</>
+          )}
+        </Button>
+        {mode === 'supply' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs gap-1 text-primary"
+            onClick={(e) => { e.stopPropagation(); onSwap?.(market); }}
+          >
+            <Repeat className="w-3 h-3" /> Get via Swap
+          </Button>
         )}
-      </Button>
+      </div>
     </div>
   );
 });
@@ -388,7 +422,9 @@ export function AaveMarketsTable({
   onRefresh,
   onSupply,
   onBorrow,
+  hasCollateral = false,
 }: AaveMarketsTableProps) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -400,10 +436,22 @@ export function AaveMarketsTable({
     else { setSortBy(key); setSortDir('desc'); }
   }, [sortBy]);
 
+  const handleSwapForToken = useCallback((market: LendingMarket) => {
+    const link = buildSwapLink({
+      chainId: market.chainId,
+      toTokenAddress: market.assetAddress,
+      toTokenSymbol: market.assetSymbol,
+      ref: 'earn',
+      action: 'swap',
+    });
+    navigate(link);
+  }, [navigate]);
+
   const filtered = useMemo(() => {
     let result = [...markets].filter(m => m.isActive);
+    // For borrow: show ALL borrowable assets (even without collateral) — like Aave does
     if (marketMode === 'borrow') {
-      result = result.filter(m => m.borrowingEnabled);
+      result = result.filter(m => m.borrowingEnabled && !m.isFrozen);
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -496,13 +544,25 @@ export function AaveMarketsTable({
         </div>
       </div>
 
+      {/* Borrow info banner — like Aave */}
+      {marketMode === 'borrow' && !hasCollateral && (
+        <div className="flex items-start gap-3 p-3.5 rounded-xl bg-primary/10 border border-primary/20">
+          <Info className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm text-foreground">
+              To borrow you need to supply any asset to be used as collateral.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Count + status */}
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>{filtered.length} {marketMode === 'supply' ? 'assets' : 'borrowable assets'}</span>
         {loading && (
           <span className="flex items-center gap-1.5">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Refreshing on-chain data...
+            Refreshing...
           </span>
         )}
       </div>
@@ -528,12 +588,12 @@ export function AaveMarketsTable({
                     </>
                   ) : (
                     <>
-                      <th className="text-right p-3"><SortBtn col="borrowAPY" label="Borrow APY" /></th>
-                      <th className="text-right p-3 hidden md:table-cell"><SortBtn col="availableLiquidityUsd" label="Available" /></th>
+                      <th className="text-right p-3"><span className="text-xs font-medium text-muted-foreground">Available</span></th>
+                      <th className="text-right p-3 hidden md:table-cell"><span className="text-xs font-medium text-muted-foreground">APY, variable</span></th>
                       <th className="text-right p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Utilization</span></th>
                     </>
                   )}
-                  <th className="text-right p-3 w-32"></th>
+                  <th className="text-right p-3 w-36"></th>
                 </tr>
               </thead>
               <tbody>
@@ -543,6 +603,7 @@ export function AaveMarketsTable({
                       key={market.id}
                       market={market}
                       onSupply={onSupply}
+                      onSwap={handleSwapForToken}
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
                     />
@@ -551,6 +612,7 @@ export function AaveMarketsTable({
                       key={market.id}
                       market={market}
                       onBorrow={onBorrow}
+                      hasCollateral={hasCollateral}
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
                     />
@@ -568,7 +630,9 @@ export function AaveMarketsTable({
                 market={market}
                 onSupply={onSupply}
                 onBorrow={onBorrow}
+                onSwap={handleSwapForToken}
                 mode={marketMode}
+                hasCollateral={hasCollateral}
               />
             ))}
           </div>
