@@ -2,6 +2,9 @@
  * BalancesProvider — single source of truth for token balances across the app.
  * Wraps useBalances() in a React context so all consumers share the same state.
  * 
+ * CRITICAL: NO symbol-based keys. All lookups are strictly address + chainId.
+ * This prevents USDC/USDC.e/USDbC confusion.
+ * 
  * Exposes:
  *  - balancesByChain: Record<number, TokenBalance[]>
  *  - getBalance(chainId, tokenAddress) -> PortfolioTokenBalance | undefined
@@ -9,14 +12,14 @@
  *  - refreshBalances(), isLoading, isRefreshing, error, lastUpdated, etc.
  */
 
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useCallback, type ReactNode } from 'react';
 import { useBalances, type UseBalancesResult, type PortfolioTokenBalance } from '@/hooks/useBalances';
 
 /** Augmented context with convenience helpers */
 export interface UnifiedBalancesContext extends UseBalancesResult {
   /** All tokens deduplicated by symbol (highest balance first) */
   allTokensList: PortfolioTokenBalance[];
-  /** Structured balances keyed by chainId -> tokenAddress(lowercase) */
+  /** Structured balances keyed by "chainId:tokenAddressLower" ONLY */
   balanceMap: Map<string, PortfolioTokenBalance>;
 }
 
@@ -25,17 +28,16 @@ const BalancesContext = createContext<UnifiedBalancesContext | null>(null);
 export function BalancesProvider({ children }: { children: ReactNode }) {
   const balances = useBalances();
 
-  // Build a fast lookup map: "chainId:address" -> balance AND "chainId:sym:SYMBOL" -> balance
+  // Build a fast lookup map: ONLY "chainId:address" -> balance
+  // NO symbol-based keys to prevent USDC vs USDC.e confusion
   const balanceMap = useMemo(() => {
     const map = new Map<string, PortfolioTokenBalance>();
     for (const tb of balances.tokenBalances) {
       const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
-      map.set(key, tb);
-      // Symbol-based secondary key for cross-address matching (Aave/Morpho vs LiFi addresses)
-      const symKey = `${tb.chainId}:sym:${tb.token.symbol.toUpperCase()}`;
-      const existing = map.get(symKey);
+      // If duplicate (shouldn't happen), keep highest balance
+      const existing = map.get(key);
       if (!existing || tb.balanceUSD > existing.balanceUSD) {
-        map.set(symKey, tb);
+        map.set(key, tb);
       }
     }
     return map;

@@ -2,10 +2,10 @@
  * Aave V3 Borrow Modal
  * 
  * Handles borrow flow with health factor display.
- * Uses BalancesProvider as single source of truth.
+ * Balance checks use strict address+chainId (never symbol).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowDownLeft,
   CheckCircle2,
@@ -14,6 +14,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
+import { parseUnits } from 'viem';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { RiskBar } from '@/components/common/RiskBar';
 import { useAaveBorrow, type UserAccountData } from '@/hooks/useAaveBorrow';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
+import { ContractsVerificationSection } from '@/components/earn/ContractsVerificationSection';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 
@@ -90,9 +92,9 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
 
   if (!market) return null;
 
-  // ADDRESS-ONLY balance lookup — no symbol fallback
+  // ADDRESS-ONLY balance lookup
   const sharedBal = getBalance(market.chainId, market.assetAddress);
-  const walletBalance = sharedBal ? parseFloat(sharedBal.balanceFormatted) : 0;
+  const walletBalance = sharedBal ? sharedBal.balance : 0;
 
   const parsedAmount = parseFloat(amount) || 0;
 
@@ -111,16 +113,16 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
         </DialogHeader>
 
         {showSuccess ? (
-          <div className="space-y-4 py-4">
+          <div className="space-y-3 py-3">
             <div className="text-center">
-              <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-3" />
-              <h3 className="text-lg font-semibold">Borrow Successful!</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+              <CheckCircle2 className="w-10 h-10 text-success mx-auto mb-2" />
+              <h3 className="text-base font-semibold">Borrow Successful!</h3>
+              <p className="text-xs text-muted-foreground mt-1">
                 You borrowed {amount} {market.assetSymbol} from Aave V3 on {market.chainName}
               </p>
             </div>
 
-            <div className="glass rounded-lg p-3 space-y-2 text-sm">
+            <div className="glass rounded-lg p-2.5 space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Amount</span>
                 <span className="font-medium">{amount} {market.assetSymbol}</span>
@@ -136,8 +138,8 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
             </div>
 
             <div className="flex gap-2">
-              <Button className="flex-1" onClick={onClose}>View Positions</Button>
-              <Button variant="outline" className="flex-1" onClick={() => {
+              <Button size="sm" className="flex-1 h-9" onClick={onClose}>View Positions</Button>
+              <Button size="sm" variant="outline" className="flex-1 h-9" onClick={() => {
                 setShowSuccess(false);
                 setAmount('');
                 resetBorrowState();
@@ -145,13 +147,13 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
             </div>
           </div>
         ) : (
-          <div className="space-y-4 py-2">
+          <div className="space-y-3 py-1">
             {needsChainSwitch && (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-warning/10 border border-warning/30">
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-warning/10 border border-warning/30">
                 <AlertCircle className="w-4 h-4 text-warning flex-shrink-0" />
                 <div className="flex-1">
                   <p className="text-xs font-medium text-warning">Wrong Network</p>
-                  <p className="text-xs text-muted-foreground">Switch to {market.chainName}</p>
+                  <p className="text-[11px] text-muted-foreground">Switch to {market.chainName}</p>
                 </div>
                 <Button size="sm" onClick={handleSwitchChain} className="gap-1 h-7 text-xs">Switch</Button>
               </div>
@@ -159,21 +161,20 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
 
             {/* Account summary */}
             {accountData && (
-              <div className="glass rounded-lg p-3 space-y-2">
-                <div className="flex justify-between text-sm">
+              <div className="glass rounded-lg p-2.5 space-y-1.5">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Your Collateral</span>
                   <span className="font-medium">${accountData.totalCollateralUsd.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Current Debt</span>
                   <span className="font-medium text-warning">${accountData.totalDebtUsd.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Available to Borrow</span>
                   <span className="font-medium text-success">${accountData.availableBorrowsUsd.toFixed(2)}</span>
                 </div>
-                {/* Show wallet balance of this token */}
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Wallet Balance</span>
                   <span className="font-medium">
                     {walletBalance > 0 ? `${walletBalance.toFixed(6)} ${market.assetSymbol}` : `0 ${market.assetSymbol}`}
@@ -184,9 +185,9 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
             )}
 
             {!accountData && (
-              <div className="space-y-3">
-                <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
-                  <div className="flex items-center gap-2 text-sm text-foreground">
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center gap-2 text-xs text-foreground">
                     <Shield className="w-4 h-4 text-primary" />
                     <span>Supply collateral first to enable borrowing</span>
                   </div>
@@ -201,17 +202,17 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
             )}
 
             {/* Borrow rate */}
-            <div className="glass rounded-lg p-3">
-              <div className="text-xs text-muted-foreground">Variable Borrow APY</div>
-              <div className="text-lg font-semibold text-warning">{market.borrowAPY.toFixed(2)}%</div>
+            <div className="glass rounded-lg p-2.5">
+              <div className="text-[10px] text-muted-foreground">Variable Borrow APY</div>
+              <div className="text-base font-semibold text-warning">{market.borrowAPY.toFixed(2)}%</div>
             </div>
 
             {/* Amount input */}
             <div>
-              <div className="flex justify-between text-xs mb-1.5">
+              <div className="flex justify-between text-xs mb-1">
                 <span className="text-muted-foreground">Amount to borrow</span>
                 {accountData && (
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground text-[11px]">
                     Max: ~${accountData.availableBorrowsUsd.toFixed(2)}
                   </span>
                 )}
@@ -222,23 +223,23 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                   placeholder="0.00"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="pr-16 h-12 text-lg"
+                  className="pr-16 h-10 text-base"
                   inputMode="decimal"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-medium">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-medium">
                   {market.assetSymbol}
                 </span>
               </div>
             </div>
 
             {borrowStep === 'error' && borrowError && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-destructive">
+              <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
                 {borrowError}
               </div>
             )}
 
             <Button
-              className="w-full h-11 gap-2"
+              className="w-full h-10 gap-2 text-sm"
               disabled={
                 !amount ||
                 parsedAmount <= 0 ||
@@ -260,6 +261,15 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                 </>
               )}
             </Button>
+
+            {/* Contracts section */}
+            <ContractsVerificationSection
+              chainId={market.chainId}
+              chainName={market.chainName}
+              underlyingAddress={market.assetAddress}
+              aTokenAddress={market.aTokenAddress}
+              variableDebtTokenAddress={market.variableDebtTokenAddress}
+            />
           </div>
         )}
       </DialogContent>
