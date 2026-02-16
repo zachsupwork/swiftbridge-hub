@@ -56,7 +56,7 @@ import { useMorphoVaults } from '@/hooks/useMorphoVaults';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import { cn } from '@/lib/utils';
-import { buildSwapLink } from '@/lib/swapDeepLink';
+import { openSwapIntent } from '@/lib/swapIntent';
 import { toast } from '@/hooks/use-toast';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
@@ -213,15 +213,14 @@ export default function Earn() {
 
   // ─── Swap navigation ───
   const goToSwap = useCallback((chainId: number, tokenSymbol: string, tokenAddress?: string) => {
-    const link = buildSwapLink({
-      chainId,
-      toTokenAddress: tokenAddress,
-      toTokenSymbol: tokenSymbol,
-      ref: 'earn',
-      action: 'swap',
+    openSwapIntent({
+      intentType: 'acquire_token',
+      targetChainId: chainId,
+      targetTokenAddress: tokenAddress || '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      targetSymbol: tokenSymbol,
+      returnTo: { view: 'earn', tab: activeTab },
     });
-    navigate(link);
-  }, [navigate]);
+  }, [activeTab]);
 
   // ─── Helpers ───
   const formatUsd = (value: number) => {

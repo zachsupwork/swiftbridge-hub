@@ -16,7 +16,8 @@ import type { PortfolioTokenBalance } from '@/hooks/useBalances';
 import { buildSwapLink } from '@/lib/swapDeepLink';
 import { SUPPORTED_CHAINS } from '@/lib/wagmiConfig';
 import { cn } from '@/lib/utils';
-import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { TokenIcon } from '@/components/common/TokenIcon';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import { SyncBalancesButton } from '@/components/common/SyncBalancesButton';
 import { BalanceSyncingState } from '@/components/common/BalanceSyncingState';
 import { TokenDetailModal } from '@/components/portfolio/TokenDetailModal';
@@ -24,7 +25,6 @@ import { useMorphoPositions } from '@/hooks/useMorphoPositions';
 import { useMorphoVaults } from '@/hooks/useMorphoVaults';
 import { getMorphoChainConfig } from '@/lib/morpho/config';
 import { Badge } from '@/components/ui/badge';
-import { ChainIcon } from '@/components/common/ChainIcon';
 // Testnet IDs to exclude from chain filter tabs
 const TESTNET_IDS = new Set([11155111]);
 
@@ -216,7 +216,7 @@ export default function Portfolio() {
             >
               All Chains
             </button>
-            {chainFilterTabs.map((chain) => (
+              {chainFilterTabs.map((chain) => (
               <button
                 key={`chain-filter-${chain.id}`}
                 onClick={() => setSelectedChainFilter(chain.id)}
@@ -227,7 +227,7 @@ export default function Portfolio() {
                     : 'glass hover:bg-muted/50'
                 )}
               >
-                <img src={chain.logoURI} alt={chain.name} className="w-5 h-5 rounded-full" />
+                <ChainIcon chainId={chain.id} size="sm" className="w-5 h-5" />
                 <span className="hidden sm:inline">{chain.name}</span>
               </button>
             ))}
@@ -312,14 +312,16 @@ export default function Portfolio() {
                     onClick={() => setSelectedToken(item)}
                   >
                     <div className="relative flex-shrink-0">
-                      <TokenIconStable symbol={item.token.symbol} logoURI={item.token.logoURI} size="lg" />
-                      {chain && (
-                        <img
-                          src={chain.logoURI}
-                          alt={chain.name}
-                          className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-card"
-                        />
-                      )}
+                      <TokenIcon
+                        address={item.token.address}
+                        symbol={item.token.symbol}
+                        chainId={item.chainId}
+                        logoUrl={item.token.logoURI}
+                        size="lg"
+                      />
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-card overflow-hidden">
+                        <ChainIcon chainId={item.chainId} size="sm" />
+                      </div>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm sm:text-base">{item.token.symbol}</div>
@@ -330,11 +332,11 @@ export default function Portfolio() {
                     <div className="text-right flex-shrink-0">
                       <div className="font-medium text-sm sm:text-base">{item.balanceFormatted}</div>
                       <div className="text-xs text-muted-foreground">
-                        {item.balanceUSD > 0
+                        {item.balanceUSD > 0.001
                           ? `$${item.balanceUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : item.token.priceUSD && parseFloat(item.token.priceUSD) > 0
-                            ? `$${item.balanceUSD.toFixed(2)}`
-                            : '—'}
+                            ? `$${item.balanceUSD.toFixed(4)}`
+                            : <span className="text-muted-foreground/50 italic text-[10px]">No price feed</span>}
                       </div>
                     </div>
                     <button
