@@ -166,12 +166,12 @@ export function MorphoSupplyModal({
 
   const isWrongChain = market && walletChainId !== market.chainId;
 
-  // Use onchain balance if available, else fallback to unified portfolio balance
+  // ADDRESS-ONLY balance lookup — no symbol fallback
   const portfolioBalance = useMemo(() => {
     if (!token || !market) return undefined;
     return portfolioBalances.find(
       (tb) => tb.chainId === market.chainId &&
-        tb.token.symbol.toUpperCase() === token.symbol.toUpperCase() &&
+        tb.token.address.toLowerCase() === token.address.toLowerCase() &&
         tb.balance > 0
     );
   }, [portfolioBalances, token, market]);

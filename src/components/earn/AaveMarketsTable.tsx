@@ -625,7 +625,6 @@ export function AaveMarketsTable({
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
                       walletBalanceUsd={
                         walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]
-                        || walletBalances?.[`${market.chainId}:sym:${market.assetSymbol.toUpperCase()}`]
                       }
                     />
                   ) : (
@@ -656,7 +655,6 @@ export function AaveMarketsTable({
                 hasCollateral={hasCollateral}
                 walletBalanceUsd={
                   walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]
-                  || walletBalances?.[`${market.chainId}:sym:${market.assetSymbol.toUpperCase()}`]
                 }
               />
             ))}

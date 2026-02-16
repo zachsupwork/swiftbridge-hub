@@ -21,7 +21,6 @@ import {
   TrendingUp,
   Vault,
   ExternalLink,
-  Repeat,
 } from 'lucide-react';
 import {
   useAccount,
@@ -48,7 +47,7 @@ import { TokenIcon } from '@/components/common/TokenIcon';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
-import { openSwapIntent } from '@/lib/swapIntent';
+import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
@@ -173,14 +172,8 @@ export function MorphoVaultActionModal({
 
   const needsApproval = tab === 'deposit' && parsedAmount > 0n && (allowance ?? 0n) < parsedAmount;
 
-  // Use BalancesProvider as fallback when on-chain read returns 0 (e.g. wrong chain)
-  const { tokenBalances: allTokenBalances } = useBalancesContext();
+  // ADDRESS-ONLY balance lookup — no symbol fallback
   const sharedBalance = vault ? getBalance(vault.chainId, vault.asset.address) : undefined;
-  // Symbol+chain fallback if address lookup misses
-  const vaultSymbolFallback = (!sharedBalance && vault) ? allTokenBalances.find(
-    tb => tb.chainId === vault.chainId && tb.token.symbol.toUpperCase() === vault.asset.symbol.toUpperCase() && tb.balance > 0
-  ) : undefined;
-  const effectiveSharedBalance = sharedBalance || vaultSymbolFallback;
 
   const formattedBalance = useMemo(() => {
     if (tab === 'deposit') {
@@ -188,8 +181,8 @@ export function MorphoVaultActionModal({
       if (assetBalance !== undefined && assetBalance > 0n) {
         return formatUnits(assetBalance, decimals);
       }
-      if (effectiveSharedBalance && effectiveSharedBalance.balance > 0) {
-        return effectiveSharedBalance.balanceFormatted;
+      if (sharedBalance && sharedBalance.balance > 0) {
+        return sharedBalance.balanceFormatted;
       }
       return '0';
     }
@@ -197,7 +190,7 @@ export function MorphoVaultActionModal({
       return formatUnits(userPosition.assets, decimals);
     }
     return '0';
-  }, [tab, assetBalance, effectiveSharedBalance, userPosition, decimals]);
+  }, [tab, assetBalance, sharedBalance, userPosition, decimals]);
 
   const hasNoBalance = tab === 'deposit' && parseFloat(formattedBalance) === 0;
 
@@ -369,31 +362,12 @@ export function MorphoVaultActionModal({
 
             {/* Swap CTA when no balance */}
             {hasNoBalance && isCorrectChain && step === 'idle' && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-primary/10 border border-primary/20">
-                <Repeat className="w-4 h-4 text-primary flex-shrink-0" />
-                <div className="flex-1 text-sm">
-                  <p className="font-medium">No {vault.asset.symbol} balance</p>
-                  <p className="text-xs text-muted-foreground">Get tokens via cross-chain swap</p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    onClose();
-                    openSwapIntent({
-                      intentType: 'acquire_token',
-                      targetChainId: vault.chainId,
-                      targetTokenAddress: vault.asset.address,
-                      targetSymbol: vault.asset.symbol,
-                      returnTo: { view: 'vaults' },
-                    });
-                  }}
-                  className="gap-1 text-xs shrink-0"
-                >
-                  <Repeat className="w-3 h-3" />
-                  Get {vault.asset.symbol}
-                </Button>
-              </div>
+              <InlineAcquireSwapPanel
+                targetChainId={vault.chainId}
+                targetTokenAddress={vault.asset.address}
+                targetSymbol={vault.asset.symbol}
+                closeParentOnSwap={onClose}
+              />
             )}
 
             <div className="space-y-2">
