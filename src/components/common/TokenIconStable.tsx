@@ -1,14 +1,22 @@
-import { memo, useState, useCallback } from 'react';
+/**
+ * TokenIconStable Component
+ * 
+ * Deterministic token logo with color-coded letter fallback.
+ * Uses global logo resolver — no flicker.
+ */
+
+import { memo, useState, useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { resolveTokenLogo, GENERIC_TOKEN_ICON } from '@/lib/logoResolver';
 
 interface TokenIconStableProps {
   symbol: string;
   logoURI?: string;
+  address?: string;
+  chainId?: number;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
-
-// logoURI prop already exists — this component supports it natively.
 
 const SIZE_MAP = {
   sm: 'w-4 h-4 text-[8px]',
@@ -40,18 +48,24 @@ function getColor(symbol: string): string {
 export const TokenIconStable = memo(function TokenIconStable({
   symbol,
   logoURI,
+  address,
+  chainId,
   size = 'md',
   className,
 }: TokenIconStableProps) {
+  // Resolve deterministically
+  const resolvedUrl = useMemo(() => 
+    resolveTokenLogo({ address, symbol, chainId, logoURI }),
+    [address, symbol, chainId, logoURI]
+  );
+
   const [failed, setFailed] = useState(false);
-
-  const handleError = useCallback(() => {
-    setFailed(true);
-  }, []);
-
+  const handleError = useCallback(() => setFailed(true), []);
   const sizeClass = SIZE_MAP[size];
 
-  if (!logoURI || failed) {
+  const isGeneric = resolvedUrl === GENERIC_TOKEN_ICON;
+
+  if (isGeneric || failed) {
     return (
       <div
         className={cn(
@@ -69,7 +83,7 @@ export const TokenIconStable = memo(function TokenIconStable({
 
   return (
     <img
-      src={logoURI}
+      src={resolvedUrl}
       alt=""
       loading="lazy"
       decoding="async"

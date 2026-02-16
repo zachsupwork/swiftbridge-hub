@@ -31,6 +31,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { buildSwapLink } from '@/lib/swapDeepLink';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
@@ -169,9 +170,9 @@ const SupplyRow = memo(function SupplyRow({
         <td className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
-              <img src={market.assetLogo} alt={market.assetSymbol}
-                className="w-7 h-7 rounded-full"
-                onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+              <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
+                logoUrl={market.assetLogo} size="sm"
+                className="w-7 h-7" />
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
                 <ChainIcon chainId={market.chainId} size="sm" />
               </div>
@@ -239,9 +240,9 @@ const BorrowRow = memo(function BorrowRow({
         <td className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
-              <img src={market.assetLogo} alt={market.assetSymbol}
-                className="w-7 h-7 rounded-full"
-                onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+              <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
+                logoUrl={market.assetLogo} size="sm"
+                className="w-7 h-7" />
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
                 <ChainIcon chainId={market.chainId} size="sm" />
               </div>
@@ -317,9 +318,9 @@ const MobileCard = memo(function MobileCard({
     <div className="glass rounded-xl p-3.5" onClick={() => setExpanded(!expanded)}>
       <div className="flex items-center gap-2.5 mb-2.5">
         <div className="relative">
-          <img src={market.assetLogo} alt={market.assetSymbol}
-            className="w-8 h-8 rounded-full"
-            onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+          <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
+            logoUrl={market.assetLogo} size="sm"
+            className="w-8 h-8" />
           <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
             <ChainIcon chainId={market.chainId} size="sm" />
           </div>

@@ -12,32 +12,10 @@
 
 import { MORPHO_API_URL, getMorphoChainConfig } from './config';
 import type { MorphoMarket, MorphoAsset } from './types';
-
-// Token logo fallback mapping
-const TOKEN_LOGOS: Record<string, string> = {
-  ETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
-  WETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/weth.svg',
-  USDC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
-  DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
-  WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  CBETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/cbeth.svg',
-  WSTETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
-  RETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/reth.svg',
-  CBBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  USDE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  SUSDE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  PYUSD: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  WEETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
-  EZETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
-};
-
-const GENERIC_TOKEN_LOGO = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
+import { resolveTokenLogo, GENERIC_TOKEN_ICON } from '@/lib/logoResolver';
 
 function getTokenLogo(symbol: string, logoUri?: string): string {
-  if (logoUri) return logoUri;
-  const normalized = symbol.toUpperCase().replace(/[.\-]/g, '');
-  return TOKEN_LOGOS[normalized] || GENERIC_TOKEN_LOGO;
+  return resolveTokenLogo({ symbol, logoURI: logoUri });
 }
 
 /**
