@@ -6,6 +6,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, AlertTriangle, Loader2, Check, ExternalLink, Info, Wallet, TrendingDown } from 'lucide-react';
+import { TokenIcon } from '@/components/common/TokenIcon';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import { useAccount, useChainId } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
 import { Button } from '@/components/ui/button';
@@ -165,18 +167,19 @@ export function BorrowModal({
               {/* Header */}
               <div className="flex items-center justify-between p-4 border-b border-border">
                 <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <img
-                      src={market.assetLogo}
-                      alt={market.assetSymbol}
-                      className="w-10 h-10 rounded-full bg-muted"
-                    />
-                    <img
-                      src={market.chainLogo}
-                      alt={market.chainName}
-                      className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-card bg-card"
-                    />
-                  </div>
+                    <div className="relative">
+                      <TokenIcon
+                        address={market.assetAddress}
+                        symbol={market.assetSymbol}
+                        chainId={market.chainId}
+                        logoUrl={market.assetLogo}
+                        size="sm"
+                        className="w-10 h-10"
+                      />
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-card overflow-hidden">
+                        <ChainIcon chainId={market.chainId} size="sm" />
+                      </div>
+                    </div>
                   <div>
                     <div className="font-semibold">Borrow {market.assetSymbol}</div>
                     <div className="text-xs text-muted-foreground flex items-center gap-1.5">
