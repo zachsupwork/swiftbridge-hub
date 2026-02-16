@@ -174,11 +174,30 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
             )}
 
             {!accountData && (
-              <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Shield className="w-4 h-4" />
-                  <span>Supply collateral first to enable borrowing</span>
+              <div className="space-y-3">
+                <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center gap-2 text-sm text-foreground">
+                    <Shield className="w-4 h-4 text-primary" />
+                    <span>Supply collateral first to enable borrowing</span>
+                  </div>
                 </div>
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 text-sm"
+                  onClick={() => {
+                    onClose();
+                    navigate(buildSwapLink({
+                      chainId: market.chainId,
+                      toTokenAddress: market.assetAddress,
+                      toTokenSymbol: market.assetSymbol,
+                      ref: 'earn',
+                      action: 'swap',
+                    }));
+                  }}
+                >
+                  <Repeat className="w-4 h-4" />
+                  Get {market.assetSymbol} via Cross-Chain Swap
+                </Button>
               </div>
             )}
 

@@ -1,15 +1,15 @@
 /**
- * Lending Markets Hook — Direct On-Chain Aave V3 Integration
+ * Lending Markets Hook — Aave V3 Integration
  * 
- * Fetches reserve data directly from UiPoolDataProviderV3.getReservesData()
- * on each supported chain. No external APIs — all data is from official 
- * Aave V3 contracts via public RPCs.
+ * Hybrid approach: Tries on-chain UiPoolDataProviderV3.getReservesData() first,
+ * falls back to DeFi Llama API with proper borrow data matching.
+ * Supports retry with fallback RPCs.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPublicClient, http, formatUnits, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
-import { SUPPORTED_CHAINS, getChainConfig, type ChainConfig } from '@/lib/chainConfig';
+import { SUPPORTED_CHAINS, getChainConfig, getFallbackRpcs, type ChainConfig } from '@/lib/chainConfig';
 import { getAaveAddresses, UI_POOL_DATA_PROVIDER_ABI, type AaveReserveData, type AaveBaseCurrencyInfo } from '@/lib/aaveAddressBook';
 
 // ============================================
@@ -27,43 +27,32 @@ export interface LendingMarket {
   assetAddress: `0x${string}`;
   assetLogo: string;
   decimals: number;
-  // APY / APR
   supplyAPY: number;
   borrowAPY: number;
   isVariable: boolean;
-  // Market size
   tvl: number | null;
   totalSupplyUsd: number;
   totalBorrowUsd: number;
   availableLiquidity: number | null;
   availableLiquidityUsd: number;
-  // Collateral params
   collateralEnabled: boolean;
   ltv: number;
   liquidationThreshold: number;
   liquidationBonus: number;
-  // Caps
   supplyCap: number;
   borrowCap: number;
-  // Reserve details
   reserveFactor: number;
   utilizationRate: number;
-  // Oracle
   priceUsd: number;
-  // Token addresses
   aTokenAddress: `0x${string}`;
   variableDebtTokenAddress: `0x${string}`;
-  // Status
   isActive: boolean;
   isFrozen: boolean;
   isPaused: boolean;
   borrowingEnabled: boolean;
-  // Indexes (for aToken/debtToken balance calculation)
   liquidityIndex: bigint;
   variableBorrowIndex: bigint;
-  // E-mode
   eModeCategoryId: number;
-  // Links
   marketId: string;
   protocolUrl: string;
 }
@@ -92,7 +81,10 @@ const TOKEN_LOGOS: Record<string, string> = {
   USDBCE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
   USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
   DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
+  SDAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
   WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
+  CBBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
+  TBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
   LINK: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/link.svg',
   AAVE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/aave.svg',
   UNI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/uni.svg',
@@ -122,10 +114,22 @@ const TOKEN_LOGOS: Record<string, string> = {
   COMP: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/comp.svg',
   ENS: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/ens.svg',
   '1INCH': 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/1inch.svg',
+  WEETH: 'https://app.aave.com/icons/tokens/weeth.svg',
+  EZETH: 'https://app.aave.com/icons/tokens/ezeth.svg',
+  RSETH: 'https://app.aave.com/icons/tokens/rseth.svg',
+  OSETH: 'https://app.aave.com/icons/tokens/oseth.svg',
+  PYUSD: 'https://app.aave.com/icons/tokens/pyusd.svg',
+  CRVUSD: 'https://app.aave.com/icons/tokens/crvusd.svg',
+  EURC: 'https://app.aave.com/icons/tokens/eurc.svg',
+  EURS: 'https://app.aave.com/icons/tokens/eurs.svg',
+  USDS: 'https://app.aave.com/icons/tokens/usds.svg',
+  SUSDS: 'https://app.aave.com/icons/tokens/susds.svg',
+  SUSDE: 'https://app.aave.com/icons/tokens/susde.svg',
+  USDE: 'https://app.aave.com/icons/tokens/usde.svg',
 };
 
 function getTokenLogo(symbol: string): string {
-  const upper = symbol.toUpperCase().replace('.', '');
+  const upper = symbol.toUpperCase().replace(/\./g, '');
   return TOKEN_LOGOS[upper] || TOKEN_LOGOS[symbol.toUpperCase()] ||
     `https://app.aave.com/icons/tokens/${symbol.toLowerCase()}.svg`;
 }
@@ -152,15 +156,9 @@ const AAVE_MARKET_NAMES: Record<number, string> = {
 // ============================================
 
 export type MarketFetchErrorType =
-  | 'unsupported_chain'
-  | 'missing_rpc'
-  | 'rpc_unavailable'
-  | 'contract_error'
-  | 'network_error'
-  | 'no_markets'
-  | 'partial_failure'
-  | 'rate_limited'
-  | 'timeout';
+  | 'unsupported_chain' | 'missing_rpc' | 'rpc_unavailable'
+  | 'contract_error' | 'network_error' | 'no_markets'
+  | 'partial_failure' | 'rate_limited' | 'timeout';
 
 export interface MarketFetchError {
   type: MarketFetchErrorType;
@@ -199,12 +197,15 @@ const CACHE_TTL_MS = 60_000;
 let globalCache: CacheEntry | null = null;
 
 // ============================================
-// DEFI LLAMA FALLBACK
+// DEFI LLAMA FALLBACK (improved with borrow data)
 // ============================================
 
 const CHAIN_NAME_TO_ID: Record<string, number> = {
   'Ethereum': 1, 'Arbitrum': 42161, 'Optimism': 10, 'Polygon': 137, 'Base': 8453, 'Avalanche': 43114,
 };
+
+// Known non-borrowable assets (supply-only collateral)
+const NON_BORROWABLE_SYMBOLS = new Set(['STETH', 'CBETH', 'RETH', 'WSTETH', 'OSETH', 'WEETH', 'EZETH', 'RSETH', 'SDAI', 'SUSDS', 'SUSDE']);
 
 async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
   console.log('[Earn] Falling back to DeFi Llama API...');
@@ -217,19 +218,54 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
     if (!response.ok) throw new Error(`DeFi Llama API returned ${response.status}`);
     
     const json = await response.json();
-    const pools = (json.data || json).filter(
+    const allAavePools = (json.data || json).filter(
       (p: any) => p.project === 'aave-v3' && p.chain in CHAIN_NAME_TO_ID && p.tvlUsd > 10000
     );
     
-    return pools.map((pool: any) => {
+    // Build a map: chainId -> symbol -> borrow APY data
+    // DeFi Llama has separate pool entries for borrow vs supply
+    const borrowDataMap = new Map<string, number>();
+    for (const pool of allAavePools) {
+      const chainId = CHAIN_NAME_TO_ID[pool.chain];
+      const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
+      const borrowAPY = Math.abs((pool.apyBaseBorrow ?? 0) + (pool.apyRewardBorrow ?? 0));
+      if (borrowAPY > 0) {
+        const key = `${chainId}-${symbol}`;
+        // Keep highest borrow APY if multiple entries
+        if (!borrowDataMap.has(key) || borrowDataMap.get(key)! < borrowAPY) {
+          borrowDataMap.set(key, borrowAPY);
+        }
+      }
+    }
+
+    // Deduplicate by chainId-symbol, preferring entry with highest TVL
+    const deduped = new Map<string, any>();
+    for (const pool of allAavePools) {
+      const chainId = CHAIN_NAME_TO_ID[pool.chain];
+      const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
+      const key = `${chainId}-${symbol}`;
+      const existing = deduped.get(key);
+      if (!existing || (pool.tvlUsd || 0) > (existing.tvlUsd || 0)) {
+        deduped.set(key, pool);
+      }
+    }
+
+    return Array.from(deduped.values()).map((pool: any) => {
       const chainId = CHAIN_NAME_TO_ID[pool.chain];
       const chainCfg = getChainConfig(chainId);
       const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
       const tokenAddress = (pool.underlyingTokens?.[0] || '0x0000000000000000000000000000000000000000') as `0x${string}`;
       const supplyAPY = pool.apy ?? pool.apyBase ?? 0;
-      const borrowAPY = Math.abs((pool.apyBaseBorrow ?? 0) + (pool.apyRewardBorrow ?? 0));
+      
+      // Look up borrow APY from the map
+      const borrowKey = `${chainId}-${symbol}`;
+      const borrowAPY = borrowDataMap.get(borrowKey) ?? Math.abs((pool.apyBaseBorrow ?? 0) + (pool.apyRewardBorrow ?? 0));
+      
       const collateralEnabled = (pool.ltv ?? 0) > 0;
       const marketName = AAVE_MARKET_NAMES[chainId] || '';
+      
+      // Most Aave V3 assets are borrowable except certain collateral-only LSTs
+      const isBorrowable = !NON_BORROWABLE_SYMBOLS.has(symbol);
       
       return {
         id: `aave-${chainId}-${pool.pool}`,
@@ -264,7 +300,7 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
         isActive: true,
         isFrozen: false,
         isPaused: false,
-        borrowingEnabled: borrowAPY > 0,
+        borrowingEnabled: isBorrowable,
         liquidityIndex: 0n,
         variableBorrowIndex: 0n,
         eModeCategoryId: 0,
@@ -279,32 +315,41 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
 }
 
 // ============================================
-// ON-CHAIN FETCH PER CHAIN
+// ON-CHAIN FETCH PER CHAIN (with RPC retry)
 // ============================================
 
-/**
- * Converts Aave's RAY-based rate to APY percentage.
- * rate is in RAY (1e27). APY = ((1 + rate/secondsPerYear)^secondsPerYear - 1) * 100
- * Simplified: APY ≈ rate / 1e27 * 100
- */
 function rayRateToAPY(rayRate: bigint): number {
-  // More precise: compound interest
   const ratePerSecond = Number(rayRate) / 1e27;
   const SECONDS_PER_YEAR = 31536000;
-  // APY = (1 + ratePerSecond)^secondsPerYear - 1 
-  // Use approximation for small rates to avoid floating point issues
   if (ratePerSecond < 1e-12) return 0;
-  // Simple APR approach (close enough for display)
   const apr = ratePerSecond * SECONDS_PER_YEAR;
   return apr * 100;
 }
 
-async function fetchChainReserves(chainConfig: ChainConfig): Promise<ChainFetchResult> {
-  const { chainId, name, rpcUrl, logo } = chainConfig;
+async function tryFetchWithRpc(
+  rpcUrl: string,
+  chainConfig: ChainConfig,
+  viemChain: any,
+  aaveAddresses: { POOL_ADDRESSES_PROVIDER: string; UI_POOL_DATA_PROVIDER: string }
+): Promise<any> {
+  const client = createPublicClient({
+    chain: viemChain,
+    transport: http(rpcUrl, { timeout: 15_000 }),
+  });
 
-  if (!rpcUrl) {
-    return { chainId, chainName: name, success: false, markets: [], error: 'No RPC URL', errorType: 'missing_rpc' };
-  }
+  const checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
+  const checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
+
+  return await (client.readContract as any)({
+    address: checksummedUiProvider,
+    abi: UI_POOL_DATA_PROVIDER_ABI,
+    functionName: 'getReservesData',
+    args: [checksummedProvider],
+  });
+}
+
+async function fetchChainReserves(chainConfig: ChainConfig): Promise<ChainFetchResult> {
+  const { chainId, name, logo } = chainConfig;
 
   const aaveAddresses = getAaveAddresses(chainId);
   if (!aaveAddresses) {
@@ -316,132 +361,120 @@ async function fetchChainReserves(chainConfig: ChainConfig): Promise<ChainFetchR
     return { chainId, chainName: name, success: false, markets: [], error: 'Chain not configured', errorType: 'unsupported_chain' };
   }
 
-  const client = createPublicClient({
-    chain: viemChain,
-    transport: http(rpcUrl, { timeout: 15_000 }),
-  });
-
-  try {
-    const checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
-    const checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
-
-    const result = await (client.readContract as any)({
-      address: checksummedUiProvider,
-      abi: UI_POOL_DATA_PROVIDER_ABI,
-      functionName: 'getReservesData',
-      args: [checksummedProvider],
-    });
-
-    const [reserves, baseCurrencyInfo] = result;
-
-    if (!reserves || reserves.length === 0) {
-      return { chainId, chainName: name, success: false, markets: [], error: 'No reserves returned', errorType: 'no_markets' };
-    }
-
-    // Base currency info for USD conversion
-    const marketRefUnit = Number(baseCurrencyInfo.marketReferenceCurrencyUnit);
-    const marketRefPriceInUsd = Number(baseCurrencyInfo.marketReferenceCurrencyPriceInUsd) / 1e8;
-
-    const markets: LendingMarket[] = [];
-
-    for (const r of reserves) {
-      // Skip inactive/paused reserves
-      if (!r.isActive) continue;
-
-      const decimals = Number(r.decimals);
-      const symbol = r.symbol || '???';
-      
-      // Price in USD
-      const priceInRef = Number(r.priceInMarketReferenceCurrency) / marketRefUnit;
-      const priceUsd = priceInRef * marketRefPriceInUsd;
-
-      // Available liquidity
-      const availableLiq = Number(formatUnits(r.availableLiquidity, decimals));
-      const availableLiqUsd = availableLiq * priceUsd;
-
-      // Total supply = availableLiquidity + totalBorrow (approx via scaled debt * borrow index)
-      const totalScaledDebt = Number(formatUnits(r.totalScaledVariableDebt, decimals));
-      const borrowIndex = Number(r.variableBorrowIndex) / 1e27;
-      const totalBorrow = totalScaledDebt * borrowIndex;
-      const totalBorrowUsd = totalBorrow * priceUsd;
-      const totalSupply = availableLiq + totalBorrow;
-      const totalSupplyUsd = totalSupply * priceUsd;
-
-      // Utilization rate
-      const utilizationRate = totalSupply > 0 ? (totalBorrow / totalSupply) * 100 : 0;
-
-      // APY from on-chain rates (in RAY = 1e27)
-      const supplyAPY = rayRateToAPY(r.liquidityRate);
-      const borrowAPY = rayRateToAPY(r.variableBorrowRate);
-
-      // Collateral params (in basis points, /10000 = percentage)
-      const ltv = Number(r.baseLTVasCollateral) / 100; // percentage
-      const liquidationThreshold = Number(r.reserveLiquidationThreshold) / 100;
-      const liquidationBonus = (Number(r.reserveLiquidationBonus) / 100) - 100; // bonus above 100%
-      const reserveFactor = Number(r.reserveFactor) / 100;
-      const collateralEnabled = r.usageAsCollateralEnabled && ltv > 0;
-
-      // Caps
-      const supplyCap = Number(r.supplyCap);
-      const borrowCap = Number(r.borrowCap);
-
-      const marketName = AAVE_MARKET_NAMES[chainId] || '';
-      const assetAddr = r.underlyingAsset.toLowerCase();
-      const protocolUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=${assetAddr}&marketName=${marketName}`;
-
-      markets.push({
-        id: `aave-${chainId}-${r.underlyingAsset}`,
-        protocol: 'aave',
-        chainId,
-        chainName: name,
-        chainLogo: logo,
-        assetSymbol: symbol,
-        assetName: r.name || symbol,
-        assetAddress: r.underlyingAsset,
-        assetLogo: getTokenLogo(symbol),
-        decimals,
-        supplyAPY,
-        borrowAPY,
-        isVariable: true,
-        tvl: totalSupplyUsd,
-        totalSupplyUsd,
-        totalBorrowUsd,
-        availableLiquidity: availableLiq,
-        availableLiquidityUsd: availableLiqUsd,
-        collateralEnabled,
-        ltv,
-        liquidationThreshold,
-        liquidationBonus,
-        supplyCap,
-        borrowCap,
-        reserveFactor,
-        utilizationRate,
-        priceUsd,
-        aTokenAddress: r.aTokenAddress,
-        variableDebtTokenAddress: r.variableDebtTokenAddress,
-        isActive: r.isActive,
-        isFrozen: r.isFrozen,
-        isPaused: r.isPaused,
-        borrowingEnabled: r.borrowingEnabled,
-        liquidityIndex: r.liquidityIndex,
-        variableBorrowIndex: r.variableBorrowIndex,
-        eModeCategoryId: r.eModeCategoryId,
-        marketId: r.underlyingAsset,
-        protocolUrl,
-      });
-    }
-
-    // Sort by TVL desc
-    markets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
-
-    console.log(`[Earn] ✓ ${name}: ${markets.length} reserves loaded on-chain`);
-    return { chainId, chainName: name, success: true, markets };
-
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[Earn] ✗ ${name}: ${msg}`);
-    return { chainId, chainName: name, success: false, markets: [], error: msg, errorType: 'contract_error' };
+  // Build list of RPCs to try: primary first, then fallbacks
+  const rpcsToTry: string[] = [];
+  if (chainConfig.rpcUrl) rpcsToTry.push(chainConfig.rpcUrl);
+  const fallbacks = getFallbackRpcs(chainId);
+  for (const fb of fallbacks) {
+    if (!rpcsToTry.includes(fb)) rpcsToTry.push(fb);
   }
+
+  if (rpcsToTry.length === 0) {
+    return { chainId, chainName: name, success: false, markets: [], error: 'No RPC URL', errorType: 'missing_rpc' };
+  }
+
+  let lastError = '';
+  
+  for (const rpcUrl of rpcsToTry) {
+    try {
+      const result = await tryFetchWithRpc(rpcUrl, chainConfig, viemChain, aaveAddresses);
+      const [reserves, baseCurrencyInfo] = result;
+
+      if (!reserves || reserves.length === 0) {
+        lastError = 'No reserves returned';
+        continue;
+      }
+
+      const marketRefUnit = Number(baseCurrencyInfo.marketReferenceCurrencyUnit);
+      const marketRefPriceInUsd = Number(baseCurrencyInfo.marketReferenceCurrencyPriceInUsd) / 1e8;
+
+      const markets: LendingMarket[] = [];
+
+      for (const r of reserves) {
+        if (!r.isActive) continue;
+
+        const decimals = Number(r.decimals);
+        const symbol = r.symbol || '???';
+        
+        const priceInRef = Number(r.priceInMarketReferenceCurrency) / marketRefUnit;
+        const priceUsd = priceInRef * marketRefPriceInUsd;
+        const availableLiq = Number(formatUnits(r.availableLiquidity, decimals));
+        const availableLiqUsd = availableLiq * priceUsd;
+        const totalScaledDebt = Number(formatUnits(r.totalScaledVariableDebt, decimals));
+        const borrowIndex = Number(r.variableBorrowIndex) / 1e27;
+        const totalBorrow = totalScaledDebt * borrowIndex;
+        const totalBorrowUsd = totalBorrow * priceUsd;
+        const totalSupply = availableLiq + totalBorrow;
+        const totalSupplyUsd = totalSupply * priceUsd;
+        const utilizationRate = totalSupply > 0 ? (totalBorrow / totalSupply) * 100 : 0;
+        const supplyAPY = rayRateToAPY(r.liquidityRate);
+        const borrowAPY = rayRateToAPY(r.variableBorrowRate);
+        const ltv = Number(r.baseLTVasCollateral) / 100;
+        const liquidationThreshold = Number(r.reserveLiquidationThreshold) / 100;
+        const liquidationBonus = (Number(r.reserveLiquidationBonus) / 100) - 100;
+        const reserveFactor = Number(r.reserveFactor) / 100;
+        const collateralEnabled = r.usageAsCollateralEnabled && ltv > 0;
+        const supplyCap = Number(r.supplyCap);
+        const borrowCap = Number(r.borrowCap);
+        const marketName = AAVE_MARKET_NAMES[chainId] || '';
+        const assetAddr = r.underlyingAsset.toLowerCase();
+        const protocolUrl = `https://app.aave.com/reserve-overview/?underlyingAsset=${assetAddr}&marketName=${marketName}`;
+
+        markets.push({
+          id: `aave-${chainId}-${r.underlyingAsset}`,
+          protocol: 'aave',
+          chainId,
+          chainName: name,
+          chainLogo: logo,
+          assetSymbol: symbol,
+          assetName: r.name || symbol,
+          assetAddress: r.underlyingAsset,
+          assetLogo: getTokenLogo(symbol),
+          decimals,
+          supplyAPY,
+          borrowAPY,
+          isVariable: true,
+          tvl: totalSupplyUsd,
+          totalSupplyUsd,
+          totalBorrowUsd,
+          availableLiquidity: availableLiq,
+          availableLiquidityUsd: availableLiqUsd,
+          collateralEnabled,
+          ltv,
+          liquidationThreshold,
+          liquidationBonus,
+          supplyCap,
+          borrowCap,
+          reserveFactor,
+          utilizationRate,
+          priceUsd,
+          aTokenAddress: r.aTokenAddress,
+          variableDebtTokenAddress: r.variableDebtTokenAddress,
+          isActive: r.isActive,
+          isFrozen: r.isFrozen,
+          isPaused: r.isPaused,
+          borrowingEnabled: r.borrowingEnabled,
+          liquidityIndex: r.liquidityIndex,
+          variableBorrowIndex: r.variableBorrowIndex,
+          eModeCategoryId: r.eModeCategoryId,
+          marketId: r.underlyingAsset,
+          protocolUrl,
+        });
+      }
+
+      markets.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
+      console.log(`[Earn] ✓ ${name}: ${markets.length} reserves loaded on-chain`);
+      return { chainId, chainName: name, success: true, markets };
+
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      console.warn(`[Earn] ${name}: RPC failed (${new URL(rpcUrl).hostname}): ${lastError.slice(0, 80)}`);
+      // Try next RPC
+    }
+  }
+
+  console.error(`[Earn] ✗ ${name}: All RPCs failed. Last error: ${lastError}`);
+  return { chainId, chainName: name, success: false, markets: [], error: lastError, errorType: 'contract_error' };
 }
 
 // ============================================
@@ -486,7 +519,6 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     try {
       // Check cache
       if (!isRetry && globalCache && Date.now() - globalCache.timestamp < CACHE_TTL_MS) {
-        console.log(`[Earn] Using cached on-chain data (${globalCache.markets.length} markets)`);
         setAllMarkets(globalCache.markets);
         setLastFetched(globalCache.timestamp);
         setLoading(false);
@@ -494,22 +526,31 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
         return;
       }
 
-      console.log('[Earn] Fetching Aave V3 reserves from on-chain contracts...');
+      console.log('[Earn] Fetching Aave V3 reserves...');
 
-      // Fetch all chains in parallel
-      const results = await Promise.all(
+      // Try on-chain first, with DeFi Llama as parallel fallback
+      const onChainPromise = Promise.all(
         SUPPORTED_CHAINS.map(chain => fetchChainReserves(chain))
       );
+      
+      // Start DeFi Llama fetch in parallel as backup
+      const llamaPromise = fetchFromDefiLlama().catch(err => {
+        console.warn('[Earn] DeFi Llama pre-fetch failed:', err);
+        return [] as LendingMarket[];
+      });
+
+      const [results, llamaMarkets] = await Promise.all([onChainPromise, llamaPromise]);
 
       setChainResults(results);
 
-      // Collect all markets from successful chains
       const allMkts: LendingMarket[] = [];
       const failures: ChainFailure[] = [];
+      const successfulChainIds = new Set<number>();
 
       for (const r of results) {
         if (r.success) {
           allMkts.push(...r.markets);
+          successfulChainIds.add(r.chainId);
         } else if (r.error) {
           failures.push({
             chainId: r.chainId,
@@ -520,42 +561,41 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
         }
       }
 
-      setPartialFailures(failures);
-
-      if (allMkts.length === 0) {
-        // All on-chain calls failed — fall back to DeFi Llama
-        console.warn('[Earn] All on-chain calls failed, falling back to DeFi Llama...');
-        try {
-          const llamaMarkets = await fetchFromDefiLlama();
-          if (llamaMarkets.length > 0) {
-            setAllMarkets(llamaMarkets);
-            setLastFetched(Date.now());
-            globalCache = { markets: llamaMarkets, timestamp: Date.now() };
-            console.log(`[Earn] ✓ DeFi Llama fallback: ${llamaMarkets.length} markets`);
-          } else {
-            setError({ type: 'network_error', message: 'No markets from on-chain or DeFi Llama' });
-            setErrorMessage('Unable to load market data. Please try again.');
+      // For chains that failed on-chain, fill in from DeFi Llama
+      if (failures.length > 0 && llamaMarkets.length > 0) {
+        for (const failure of failures) {
+          const llamaForChain = llamaMarkets.filter(m => m.chainId === failure.chainId);
+          if (llamaForChain.length > 0) {
+            allMkts.push(...llamaForChain);
+            successfulChainIds.add(failure.chainId);
+            console.log(`[Earn] ✓ ${failure.chainName}: ${llamaForChain.length} markets from DeFi Llama fallback`);
           }
-        } catch (llamaErr) {
-          console.error('[Earn] DeFi Llama fallback also failed:', llamaErr);
-          setError({ type: 'network_error', message: 'All data sources failed' });
-          setErrorMessage('Unable to load Aave V3 market data. Please try again.');
         }
-      } else {
-        // Sort by TVL
+      }
+
+      // Update failures to only include chains that truly have no data
+      const remainingFailures = failures.filter(f => !successfulChainIds.has(f.chainId));
+      setPartialFailures(remainingFailures);
+
+      if (allMkts.length === 0 && llamaMarkets.length > 0) {
+        // All on-chain failed but DeFi Llama worked
+        setAllMarkets(llamaMarkets);
+        setLastFetched(Date.now());
+        globalCache = { markets: llamaMarkets, timestamp: Date.now() };
+        console.log(`[Earn] ✓ Full DeFi Llama fallback: ${llamaMarkets.length} markets`);
+      } else if (allMkts.length > 0) {
         allMkts.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
         setAllMarkets(allMkts);
         setLastFetched(Date.now());
         globalCache = { markets: allMkts, timestamp: Date.now() };
-
-        if (failures.length > 0) {
-          console.warn(`[Earn] Partial failure: ${failures.length} chains failed`);
-        }
-        console.log(`[Earn] ✓ Total: ${allMkts.length} markets from ${results.filter(r => r.success).length}/${results.length} chains`);
+        console.log(`[Earn] ✓ Total: ${allMkts.length} markets from ${successfulChainIds.size}/${SUPPORTED_CHAINS.length} chains`);
+      } else {
+        setError({ type: 'network_error', message: 'Unable to load market data' });
+        setErrorMessage('Unable to load Aave V3 market data. Please try again.');
       }
     } catch (err) {
-      console.error('[Earn] Fatal error fetching markets:', err);
-      setError({ type: 'network_error', message: 'Unexpected error loading markets' });
+      console.error('[Earn] Fatal error:', err);
+      setError({ type: 'network_error', message: 'Unexpected error' });
       setErrorMessage('Unexpected error. Please try again.');
     } finally {
       setLoading(false);
@@ -568,7 +608,6 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
     fetchMarkets();
   }, [fetchMarkets]);
 
-  // Filter by selected chain
   const markets = selectedChainId
     ? allMarkets.filter(m => m.chainId === selectedChainId)
     : allMarkets;
@@ -609,5 +648,4 @@ export function getExplorerUrl(chainId: number, txHash: string): string {
   return config ? `${config.explorerUrl}${txHash}` : `https://etherscan.io/tx/${txHash}`;
 }
 
-// Re-export isAaveSupported
 export { isAaveSupported as isEarnChainSupported } from '@/lib/aaveAddressBook';
