@@ -327,20 +327,11 @@ export function AaveSupplyCard() {
             {supplyState.step !== 'idle' && (
               <div className="p-4 rounded-lg bg-muted/30 space-y-3">
                 <TransactionStep 
-                  label="Approving" 
+                  label="Approving Aave Pool" 
                   status={
-                    supplyState.step === 'approving_fee' || supplyState.step === 'approving_aave' ? 'pending' :
-                    supplyState.approvalTxHash || supplyState.feeTxHash ? 'complete' : 'idle'
+                    supplyState.step === 'approving' ? 'pending' :
+                    supplyState.approvalTxHash ? 'complete' : 'idle'
                   }
-                />
-                <TransactionStep 
-                  label="Fee Transfer" 
-                  status={
-                    supplyState.step === 'transferring_fee' ? 'pending' :
-                    supplyState.feeTxHash ? 'complete' : 'idle'
-                  }
-                  txHash={supplyState.feeTxHash}
-                  explorerUrl={supplyState.feeTxHash ? getExplorerUrl(supplyState.feeTxHash) : undefined}
                 />
                 <TransactionStep 
                   label="Supplying to Aave" 
@@ -386,9 +377,7 @@ export function AaveSupplyCard() {
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      {supplyState.step === 'approving_fee' && 'Approving...'}
-                      {supplyState.step === 'transferring_fee' && 'Transferring fee...'}
-                      {supplyState.step === 'approving_aave' && 'Approving Aave...'}
+                      {supplyState.step === 'approving' && 'Approving Aave Pool...'}
                       {supplyState.step === 'supplying' && 'Supplying...'}
                     </>
                   ) : supplyState.step === 'complete' ? (

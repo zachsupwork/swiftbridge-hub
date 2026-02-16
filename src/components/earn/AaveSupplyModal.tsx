@@ -157,9 +157,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
 
   const stepLabel = {
     idle: 'Supply',
-    approving_fee: 'Approving Fee...',
-    transferring_fee: 'Processing Fee...',
-    approving_aave: 'Approving Aave...',
+    approving: 'Approving Aave Pool...',
     supplying: 'Supplying...',
     complete: 'Complete',
     error: 'Error',

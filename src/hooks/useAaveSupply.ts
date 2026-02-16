@@ -1,11 +1,11 @@
 /**
  * Aave V3 Supply Hook
  * 
- * Handles the supply flow with MANDATORY platform fee:
- * 1. Approve token for fee transfer (if needed)
- * 2. Transfer fee to FEE_WALLET
- * 3. Approve token for Aave Pool (if needed)
- * 4. Supply remaining amount to Aave V3 Pool
+ * Standard Aave supply flow:
+ * 1. Approve token for Aave Pool (exact amount, NOT infinite)
+ * 2. Supply to Aave V3 Pool
+ * 
+ * No platform fee — approval spender is ONLY the Aave Pool contract.
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -15,7 +15,6 @@ import {
   useReadContract, 
   useWriteContract,
   useWaitForTransactionReceipt,
-  useBalance,
 } from 'wagmi';
 import { parseUnits, formatUnits, type Hash, erc20Abi } from 'viem';
 import { 
@@ -23,17 +22,13 @@ import {
   AAVE_V3_POOL_ABI, 
   AAVE_REFERRAL_CODE,
   isEarnChainSupported,
-  ERC20_ABI,
 } from '@/lib/aaveV3';
-import { FEE_WALLET, isPlatformFeeConfigured, calculateFeeAmounts } from '@/lib/env';
 import { logEarnEvent } from '@/lib/earnLogger';
 import type { AaveMarket } from '@/lib/aaveMarkets';
 
 export type SupplyStep = 
   | 'idle' 
-  | 'approving_fee' 
-  | 'transferring_fee' 
-  | 'approving_aave' 
+  | 'approving' 
   | 'supplying' 
   | 'complete' 
   | 'error';
@@ -41,7 +36,6 @@ export type SupplyStep =
 export interface SupplyState {
   step: SupplyStep;
   approvalTxHash?: Hash;
-  feeTxHash?: Hash;
   supplyTxHash?: Hash;
   error?: string;
 }
@@ -79,19 +73,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     },
   });
 
-  // Read allowance for FEE_WALLET
-  const { data: feeAllowance, refetch: refetchFeeAllowance } = useReadContract({
-    address: market?.address,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: address && isPlatformFeeConfigured() ? [address, FEE_WALLET] : undefined,
-    chainId: market?.chainId,
-    query: {
-      enabled: !!market && !!address && isPlatformFeeConfigured() && chainId === market?.chainId,
-    },
-  });
-
-  // Read allowance for Aave Pool
+  // Read allowance for Aave Pool ONLY
   const { data: poolAllowance, refetch: refetchPoolAllowance } = useReadContract({
     address: market?.address,
     abi: erc20Abi,
@@ -112,10 +94,9 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
   useEffect(() => {
     if (txConfirmed && pendingTxHash) {
       refetchBalance();
-      refetchFeeAllowance();
       refetchPoolAllowance();
     }
-  }, [txConfirmed, pendingTxHash, refetchBalance, refetchFeeAllowance, refetchPoolAllowance]);
+  }, [txConfirmed, pendingTxHash, refetchBalance, refetchPoolAllowance]);
 
   const balanceFormatted = balance !== undefined && market 
     ? formatUnits(balance, market.decimals) 
@@ -127,14 +108,13 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     setPendingTxHash(undefined);
   }, []);
 
-  // Main supply function with MANDATORY fee
+  // Main supply function — standard Aave flow, NO fee
   const supply = useCallback(async (amount: string) => {
     if (!market || !address || !poolAddress) {
       setSupplyState({ step: 'error', error: 'Wallet not connected or pool not found' });
       return;
     }
 
-    // Validate chain support
     if (!isEarnChainSupported(chainId)) {
       setSupplyState({ step: 'error', error: 'Aave not supported on this network' });
       return;
@@ -145,107 +125,32 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
       return;
     }
 
-    // Validate fee configuration
-    if (!isPlatformFeeConfigured()) {
-      setSupplyState({ step: 'error', error: 'Platform fee configuration error' });
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      // Parse amount
-      const totalAmount = parseUnits(amount, market.decimals);
+      const supplyAmount = parseUnits(amount, market.decimals);
       
-      if (totalAmount <= 0n) {
+      if (supplyAmount <= 0n) {
         throw new Error('Amount must be greater than 0');
       }
 
-      // Check balance
-      if (balance !== undefined && totalAmount > balance) {
+      // Check balance using bigint
+      if (balance !== undefined && supplyAmount > balance) {
         throw new Error('Insufficient balance');
       }
 
-      // Calculate mandatory fee
-      const { feeAmount, supplyAmount } = calculateFeeAmounts(totalAmount);
-
-      if (supplyAmount <= 0n) {
-        throw new Error('Amount too small after fee');
-      }
-
-      // Step 1: Approve fee transfer if needed
-      const currentFeeAllowance = feeAllowance ?? 0n;
-      if (currentFeeAllowance < feeAmount) {
-        setSupplyState({ step: 'approving_fee' });
-
-        logEarnEvent({
-          action: 'approval_tx_sent',
-          chainId,
-          assetSymbol: market.symbol,
-          assetAddress: market.address,
-          walletAddress: address,
-          amount: feeAmount.toString(),
-          metadata: { type: 'fee_approval' },
-        });
-
-        const approveFeeTxHash = await writeContractAsync({
-          address: market.address,
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [FEE_WALLET, feeAmount],
-        } as any);
-
-        setPendingTxHash(approveFeeTxHash);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        await refetchFeeAllowance();
-
-        logEarnEvent({
-          action: 'approval_tx_success',
-          chainId,
-          assetSymbol: market.symbol,
-          walletAddress: address,
-          txHash: approveFeeTxHash,
-          metadata: { type: 'fee_approval' },
-        });
-      }
-
-      // Step 2: Transfer fee to FEE_WALLET (MANDATORY)
-      setSupplyState(prev => ({ ...prev, step: 'transferring_fee' }));
-
-      logEarnEvent({
-        action: 'fee_tx_sent',
+      console.log('[Supply] Starting:', {
         chainId,
-        assetSymbol: market.symbol,
-        assetAddress: market.address,
-        walletAddress: address,
-        feeAmount: feeAmount.toString(),
+        underlying: market.address,
+        pool: poolAddress,
+        amount: supplyAmount.toString(),
+        balanceRaw: balance?.toString(),
       });
 
-      const feeTxHash = await writeContractAsync({
-        address: market.address,
-        abi: ERC20_ABI,
-        functionName: 'transfer',
-        args: [FEE_WALLET, feeAmount],
-      } as any);
-
-      setPendingTxHash(feeTxHash);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      setSupplyState(prev => ({ ...prev, feeTxHash }));
-
-      logEarnEvent({
-        action: 'fee_tx_success',
-        chainId,
-        assetSymbol: market.symbol,
-        walletAddress: address,
-        feeAmount: feeAmount.toString(),
-        txHash: feeTxHash,
-      });
-
-      // Step 3: Approve Aave Pool if needed
+      // Step 1: Approve Aave Pool (exact amount, NOT infinite)
       const currentPoolAllowance = poolAllowance ?? 0n;
       if (currentPoolAllowance < supplyAmount) {
-        setSupplyState(prev => ({ ...prev, step: 'approving_aave' }));
+        setSupplyState({ step: 'approving' });
 
         logEarnEvent({
           action: 'approval_tx_sent',
@@ -254,12 +159,12 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
           assetAddress: market.address,
           walletAddress: address,
           amount: supplyAmount.toString(),
-          metadata: { type: 'aave_approval' },
+          metadata: { type: 'aave_pool_approval', spender: poolAddress },
         });
 
         const approvePoolTxHash = await writeContractAsync({
           address: market.address,
-          abi: ERC20_ABI,
+          abi: erc20Abi,
           functionName: 'approve',
           args: [poolAddress, supplyAmount],
         } as any);
@@ -276,11 +181,11 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
           assetSymbol: market.symbol,
           walletAddress: address,
           txHash: approvePoolTxHash,
-          metadata: { type: 'aave_approval' },
+          metadata: { type: 'aave_pool_approval' },
         });
       }
 
-      // Step 4: Supply to Aave
+      // Step 2: Supply to Aave Pool
       setSupplyState(prev => ({ ...prev, step: 'supplying' }));
 
       logEarnEvent({
@@ -302,12 +207,11 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
       setPendingTxHash(supplyTxHash);
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      setSupplyState(prev => ({ 
+      setSupplyState({ 
         step: 'complete', 
         supplyTxHash,
-        feeTxHash: prev.feeTxHash,
-        approvalTxHash: prev.approvalTxHash,
-      }));
+        approvalTxHash: supplyState.approvalTxHash,
+      });
 
       logEarnEvent({
         action: 'supply_tx_success',
@@ -319,13 +223,11 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
         txHash: supplyTxHash,
       });
 
-      // Refresh balance
       await refetchBalance();
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Transaction failed';
       
-      // Check if user rejected
       if (errorMessage.includes('User rejected') || errorMessage.includes('User denied')) {
         logEarnEvent({
           action: 'user_cancelled',
@@ -347,7 +249,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [market, address, chainId, poolAddress, balance, feeAllowance, poolAllowance, writeContractAsync, refetchBalance, refetchFeeAllowance, refetchPoolAllowance]);
+  }, [market, address, chainId, poolAddress, balance, poolAllowance, writeContractAsync, refetchBalance, refetchPoolAllowance, supplyState.approvalTxHash]);
 
   return {
     supplyState,

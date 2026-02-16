@@ -1,6 +1,7 @@
 /**
  * Supply Drawer/Modal Component
- * Handles the supply flow with mandatory platform fee
+ * Standard Aave supply flow: Approve Pool → Supply
+ * No platform fee — approval spender is ONLY the Aave Pool contract.
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -24,7 +25,6 @@ import { cn } from '@/lib/utils';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getPoolAddress, getExplorerUrl } from '@/hooks/useLendingMarkets';
 import { getAavePoolAddress, getExplorerTxUrl, SUPPORTED_CHAINS } from '@/lib/chainConfig';
-import { FEE_WALLET, FEE_BPS, getFeePercentage, isPlatformFeeConfigured, calculateFeeAmounts } from '@/lib/env';
 import { logEarnEvent } from '@/lib/earnLogger';
 import { ERC20_ABI, AAVE_V3_POOL_ABI, AAVE_REFERRAL_CODE } from '@/lib/aaveV3';
 
@@ -34,7 +34,7 @@ interface EarnSupplyDrawerProps {
   onClose: () => void;
 }
 
-type SupplyStep = 'idle' | 'approving' | 'transferring_fee' | 'supplying' | 'complete' | 'error';
+type SupplyStep = 'idle' | 'approving' | 'supplying' | 'complete' | 'error';
 
 export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerProps) {
   const { address, isConnected } = useAccount();
@@ -45,11 +45,11 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<SupplyStep>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [txHashes, setTxHashes] = useState<{ fee?: string; supply?: string }>({});
+  const [txHashes, setTxHashes] = useState<{ supply?: string }>({});
 
   const poolAddress = market ? getAavePoolAddress(market.chainId) : null;
   const isChainMatch = market ? chainId === market.chainId : false;
-  const isFeeConfigured = isPlatformFeeConfigured();
+  // Balance read with chainId
 
   // Read token balance
   const { data: balance, refetch: refetchBalance } = useReadContract({
@@ -72,22 +72,13 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
     }
   }, [isOpen, market?.id]);
 
-  // Calculate fee and supply amounts
-  const { feeAmount, supplyAmount, feeDisplay, supplyDisplay } = useMemo(() => {
-    if (!amount || !market || parseFloat(amount) <= 0) {
-      return { feeAmount: 0n, supplyAmount: 0n, feeDisplay: '0', supplyDisplay: '0' };
-    }
+  // Parse the supply amount
+  const supplyAmount = useMemo(() => {
+    if (!amount || !market || parseFloat(amount) <= 0) return 0n;
     try {
-      const parsed = parseUnits(amount, market.decimals);
-      const { feeAmount, supplyAmount } = calculateFeeAmounts(parsed);
-      return {
-        feeAmount,
-        supplyAmount,
-        feeDisplay: formatUnits(feeAmount, market.decimals),
-        supplyDisplay: formatUnits(supplyAmount, market.decimals),
-      };
+      return parseUnits(amount, market.decimals);
     } catch {
-      return { feeAmount: 0n, supplyAmount: 0n, feeDisplay: '0', supplyDisplay: '0' };
+      return 0n;
     }
   }, [amount, market]);
 
@@ -103,10 +94,6 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
 
   const handleSupply = useCallback(async () => {
     if (!market || !address || !poolAddress || !amount || parseFloat(amount) <= 0) return;
-    if (!isFeeConfigured) {
-      setError('Platform fee not configured');
-      return;
-    }
 
     setStep('approving');
     setError(null);
@@ -118,61 +105,16 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
         throw new Error('Insufficient balance');
       }
 
-      const { feeAmount, supplyAmount } = calculateFeeAmounts(totalAmount);
-
-      if (supplyAmount <= 0n) {
-        throw new Error('Amount too small after fee');
-      }
-
-      // Step 1: Approve and transfer fee to FEE_WALLET
-      setStep('transferring_fee');
-      
-      logEarnEvent({
-        action: 'fee_tx_sent',
-        chainId: market.chainId,
-        assetSymbol: market.assetSymbol,
-        assetAddress: market.assetAddress,
-        walletAddress: address,
-        feeAmount: feeAmount.toString(),
-      });
-
-      // Approve fee wallet for transfer
+      // Step 1: Approve Aave Pool (exact amount)
       await writeContractAsync({
         address: market.assetAddress,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [FEE_WALLET, feeAmount],
+        args: [poolAddress, totalAmount],
       } as any);
 
-      // Transfer fee
-      const feeTxHash = await writeContractAsync({
-        address: market.assetAddress,
-        abi: ERC20_ABI,
-        functionName: 'transfer',
-        args: [FEE_WALLET, feeAmount],
-      } as any);
-
-      setTxHashes(prev => ({ ...prev, fee: feeTxHash }));
-      
-      logEarnEvent({
-        action: 'fee_tx_success',
-        chainId: market.chainId,
-        assetSymbol: market.assetSymbol,
-        walletAddress: address,
-        feeAmount: feeAmount.toString(),
-        txHash: feeTxHash,
-      });
-
-      // Step 2: Approve Aave Pool
+      // Step 2: Supply to Aave Pool
       setStep('supplying');
-
-      // Approve pool
-      await writeContractAsync({
-        address: market.assetAddress,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [poolAddress, supplyAmount],
-      } as any);
 
       logEarnEvent({
         action: 'supply_tx_sent',
@@ -180,15 +122,14 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
         assetSymbol: market.assetSymbol,
         assetAddress: market.assetAddress,
         walletAddress: address,
-        amount: supplyAmount.toString(),
+        amount: totalAmount.toString(),
       });
 
-      // Supply to Aave
       const supplyTxHash = await writeContractAsync({
         address: poolAddress,
         abi: AAVE_V3_POOL_ABI,
         functionName: 'supply',
-        args: [market.assetAddress, supplyAmount, address, AAVE_REFERRAL_CODE],
+        args: [market.assetAddress, totalAmount, address, AAVE_REFERRAL_CODE],
       } as any);
 
       setTxHashes(prev => ({ ...prev, supply: supplyTxHash }));
@@ -200,7 +141,7 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
         assetSymbol: market.assetSymbol,
         assetAddress: market.assetAddress,
         walletAddress: address,
-        amount: supplyAmount.toString(),
+        amount: totalAmount.toString(),
         txHash: supplyTxHash,
       });
 
@@ -229,7 +170,7 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
       }
       setStep('error');
     }
-  }, [market, address, poolAddress, amount, balance, isFeeConfigured, writeContractAsync, refetchBalance]);
+  }, [market, address, poolAddress, amount, balance, writeContractAsync, refetchBalance]);
 
   const handleReset = useCallback(() => {
     setAmount('');
@@ -388,28 +329,22 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
                     </div>
                   </div>
 
-                  {/* Fee Breakdown */}
+                  {/* Supply summary */}
                   {amount && parseFloat(amount) > 0 && (
                     <div className="glass rounded-xl p-4 space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <Info className="w-3.5 h-3.5" />
-                          Platform Fee ({getFeePercentage()}%)
-                        </span>
-                        <span>{parseFloat(feeDisplay).toFixed(6)} {market.assetSymbol}</span>
-                      </div>
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">You will supply</span>
-                        <div className="flex items-center gap-2">
-                          <ArrowRight className="w-3 h-3 text-muted-foreground" />
-                          <span className="font-medium text-primary">
-                            {parseFloat(supplyDisplay).toFixed(6)} {market.assetSymbol}
-                          </span>
-                        </div>
+                        <span className="font-medium text-primary">
+                          {parseFloat(amount).toFixed(6)} {market.assetSymbol}
+                        </span>
                       </div>
                       <div className="flex justify-between text-sm pt-2 border-t border-border/30">
                         <span className="text-muted-foreground">Destination</span>
                         <span>Aave V3 on {market.chainName}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Approval spender</span>
+                        <span className="text-[11px] font-mono text-muted-foreground">Aave Pool (not EOA)</span>
                       </div>
                     </div>
                   )}
@@ -418,9 +353,8 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
                   {step !== 'idle' && step !== 'error' && (
                     <div className="glass rounded-xl p-4 space-y-3">
                       <TransactionStep 
-                        label="Processing fee"
-                        status={step === 'transferring_fee' ? 'pending' : txHashes.fee ? 'complete' : 'idle'}
-                        txHash={txHashes.fee}
+                        label="Approving Aave Pool"
+                        status={step === 'approving' ? 'pending' : txHashes.supply ? 'complete' : 'idle'}
                         chainId={market.chainId}
                       />
                       <TransactionStep 
@@ -445,17 +379,14 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
                     disabled={
                       !amount || 
                       parseFloat(amount) <= 0 || 
-                      (step !== 'idle' && step !== 'error') ||
-                      !isFeeConfigured
+                      (step !== 'idle' && step !== 'error')
                     }
                     onClick={handleSupply}
                   >
                     {step === 'idle' || step === 'error' ? (
                       'Supply'
                     ) : step === 'approving' ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving...</>
-                    ) : step === 'transferring_fee' ? (
-                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Processing fee...</>
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Approving Aave Pool...</>
                     ) : (
                       <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Supplying...</>
                     )}
@@ -471,7 +402,7 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
                   </div>
                   <h3 className="text-xl font-semibold mb-2">Supply Complete!</h3>
                   <p className="text-muted-foreground mb-4">
-                    You have successfully supplied {parseFloat(supplyDisplay).toFixed(4)} {market.assetSymbol} to Aave V3.
+                    You have successfully supplied {parseFloat(amount).toFixed(4)} {market.assetSymbol} to Aave V3.
                   </p>
                   
                   {txHashes.supply && (
@@ -510,7 +441,7 @@ export function EarnSupplyDrawer({ market, isOpen, onClose }: EarnSupplyDrawerPr
             {/* Footer */}
             <div className="sticky bottom-0 p-4 border-t border-border bg-card/95 backdrop-blur">
               <p className="text-[10px] text-muted-foreground text-center">
-                Powered by Aave V3. Platform fee ({getFeePercentage()}%) is mandatory and disclosed.
+                Powered by Aave V3. Approval spender is always the Aave Pool contract.
               </p>
             </div>
           </motion.div>

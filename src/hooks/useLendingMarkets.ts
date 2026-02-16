@@ -7,8 +7,9 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPublicClient, http, formatUnits, getAddress } from 'viem';
+import { createPublicClient, http, formatUnits, getAddress, erc20Abi } from 'viem';
 import { resolveTokenLogo, resolveChainLogo } from '@/lib/logoResolver';
+import { getTokens } from '@/lib/lifiClient';
 import { fetchPrices } from '@/lib/prices';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getChainConfig, getFallbackRpcs, type ChainConfig } from '@/lib/chainConfig';
@@ -169,17 +170,35 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
     const allAavePools = (json.data || json).filter(
       (p: any) => p.project === 'aave-v3' && p.chain in CHAIN_NAME_TO_ID && p.tvlUsd > 10000
     );
+
+    // Fetch LiFi token metadata per chain for correct decimals
+    const chainIds = [...new Set(allAavePools.map((p: any) => CHAIN_NAME_TO_ID[p.chain]).filter(Boolean))];
+    const tokenMetaMap = new Map<string, { decimals: number; symbol: string; name: string; logoURI?: string }>();
+    
+    await Promise.all(chainIds.map(async (cid: number) => {
+      try {
+        const tokens = await getTokens(cid);
+        for (const t of tokens) {
+          tokenMetaMap.set(`${cid}:${t.address.toLowerCase()}`, {
+            decimals: t.decimals,
+            symbol: t.symbol,
+            name: t.name,
+            logoURI: t.logoURI,
+          });
+        }
+      } catch (e) {
+        console.warn(`[Earn] LiFi token fetch failed for chain ${cid}:`, e);
+      }
+    }));
     
     // Build a map: chainId -> symbol -> borrow APY data
-    // DeFi Llama has separate pool entries for borrow vs supply
     const borrowDataMap = new Map<string, number>();
     for (const pool of allAavePools) {
-      const chainId = CHAIN_NAME_TO_ID[pool.chain];
+      const chainId = Number(CHAIN_NAME_TO_ID[pool.chain]);
       const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
       const borrowAPY = Math.abs((pool.apyBaseBorrow ?? 0) + (pool.apyRewardBorrow ?? 0));
       if (borrowAPY > 0) {
         const key = `${chainId}-${symbol}`;
-        // Keep highest borrow APY if multiple entries
         if (!borrowDataMap.has(key) || borrowDataMap.get(key)! < borrowAPY) {
           borrowDataMap.set(key, borrowAPY);
         }
@@ -189,7 +208,7 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
     // Deduplicate by chainId-symbol, preferring entry with highest TVL
     const deduped = new Map<string, any>();
     for (const pool of allAavePools) {
-      const chainId = CHAIN_NAME_TO_ID[pool.chain];
+      const chainId = Number(CHAIN_NAME_TO_ID[pool.chain]);
       const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
       const key = `${chainId}-${symbol}`;
       const existing = deduped.get(key);
@@ -199,7 +218,7 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
     }
 
     return Array.from(deduped.values()).map((pool: any) => {
-      const chainId = CHAIN_NAME_TO_ID[pool.chain];
+      const chainId = Number(CHAIN_NAME_TO_ID[pool.chain]);
       const chainCfg = getChainConfig(chainId);
       const symbol = pool.symbol.split('-')[0].trim().toUpperCase();
       const tokenAddress = (pool.underlyingTokens?.[0] || '0x0000000000000000000000000000000000000000') as `0x${string}`;
@@ -212,7 +231,10 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
       const collateralEnabled = (pool.ltv ?? 0) > 0;
       const marketName = AAVE_MARKET_NAMES[chainId] || '';
       
-      // Most Aave V3 assets are borrowable except certain collateral-only LSTs
+      // Get correct decimals from LiFi token metadata
+      const meta = tokenMetaMap.get(`${chainId}:${tokenAddress.toLowerCase()}`);
+      const decimals = meta?.decimals ?? 18; // Fallback to 18 only if unknown
+      
       const isBorrowable = !NON_BORROWABLE_SYMBOLS.has(symbol);
       
       return {
@@ -222,10 +244,10 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
         chainName: chainCfg?.name || pool.chain,
         chainLogo: getChainLogoUrl(chainId),
         assetSymbol: symbol,
-        assetName: symbol,
+        assetName: meta?.name || symbol,
         assetAddress: tokenAddress,
         assetLogo: getTokenLogo(symbol, tokenAddress, chainId),
-        decimals: 18,
+        decimals,
         supplyAPY,
         borrowAPY,
         isVariable: true,
