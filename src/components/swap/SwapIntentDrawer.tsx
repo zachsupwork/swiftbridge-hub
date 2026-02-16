@@ -1,19 +1,19 @@
 /**
  * SwapIntentDrawer — Modal drawer that opens when any feature triggers a swap intent.
  * Pre-fills the TO token from the intent, auto-selects best FROM token from user balances.
+ * "Bridge & Swap" navigates to the home swap page with all fields prefilled.
  */
 
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ArrowRight, Repeat, ExternalLink, Wallet } from 'lucide-react';
+import { X, ArrowRight, Repeat, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { TokenIcon } from '@/components/common/TokenIcon';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import { useSwapIntent } from '@/hooks/useSwapIntent';
 import { useBalancesContext } from '@/providers/BalancesProvider';
-import { buildSwapLink } from '@/lib/swapDeepLink';
 import { resolveChainName } from '@/lib/logoResolver';
 import { cn } from '@/lib/utils';
 
@@ -55,18 +55,20 @@ export function SwapIntentDrawer() {
 
   const handleProceedToSwap = () => {
     if (!intent) return;
-    const link = buildSwapLink({
-      chainId: bestFrom?.chainId ?? intent.targetChainId,
-      toTokenAddress: intent.targetTokenAddress,
-      toTokenSymbol: intent.targetSymbol,
-      toChainId: intent.targetChainId,
-      fromTokenAddress: bestFrom?.token.address,
-      fromTokenSymbol: bestFrom?.token.symbol,
-      ref: intent.returnTo?.view === 'earn' ? 'earn' : 'portfolio',
-      action: 'swap',
-    });
+    // Build query params to prefill the swap card on the home page
+    const params = new URLSearchParams();
+    params.set('toChainId', String(intent.targetChainId));
+    params.set('toToken', intent.targetTokenAddress);
+    params.set('toSymbol', intent.targetSymbol);
+    if (bestFrom) {
+      params.set('fromChainId', String(bestFrom.chainId));
+      params.set('fromToken', bestFrom.token.address);
+      params.set('fromSymbol', bestFrom.token.symbol);
+    }
+    params.set('ref', intent.returnTo?.view || 'earn');
+    params.set('action', 'swap');
     clearSwapIntent();
-    navigate(link);
+    navigate(`/?${params.toString()}`);
   };
 
   if (!isOpen || !intent) return null;
