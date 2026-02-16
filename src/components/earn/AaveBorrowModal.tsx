@@ -2,10 +2,10 @@
  * Aave V3 Borrow Modal
  * 
  * Handles borrow flow with health factor display.
+ * Uses BalancesProvider as single source of truth.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownLeft,
   CheckCircle2,
@@ -23,11 +23,13 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { RiskBar } from '@/components/common/RiskBar';
 import { useAaveBorrow, type UserAccountData } from '@/hooks/useAaveBorrow';
+import { useBalancesContext } from '@/providers/BalancesProvider';
+import { openSwapIntent } from '@/lib/swapIntent';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
-import { buildSwapLink } from '@/lib/swapDeepLink';
 
 interface AaveBorrowModalProps {
   open: boolean;
@@ -40,7 +42,7 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
   const { address } = useAccount();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const navigate = useNavigate();
+  const { getBalance } = useBalancesContext();
 
   const {
     borrowStep,
@@ -79,7 +81,6 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
   const handleBorrow = useCallback(async () => {
     if (!market || !amount || parseFloat(amount) <= 0) return;
 
-    // Find the borrow market matching this lending market
     const borrowMarket = borrowMarkets.find(
       bm => bm.assetAddress.toLowerCase() === market.assetAddress.toLowerCase() && bm.chainId === market.chainId
     );
@@ -88,17 +89,32 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
     await borrow(borrowMarket, amount, 'variable');
   }, [market, amount, borrowMarkets, borrow]);
 
+  const goToSwap = useCallback(() => {
+    if (!market) return;
+    onClose();
+    openSwapIntent({
+      intentType: 'acquire_token',
+      targetChainId: market.chainId,
+      targetTokenAddress: market.assetAddress,
+      targetSymbol: market.assetSymbol,
+      returnTo: { view: 'earn', tab: 'markets', marketId: market.id },
+    });
+  }, [market, onClose]);
+
   if (!market) return null;
 
+  // Get wallet balance from BalancesProvider
+  const sharedBal = getBalance(market.chainId, market.assetAddress);
+  const walletBalance = sharedBal ? parseFloat(sharedBal.balanceFormatted) : 0;
+
   const parsedAmount = parseFloat(amount) || 0;
-  const maxBorrow = accountData?.availableBorrowsUsd || 0;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <img src={market.assetLogo} alt="" className="w-6 h-6 rounded-full" />
+            <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId} logoUrl={market.assetLogo} size="sm" className="w-6 h-6" />
             Borrow {market.assetSymbol}
             <Badge variant="outline" className="ml-auto h-5 px-1.5 gap-1 text-[10px]">
               <ChainIcon chainId={market.chainId} size="sm" />
@@ -169,6 +185,13 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                   <span className="text-muted-foreground">Available to Borrow</span>
                   <span className="font-medium text-success">${accountData.availableBorrowsUsd.toFixed(2)}</span>
                 </div>
+                {/* Show wallet balance of this token */}
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Wallet Balance</span>
+                  <span className="font-medium">
+                    {walletBalance > 0 ? `${walletBalance.toFixed(6)} ${market.assetSymbol}` : `0 ${market.assetSymbol}`}
+                  </span>
+                </div>
                 <RiskBar healthFactor={accountData.healthFactorFormatted} showLabel size="sm" />
               </div>
             )}
@@ -184,16 +207,7 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                 <Button
                   variant="outline"
                   className="w-full gap-2 text-sm"
-                  onClick={() => {
-                    onClose();
-                    navigate(buildSwapLink({
-                      chainId: market.chainId,
-                      toTokenAddress: market.assetAddress,
-                      toTokenSymbol: market.assetSymbol,
-                      ref: 'earn',
-                      action: 'swap',
-                    }));
-                  }}
+                  onClick={goToSwap}
                 >
                   <Repeat className="w-4 h-4" />
                   Get {market.assetSymbol} via Cross-Chain Swap

@@ -317,7 +317,7 @@ const BorrowRow = memo(function BorrowRow({
 // ============================================
 
 const MobileCard = memo(function MobileCard({
-  market, onSupply, onBorrow, onSwap, mode, hasCollateral,
+  market, onSupply, onBorrow, onSwap, mode, hasCollateral, walletBalanceUsd,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
@@ -325,6 +325,7 @@ const MobileCard = memo(function MobileCard({
   onSwap?: (m: LendingMarket) => void;
   mode: 'supply' | 'borrow';
   hasCollateral: boolean;
+  walletBalanceUsd?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -365,10 +366,10 @@ const MobileCard = memo(function MobileCard({
           <div className="font-medium">{market.priceUsd > 0 ? formatPrice(market.priceUsd) : '—'}</div>
         </div>
         <div>
-          <div className="text-muted-foreground">{mode === 'supply' ? 'Collateral' : 'Utilization'}</div>
+          <div className="text-muted-foreground">{mode === 'supply' ? 'Wallet' : 'Utilization'}</div>
           <div className="font-medium">
             {mode === 'supply'
-              ? (market.collateralEnabled ? '✓ Yes' : '—')
+              ? (walletBalanceUsd && walletBalanceUsd > 0 ? `$${walletBalanceUsd.toFixed(2)}` : '0')
               : `${market.utilizationRate.toFixed(0)}%`}
           </div>
         </div>
@@ -650,6 +651,7 @@ export function AaveMarketsTable({
                 onSwap={handleSwapForToken}
                 mode={marketMode}
                 hasCollateral={hasCollateral}
+                walletBalanceUsd={walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]}
               />
             ))}
           </div>
