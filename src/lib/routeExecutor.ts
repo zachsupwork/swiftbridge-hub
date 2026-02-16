@@ -4,7 +4,7 @@
  * No @lifi/sdk dependency — browser-safe.
  */
 
-import { erc20Abi, maxUint256, type WalletClient } from 'viem';
+import { erc20Abi, type WalletClient } from 'viem';
 import { getStepTransaction, getTransactionStatus, type Route, type Step } from './lifiClient';
 import {
   normalizeTxRequest,
@@ -13,6 +13,7 @@ import {
   TransactionValidationError,
   isNativeToken,
 } from './transactionHelper';
+import { getExactApprovalAmount, verifyRoute } from './transactionSafety';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -143,6 +144,12 @@ export async function executeRoute(
   };
 
   try {
+    // Pre-validate route uses trusted contracts
+    const verification = verifyRoute(route);
+    if (verification.warnings.length > 0) {
+      console.warn('[RouteExecutor] Route verification warnings:', verification.warnings);
+    }
+
     for (let i = 0; i < totalSteps; i++) {
       const step = route.steps[i];
 
@@ -158,7 +165,7 @@ export async function executeRoute(
       const spender = step.estimate.approvalAddress as `0x${string}` | undefined;
       let approvalTxHash: string | undefined;
 
-      // 2 — Handle ERC-20 approval
+      // 2 — Handle ERC-20 approval (EXACT amount, never infinite)
       if (!isNative && spender) {
         emit('approval_needed', i, `Checking allowance for ${step.action.fromToken.symbol}…`);
 
@@ -172,12 +179,14 @@ export async function executeRoute(
         const requiredAmount = BigInt(step.action.fromAmount);
 
         if (allowance < requiredAmount) {
-          emit('approving', i, `Approve ${step.action.fromToken.symbol} in your wallet…`);
+          // Use exact approval amount (+ 0.1% buffer) instead of infinite
+          const exactApproval = getExactApprovalAmount(requiredAmount);
+          emit('approving', i, `Approve exact ${step.action.fromToken.symbol} amount in your wallet…`);
 
           const approveTx = await ctx.approveToken({
             tokenAddress: fromTokenAddr as `0x${string}`,
             spender,
-            amount: maxUint256,
+            amount: exactApproval,
             chainId: step.action.fromChainId,
           });
 

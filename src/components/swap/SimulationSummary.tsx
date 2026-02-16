@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
-import { Info, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Info, AlertTriangle, CheckCircle, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatContractLabel } from '@/lib/transactionSafety';
 
 interface SimulationSummaryProps {
   to: string;
@@ -9,6 +10,7 @@ interface SimulationSummaryProps {
   isNativeToken: boolean;
   fromTokenSymbol: string;
   dataLength: number;
+  chainId?: number;
   className?: string;
 }
 
@@ -19,10 +21,13 @@ export function SimulationSummary({
   isNativeToken,
   fromTokenSymbol,
   dataLength,
+  chainId,
   className,
 }: SimulationSummaryProps) {
   const valueNum = parseFloat(valueEth);
   const isValueSuspicious = !isNativeToken && valueNum > 0.01;
+  const contractLabel = chainId ? formatContractLabel(to, chainId) : `${to.slice(0, 6)}...${to.slice(-4)}`;
+  const isVerifiedContract = contractLabel.includes('Verified');
 
   return (
     <motion.div
@@ -37,11 +42,12 @@ export function SimulationSummary({
       </div>
 
       <div className="space-y-2 text-sm">
-        {/* To address */}
+        {/* Contract */}
         <div className="flex justify-between items-center">
           <span className="text-muted-foreground">Contract</span>
-          <span className="font-mono text-xs">
-            {to.slice(0, 6)}...{to.slice(-4)}
+          <span className={cn("font-mono text-xs flex items-center gap-1", isVerifiedContract && "text-success")}>
+            {isVerifiedContract && <ShieldCheck className="w-3 h-3" />}
+            {contractLabel}
           </span>
         </div>
 
@@ -100,7 +106,7 @@ export function SimulationSummary({
               Suspicious value
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-green-500">
+            <span className="flex items-center gap-1 text-success">
               <CheckCircle className="w-4 h-4" />
               Ready to send
             </span>

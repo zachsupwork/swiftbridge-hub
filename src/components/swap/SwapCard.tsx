@@ -744,7 +744,18 @@ export function SwapCard() {
             isNativeToken={txSimulation.isNativeToken}
             fromTokenSymbol={txSimulation.fromTokenSymbol}
             dataLength={txSimulation.dataLength}
+            chainId={fromChainId}
           />
+        )}
+
+        {/* Cross-chain router safety notice */}
+        {route && fromChainId !== toChainId && (
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs">
+            <Info className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
+            <span className="text-muted-foreground">
+              Cross-chain swaps use official <strong className="text-foreground">LI.FI</strong> verified routes with exact token approvals. Some wallets may flag router contracts by heuristics — this is normal for DeFi interactions.
+            </span>
+          </div>
         )}
 
         {/* Action button */}

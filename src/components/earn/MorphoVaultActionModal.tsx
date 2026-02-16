@@ -44,10 +44,12 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { CHAIN_EXPLORERS } from '@/lib/wagmiConfig';
-import { buildSwapLink } from '@/lib/swapDeepLink';
+import { openSwapIntent } from '@/lib/swapIntent';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
 // ERC-4626 ABI (minimal for deposit/withdraw/redeem)
@@ -114,6 +116,7 @@ export function MorphoVaultActionModal({
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const navigate = useNavigate();
+  const { getBalance } = useBalancesContext();
 
   const [tab, setTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
@@ -168,17 +171,27 @@ export function MorphoVaultActionModal({
 
   const needsApproval = tab === 'deposit' && parsedAmount > 0n && (allowance ?? 0n) < parsedAmount;
 
+  // Use BalancesProvider as fallback when on-chain read returns 0 (e.g. wrong chain)
+  const sharedBalance = vault ? getBalance(vault.chainId, vault.asset.address) : undefined;
+
   const formattedBalance = useMemo(() => {
-    if (tab === 'deposit' && assetBalance !== undefined) {
-      return formatUnits(assetBalance, decimals);
+    if (tab === 'deposit') {
+      // Prefer on-chain balance, fallback to BalancesProvider
+      if (assetBalance !== undefined && assetBalance > 0n) {
+        return formatUnits(assetBalance, decimals);
+      }
+      if (sharedBalance && sharedBalance.balance > 0) {
+        return sharedBalance.balanceFormatted;
+      }
+      return '0';
     }
     if (tab === 'withdraw' && userPosition) {
       return formatUnits(userPosition.assets, decimals);
     }
     return '0';
-  }, [tab, assetBalance, userPosition, decimals]);
+  }, [tab, assetBalance, sharedBalance, userPosition, decimals]);
 
-  const hasNoBalance = tab === 'deposit' && (!assetBalance || assetBalance === 0n);
+  const hasNoBalance = tab === 'deposit' && parseFloat(formattedBalance) === 0;
 
   // Write hooks
   const { writeContractAsync: writeApproval } = useWriteContract();
@@ -285,7 +298,7 @@ export function MorphoVaultActionModal({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Vault className="w-5 h-5 text-primary" />
+            <TokenIcon address={vault.asset.address} symbol={vault.asset.symbol} chainId={vault.chainId} size="sm" />
             {vault.name}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
@@ -359,13 +372,13 @@ export function MorphoVaultActionModal({
                   variant="outline"
                   onClick={() => {
                     onClose();
-                    navigate(buildSwapLink({
-                      chainId: vault.chainId,
-                      toTokenAddress: vault.asset.address,
-                      toTokenSymbol: vault.asset.symbol,
-                      ref: 'earn',
-                      action: 'swap',
-                    }));
+                    openSwapIntent({
+                      intentType: 'acquire_token',
+                      targetChainId: vault.chainId,
+                      targetTokenAddress: vault.asset.address,
+                      targetSymbol: vault.asset.symbol,
+                      returnTo: { view: 'vaults' },
+                    });
                   }}
                   className="gap-1 text-xs shrink-0"
                 >
