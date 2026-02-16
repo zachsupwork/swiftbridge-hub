@@ -7,7 +7,7 @@
  */
 
 import { useState, useMemo, memo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { openSwapIntent } from '@/lib/swapIntent';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUpDown,
@@ -32,7 +32,6 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import { TokenIcon } from '@/components/common/TokenIcon';
-import { buildSwapLink } from '@/lib/swapDeepLink';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
 interface AaveMarketsTableProps {
@@ -48,14 +47,15 @@ interface AaveMarketsTableProps {
 }
 
 function formatAPY(apy: number): string {
-  if (!Number.isFinite(apy) || apy === 0) return '—';
+  if (!Number.isFinite(apy) || apy === 0) return '0.00%';
   if (apy < 0.01) return '<0.01%';
   if (apy > 100) return `${apy.toFixed(1)}%`;
   return `${apy.toFixed(2)}%`;
 }
 
 function formatUsd(value: number | null): string {
-  if (value === null || !Number.isFinite(value) || value === 0) return '—';
+  if (value === null || !Number.isFinite(value)) return '—';
+  if (value === 0) return '$0';
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
@@ -425,7 +425,7 @@ export function AaveMarketsTable({
   onBorrow,
   hasCollateral = false,
 }: AaveMarketsTableProps) {
-  const navigate = useNavigate();
+  const navigate = undefined; // removed — using openSwapIntent instead
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -438,15 +438,14 @@ export function AaveMarketsTable({
   }, [sortBy]);
 
   const handleSwapForToken = useCallback((market: LendingMarket) => {
-    const link = buildSwapLink({
-      chainId: market.chainId,
-      toTokenAddress: market.assetAddress,
-      toTokenSymbol: market.assetSymbol,
-      ref: 'earn',
-      action: 'swap',
+    openSwapIntent({
+      intentType: 'acquire_token',
+      targetChainId: market.chainId,
+      targetTokenAddress: market.assetAddress,
+      targetSymbol: market.assetSymbol,
+      returnTo: { view: 'earn', tab: 'markets', marketId: market.id },
     });
-    navigate(link);
-  }, [navigate]);
+  }, []);
 
   const filtered = useMemo(() => {
     let result = [...markets].filter(m => m.isActive);

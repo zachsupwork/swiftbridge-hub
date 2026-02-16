@@ -11,6 +11,7 @@ import { config } from "@/lib/wagmiConfig";
 import { BitcoinWalletProvider, MultiWalletProvider } from "@/lib/wallets";
 import { BalancesProvider } from "@/providers/BalancesProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SwapIntentDrawer } from "@/components/swap/SwapIntentDrawer";
 import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
@@ -55,6 +56,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <SwapIntentDrawer />
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/swap" element={<Index />} />

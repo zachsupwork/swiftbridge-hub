@@ -10,9 +10,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ArrowRightLeft, ArrowRight, TrendingUp, ExternalLink, Copy, Vault } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { TokenIconStable } from '@/components/common/TokenIconStable';
+import { TokenIcon } from '@/components/common/TokenIcon';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { buildSwapLink } from '@/lib/swapDeepLink';
+import { openSwapIntent } from '@/lib/swapIntent';
+import { resolveChainName } from '@/lib/logoResolver';
 import { getExplorerAddressUrl, supportedChains } from '@/lib/wagmiConfig';
 import type { PortfolioTokenBalance } from '@/hooks/useBalances';
 import { cn } from '@/lib/utils';
@@ -110,9 +113,11 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
               {/* Header */}
               <div className="flex items-center justify-between p-5 border-b border-border">
                 <div className="flex items-center gap-3">
-                  <TokenIconStable
+                  <TokenIcon
+                    address={token.token.address}
                     symbol={token.token.symbol}
-                    logoURI={token.token.logoURI}
+                    chainId={token.chainId}
+                    logoUrl={token.token.logoURI}
                     size="lg"
                   />
                   <div>
@@ -145,6 +150,7 @@ export function TokenDetailModal({ isOpen, onClose, token }: TokenDetailModalPro
                       <div key={`${tb.chainId}-${tb.token.address}`} className="p-3 rounded-xl bg-muted/20 border border-border/30 space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
+                            <ChainIcon chainId={tb.chainId} size="sm" className="w-4 h-4" />
                             <Badge variant="outline" className="text-[10px] h-5 px-1.5">{chainName}</Badge>
                           </div>
                           <div className="text-right">
