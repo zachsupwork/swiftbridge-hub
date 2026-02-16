@@ -42,7 +42,7 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
   const { address } = useAccount();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const { getBalance } = useBalancesContext();
+  const { getBalance, tokenBalances: ctxTokenBalances } = useBalancesContext();
 
   const {
     borrowStep,
@@ -103,9 +103,13 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
 
   if (!market) return null;
 
-  // Get wallet balance from BalancesProvider
+  // Get wallet balance from BalancesProvider — address match first, then symbol+chain fallback
   const sharedBal = getBalance(market.chainId, market.assetAddress);
-  const walletBalance = sharedBal ? parseFloat(sharedBal.balanceFormatted) : 0;
+  const symbolFallback = !sharedBal ? ctxTokenBalances.find(
+    tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
+  ) : undefined;
+  const effectiveBal = sharedBal || symbolFallback;
+  const walletBalance = effectiveBal ? parseFloat(effectiveBal.balanceFormatted) : 0;
 
   const parsedAmount = parseFloat(amount) || 0;
 

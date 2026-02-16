@@ -103,11 +103,15 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
     if (bal > 0) {
       setAmount(bal.toString());
     } else if (market) {
-      // Fallback: use shared balance
+      // Fallback: use shared balance (address match or symbol+chain fallback)
       const sb = getBalance(market.chainId, market.assetAddress);
-      if (sb && sb.balance > 0) setAmount(sb.balanceFormatted);
+      const sbFallback = !sb ? tokenBalances.find(
+        tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
+      ) : undefined;
+      const effective = sb || sbFallback;
+      if (effective && effective.balance > 0) setAmount(effective.balanceFormatted);
     }
-  }, [balanceFormatted, market, getBalance]);
+  }, [balanceFormatted, market, getBalance, tokenBalances]);
 
   const goToSwap = useCallback(() => {
     if (!market) return;
@@ -126,7 +130,12 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
   // Use shared balance from BalancesProvider as fallback when hook balance is 0
   const hookBalance = parseFloat(balanceFormatted);
   const sharedBal = market ? getBalance(market.chainId, market.assetAddress) : undefined;
-  const sharedBalFormatted = sharedBal?.balanceFormatted ?? '0';
+  // If address lookup fails, try symbol+chain fallback from allTokensList
+  const symbolFallback = (!sharedBal && market) ? tokenBalances.find(
+    tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
+  ) : undefined;
+  const effectiveSharedBal = sharedBal || symbolFallback;
+  const sharedBalFormatted = effectiveSharedBal?.balanceFormatted ?? '0';
   const displayBalance = hookBalance > 0 ? hookBalance : parseFloat(sharedBalFormatted);
   const parsedAmount = parseFloat(amount) || 0;
   const isInsufficientBalance = parsedAmount > displayBalance;

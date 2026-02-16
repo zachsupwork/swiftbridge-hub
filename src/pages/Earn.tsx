@@ -555,8 +555,14 @@ export default function Earn() {
                 walletBalances={(() => {
                   const map: Record<string, number> = {};
                   for (const tb of tokenBalances) {
+                    // Primary key: exact address
                     const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
-                    map[key] = tb.balanceUSD;
+                    map[key] = (map[key] || 0) + tb.balanceUSD;
+                    // Secondary key: symbol-based fallback for address mismatches
+                    const symKey = `${tb.chainId}:sym:${tb.token.symbol.toUpperCase()}`;
+                    if (!map[symKey] || tb.balanceUSD > map[symKey]) {
+                      map[symKey] = tb.balanceUSD;
+                    }
                   }
                   return map;
                 })()}
