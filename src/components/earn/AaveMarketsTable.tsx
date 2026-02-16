@@ -155,13 +155,14 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
 // ============================================
 
 const SupplyRow = memo(function SupplyRow({
-  market, onSupply, onSwap, expanded, onToggle,
+  market, onSupply, onSwap, expanded, onToggle, walletBalanceUsd,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
   onSwap?: (m: LendingMarket) => void;
   expanded: boolean;
   onToggle: () => void;
+  walletBalanceUsd?: number;
 }) {
   return (
     <>
@@ -198,6 +199,13 @@ const SupplyRow = memo(function SupplyRow({
             <span className="text-xs text-muted-foreground">—</span>
           )}
         </td>
+        <td className="p-3 text-right hidden lg:table-cell">
+          {walletBalanceUsd && walletBalanceUsd > 0 ? (
+            <span className="text-sm font-medium text-foreground">{formatUsd(walletBalanceUsd)}</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">0</span>
+          )}
+        </td>
         <td className="p-3 text-right">
           <div className="flex items-center gap-1.5 justify-end">
             <Button size="sm" variant="outline" className="h-7 px-3 text-xs gap-1"
@@ -205,13 +213,19 @@ const SupplyRow = memo(function SupplyRow({
               <ArrowUpRight className="w-3 h-3" />
               Supply
             </Button>
+            {(!walletBalanceUsd || walletBalanceUsd === 0) && (
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-primary"
+                onClick={(e) => { e.stopPropagation(); onSwap?.(market); }}>
+                <Repeat className="w-3 h-3" /> Get
+              </Button>
+            )}
             {expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
           </div>
         </td>
       </tr>
       <AnimatePresence>
         {expanded && (
-          <tr><td colSpan={5}>
+          <tr><td colSpan={6}>
             <ReserveDetails market={market} />
           </td></tr>
         )}
@@ -289,7 +303,7 @@ const BorrowRow = memo(function BorrowRow({
       </tr>
       <AnimatePresence>
         {expanded && (
-          <tr><td colSpan={5}>
+          <tr><td colSpan={6}>
             <ReserveDetails market={market} />
           </td></tr>
         )}
@@ -424,6 +438,7 @@ export function AaveMarketsTable({
   onSupply,
   onBorrow,
   hasCollateral = false,
+  walletBalances,
 }: AaveMarketsTableProps) {
   const navigate = undefined; // removed — using openSwapIntent instead
   const [searchQuery, setSearchQuery] = useState('');
@@ -585,6 +600,7 @@ export function AaveMarketsTable({
                       <th className="text-right p-3"><SortBtn col="supplyAPY" label="Supply APY" /></th>
                       <th className="text-right p-3 hidden md:table-cell"><SortBtn col="tvl" label="Total Market Size" /></th>
                       <th className="text-center p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Collateral</span></th>
+                      <th className="text-right p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Wallet</span></th>
                     </>
                   ) : (
                     <>
@@ -593,7 +609,7 @@ export function AaveMarketsTable({
                       <th className="text-right p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Utilization</span></th>
                     </>
                   )}
-                  <th className="text-right p-3 w-36"></th>
+                  <th className="text-right p-3 w-44"></th>
                 </tr>
               </thead>
               <tbody>
@@ -606,6 +622,7 @@ export function AaveMarketsTable({
                       onSwap={handleSwapForToken}
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
+                      walletBalanceUsd={walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]}
                     />
                   ) : (
                     <BorrowRow

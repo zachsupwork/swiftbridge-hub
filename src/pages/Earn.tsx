@@ -58,6 +58,7 @@ import { ChainIcon } from '@/components/common/ChainIcon';
 import { cn } from '@/lib/utils';
 import { openSwapIntent } from '@/lib/swapIntent';
 import { toast } from '@/hooks/use-toast';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
@@ -68,6 +69,7 @@ export default function Earn() {
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
   const navigate = useNavigate();
+  const { tokenBalances } = useBalancesContext();
 
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'markets';
@@ -550,6 +552,14 @@ export default function Earn() {
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
                 hasCollateral={totalCollateralUsd > 0}
+                walletBalances={(() => {
+                  const map: Record<string, number> = {};
+                  for (const tb of tokenBalances) {
+                    const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
+                    map[key] = tb.balanceUSD;
+                  }
+                  return map;
+                })()}
               />
             </TabsContent>
 
