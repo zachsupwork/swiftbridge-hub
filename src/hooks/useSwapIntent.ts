@@ -15,11 +15,22 @@ import {
 
 export type { SwapIntent } from '@/lib/swapIntent';
 
+// Cache snapshot so useSyncExternalStore gets a stable reference
+let cachedIntent: SwapIntent | null = null;
+let cachedIsOpen = false;
+let cachedSnapshot = { intent: cachedIntent, isOpen: cachedIsOpen };
+
 function getSnapshot() {
-  return { intent: getSwapIntent(), isOpen: isSwapDrawerOpen() };
+  const intent = getSwapIntent();
+  const isOpen = isSwapDrawerOpen();
+  if (intent !== cachedIntent || isOpen !== cachedIsOpen) {
+    cachedIntent = intent;
+    cachedIsOpen = isOpen;
+    cachedSnapshot = { intent, isOpen };
+  }
+  return cachedSnapshot;
 }
 
-// Stable reference for SSR
 const serverSnapshot = { intent: null as SwapIntent | null, isOpen: false };
 
 export function useSwapIntent() {
