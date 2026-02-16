@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPublicClient, http, formatUnits, getAddress } from 'viem';
 import { resolveTokenLogo, resolveChainLogo } from '@/lib/logoResolver';
+import { fetchPrices } from '@/lib/prices';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getChainConfig, getFallbackRpcs, type ChainConfig } from '@/lib/chainConfig';
 import { getAaveAddresses, UI_POOL_DATA_PROVIDER_ABI, type AaveReserveData, type AaveBaseCurrencyInfo } from '@/lib/aaveAddressBook';
@@ -524,21 +525,46 @@ export function useLendingMarkets(selectedChainId?: number): UseLendingMarketsRe
       const remainingFailures = failures.filter(f => !successfulChainIds.has(f.chainId));
       setPartialFailures(remainingFailures);
 
+      let finalMarkets: LendingMarket[] = [];
       if (allMkts.length === 0 && llamaMarkets.length > 0) {
-        // All on-chain failed but DeFi Llama worked
-        setAllMarkets(llamaMarkets);
-        setLastFetched(Date.now());
-        globalCache = { markets: llamaMarkets, timestamp: Date.now() };
+        finalMarkets = llamaMarkets;
         console.log(`[Earn] ✓ Full DeFi Llama fallback: ${llamaMarkets.length} markets`);
       } else if (allMkts.length > 0) {
         allMkts.sort((a, b) => (b.tvl || 0) - (a.tvl || 0));
-        setAllMarkets(allMkts);
-        setLastFetched(Date.now());
-        globalCache = { markets: allMkts, timestamp: Date.now() };
+        finalMarkets = allMkts;
         console.log(`[Earn] ✓ Total: ${allMkts.length} markets from ${successfulChainIds.size}/${SUPPORTED_CHAINS.length} chains`);
       } else {
         setError({ type: 'network_error', message: 'Unable to load market data' });
         setErrorMessage('Unable to load Aave V3 market data. Please try again.');
+      }
+
+      // Enrich markets missing prices via DefiLlama
+      if (finalMarkets.length > 0) {
+        const missingPriceTokens = finalMarkets
+          .filter(m => m.priceUsd <= 0)
+          .map(m => ({ chainId: m.chainId, address: m.assetAddress }));
+
+        if (missingPriceTokens.length > 0) {
+          try {
+            const prices = await fetchPrices(missingPriceTokens);
+            for (const m of finalMarkets) {
+              if (m.priceUsd <= 0) {
+                const key = `${m.chainId}:${m.assetAddress.toLowerCase()}`;
+                const tp = prices.get(key);
+                if (tp) {
+                  m.priceUsd = tp.usdPrice;
+                }
+              }
+            }
+            console.log(`[Earn] ✓ Enriched ${missingPriceTokens.length} token prices from DefiLlama`);
+          } catch (e) {
+            console.warn('[Earn] Price enrichment failed:', e);
+          }
+        }
+
+        setAllMarkets(finalMarkets);
+        setLastFetched(Date.now());
+        globalCache = { markets: finalMarkets, timestamp: Date.now() };
       }
     } catch (err) {
       console.error('[Earn] Fatal error:', err);

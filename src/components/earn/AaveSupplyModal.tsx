@@ -5,8 +5,7 @@
  * and swap CTA when balance is low.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -25,9 +24,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { useAaveSupply } from '@/hooks/useAaveSupply';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
-import { buildSwapLink } from '@/lib/swapDeepLink';
+import { openSwapIntent } from '@/lib/swapIntent';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { AaveMarket } from '@/lib/aaveMarkets';
 
@@ -41,7 +42,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
   const { address, isConnected } = useAccount();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const navigate = useNavigate();
+  const { getBalance, tokenBalances } = useBalancesContext();
 
   const [amount, setAmount] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
@@ -99,27 +100,36 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
 
   const handleSetMax = useCallback(() => {
     const bal = parseFloat(balanceFormatted);
-    if (bal > 0) setAmount(bal.toString());
-  }, [balanceFormatted]);
+    if (bal > 0) {
+      setAmount(bal.toString());
+    } else if (market) {
+      // Fallback: use shared balance
+      const sb = getBalance(market.chainId, market.assetAddress);
+      if (sb && sb.balance > 0) setAmount(sb.balanceFormatted);
+    }
+  }, [balanceFormatted, market, getBalance]);
 
   const goToSwap = useCallback(() => {
     if (!market) return;
-    const link = buildSwapLink({
-      chainId: market.chainId,
-      toTokenAddress: market.assetAddress,
-      toTokenSymbol: market.assetSymbol,
-      ref: 'earn',
-      action: 'swap',
-    });
     onClose();
-    navigate(link);
-  }, [market, navigate, onClose]);
+    openSwapIntent({
+      intentType: 'acquire_token',
+      targetChainId: market.chainId,
+      targetTokenAddress: market.assetAddress,
+      targetSymbol: market.assetSymbol,
+      returnTo: { view: 'earn', tab: 'markets', marketId: market.id },
+    });
+  }, [market, onClose]);
 
   if (!market) return null;
 
-  const parsedBalance = parseFloat(balanceFormatted);
+  // Use shared balance from BalancesProvider as fallback when hook balance is 0
+  const hookBalance = parseFloat(balanceFormatted);
+  const sharedBal = market ? getBalance(market.chainId, market.assetAddress) : undefined;
+  const sharedBalFormatted = sharedBal?.balanceFormatted ?? '0';
+  const displayBalance = hookBalance > 0 ? hookBalance : parseFloat(sharedBalFormatted);
   const parsedAmount = parseFloat(amount) || 0;
-  const isInsufficientBalance = parsedAmount > parsedBalance;
+  const isInsufficientBalance = parsedAmount > displayBalance;
   const explorerUrl = supplyState.supplyTxHash ? getExplorerTxUrl(market.chainId, supplyState.supplyTxHash) : '';
 
   const stepLabel = {
@@ -137,7 +147,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <img src={market.assetLogo} alt="" className="w-6 h-6 rounded-full" />
+            <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId} logoUrl={market.assetLogo} size="sm" className="w-6 h-6" />
             Supply {market.assetSymbol}
             <Badge variant="outline" className="ml-auto h-5 px-1.5 gap-1 text-[10px]">
               <ChainIcon chainId={market.chainId} size="sm" />
@@ -242,7 +252,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
                   className="text-primary hover:underline"
                   onClick={handleSetMax}
                 >
-                  Balance: {parsedBalance > 0 ? parsedBalance.toFixed(6) : '0'} {market.assetSymbol}
+                  Balance: {displayBalance > 0 ? displayBalance.toFixed(6) : '0'} {market.assetSymbol}
                 </button>
               </div>
               <div className="relative">
@@ -261,7 +271,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
             </div>
 
             {/* Swap CTA if no balance */}
-            {parsedBalance === 0 && !needsChainSwitch && (
+            {displayBalance === 0 && !needsChainSwitch && (
               <Button
                 variant="outline"
                 className="w-full gap-2 text-sm"
