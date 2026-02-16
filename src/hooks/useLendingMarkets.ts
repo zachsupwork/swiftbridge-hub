@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPublicClient, http, formatUnits, getAddress } from 'viem';
+import { resolveTokenLogo, resolveChainLogo } from '@/lib/logoResolver';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getChainConfig, getFallbackRpcs, type ChainConfig } from '@/lib/chainConfig';
 import { getAaveAddresses, UI_POOL_DATA_PROVIDER_ABI, type AaveReserveData, type AaveBaseCurrencyInfo } from '@/lib/aaveAddressBook';
@@ -69,69 +70,15 @@ export const LENDING_CHAINS = SUPPORTED_CHAINS.map(c => ({
 }));
 
 // ============================================
-// TOKEN LOGOS
+// TOKEN LOGOS — delegated to global resolver
 // ============================================
 
-const TOKEN_LOGOS: Record<string, string> = {
-  ETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/eth.svg',
-  WETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/weth.svg',
-  USDC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  'USDC.E': 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  USDCE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  USDBCE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdc.svg',
-  USDT: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/usdt.svg',
-  DAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
-  SDAI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/dai.svg',
-  WBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  CBBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  TBTC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wbtc.svg',
-  LINK: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/link.svg',
-  AAVE: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/aave.svg',
-  UNI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/uni.svg',
-  MATIC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/matic.svg',
-  WMATIC: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/matic.svg',
-  POL: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/matic.svg',
-  WPOL: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/matic.svg',
-  ARB: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/arb.svg',
-  OP: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/op.svg',
-  AVAX: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/avax.svg',
-  WAVAX: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/avax.svg',
-  CRV: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/crv.svg',
-  FRAX: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/frax.svg',
-  CBETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/cbeth.svg',
-  RETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/reth.svg',
-  WSTETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
-  STETH: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/wsteth.svg',
-  GHO: 'https://app.aave.com/icons/tokens/gho.svg',
-  LUSD: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/lusd.svg',
-  SUSD: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/susd.svg',
-  BAL: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/bal.svg',
-  SNX: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/snx.svg',
-  MKR: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/mkr.svg',
-  LDO: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/ldo.svg',
-  RPL: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/rpl.svg',
-  SUSHI: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/sushi.svg',
-  COMP: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/comp.svg',
-  ENS: 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/ens.svg',
-  '1INCH': 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/1inch.svg',
-  WEETH: 'https://app.aave.com/icons/tokens/weeth.svg',
-  EZETH: 'https://app.aave.com/icons/tokens/ezeth.svg',
-  RSETH: 'https://app.aave.com/icons/tokens/rseth.svg',
-  OSETH: 'https://app.aave.com/icons/tokens/oseth.svg',
-  PYUSD: 'https://app.aave.com/icons/tokens/pyusd.svg',
-  CRVUSD: 'https://app.aave.com/icons/tokens/crvusd.svg',
-  EURC: 'https://app.aave.com/icons/tokens/eurc.svg',
-  EURS: 'https://app.aave.com/icons/tokens/eurs.svg',
-  USDS: 'https://app.aave.com/icons/tokens/usds.svg',
-  SUSDS: 'https://app.aave.com/icons/tokens/susds.svg',
-  SUSDE: 'https://app.aave.com/icons/tokens/susde.svg',
-  USDE: 'https://app.aave.com/icons/tokens/usde.svg',
-};
+function getTokenLogo(symbol: string, address?: string, chainId?: number): string {
+  return resolveTokenLogo({ symbol, address, chainId });
+}
 
-function getTokenLogo(symbol: string): string {
-  const upper = symbol.toUpperCase().replace(/\./g, '');
-  return TOKEN_LOGOS[upper] || TOKEN_LOGOS[symbol.toUpperCase()] ||
-    `https://app.aave.com/icons/tokens/${symbol.toLowerCase()}.svg`;
+function getChainLogoUrl(chainId: number): string {
+  return resolveChainLogo(chainId);
 }
 
 // ============================================
@@ -272,11 +219,11 @@ async function fetchFromDefiLlama(): Promise<LendingMarket[]> {
         protocol: 'aave' as const,
         chainId,
         chainName: chainCfg?.name || pool.chain,
-        chainLogo: chainCfg?.logo || '',
+        chainLogo: getChainLogoUrl(chainId),
         assetSymbol: symbol,
         assetName: symbol,
         assetAddress: tokenAddress,
-        assetLogo: getTokenLogo(symbol),
+        assetLogo: getTokenLogo(symbol, tokenAddress, chainId),
         decimals: 18,
         supplyAPY,
         borrowAPY,
@@ -425,11 +372,11 @@ async function fetchChainReserves(chainConfig: ChainConfig): Promise<ChainFetchR
           protocol: 'aave',
           chainId,
           chainName: name,
-          chainLogo: logo,
+          chainLogo: getChainLogoUrl(chainId),
           assetSymbol: symbol,
           assetName: r.name || symbol,
           assetAddress: r.underlyingAsset,
-          assetLogo: getTokenLogo(symbol),
+          assetLogo: getTokenLogo(symbol, r.underlyingAsset, chainId),
           decimals,
           supplyAPY,
           borrowAPY,

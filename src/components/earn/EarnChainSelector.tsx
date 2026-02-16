@@ -4,6 +4,7 @@
  */
 
 import { ChevronDown, Check, ExternalLink } from 'lucide-react';
+import { ChainIcon } from '@/components/common/ChainIcon';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -55,11 +56,7 @@ export function EarnChainSelector({
         >
           {selectedChain ? (
             <>
-              <img 
-                src={selectedChain.logo} 
-                alt={selectedChain.name}
-                className="w-5 h-5 rounded-full"
-              />
+              <ChainIcon chainId={selectedChain.id} size="md" className="w-5 h-5" />
               <span className="hidden sm:inline">{selectedChain.name}</span>
             </>
           ) : (
@@ -98,11 +95,7 @@ export function EarnChainSelector({
             onClick={() => onChainChange(chain.id)}
             className="gap-2 cursor-pointer"
           >
-            <img 
-              src={chain.logo} 
-              alt={chain.name}
-              className="w-5 h-5 rounded-full"
-            />
+            <ChainIcon chainId={chain.id} size="md" className="w-5 h-5" />
             <span className="flex-1">{chain.name}</span>
             {selectedChainId === chain.id && (
               <Check className="w-4 h-4 text-primary" />

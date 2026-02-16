@@ -6,6 +6,8 @@
 
 import { motion } from 'framer-motion';
 import { ArrowUpDown, Loader2, RefreshCw, AlertCircle, WifiOff, ArrowRight, Info } from 'lucide-react';
+import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -216,7 +218,7 @@ export function EarnMarketsTable({
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-muted/50 hover:bg-muted transition-colors text-xs"
               >
-                <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
+                <ChainIcon chainId={chain.id} size="sm" />
                 <span>{chain.name}</span>
               </button>
             ))}
@@ -320,19 +322,11 @@ export function EarnMarketsTable({
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="relative flex-shrink-0">
-                        <img
-                          src={market.assetLogo}
-                          alt={market.assetSymbol}
-                          className="w-9 h-9 rounded-full bg-muted"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                          }}
-                        />
-                        <img
-                          src={market.chainLogo}
-                          alt={market.chainName}
-                          className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-card bg-card"
-                        />
+                        <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
+                          logoUrl={market.assetLogo} size="md" />
+                        <div className="absolute -bottom-0.5 -right-0.5">
+                          <ChainIcon chainId={market.chainId} size="sm" className="border border-card bg-card" />
+                        </div>
                       </div>
                       <div>
                         <div className="font-medium">{market.assetSymbol}</div>
@@ -418,19 +412,11 @@ export function EarnMarketsTable({
               {/* Asset info */}
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="relative flex-shrink-0">
-                  <img
-                    src={market.assetLogo}
-                    alt={market.assetSymbol}
-                    className="w-10 h-10 rounded-full bg-muted"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg';
-                    }}
-                  />
-                  <img
-                    src={market.chainLogo}
-                    alt={market.chainName}
-                    className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-card bg-card"
-                  />
+                  <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
+                    logoUrl={market.assetLogo} size="lg" />
+                  <div className="absolute -bottom-0.5 -right-0.5">
+                    <ChainIcon chainId={market.chainId} size="sm" className="border border-card bg-card" />
+                  </div>
                 </div>
                 <div className="min-w-0">
                   <div className="font-medium">{market.assetSymbol}</div>

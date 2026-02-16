@@ -1,12 +1,10 @@
 /**
  * Chain Not Supported Panel
- * 
- * Displayed when the connected wallet is on a chain
- * that doesn't support Earn/Lending features.
  */
 
 import { AlertCircle } from 'lucide-react';
-import { EARN_CHAIN_NAMES, EARN_CHAIN_LOGOS, EARN_SUPPORTED_CHAINS } from '@/lib/aaveV3';
+import { EARN_SUPPORTED_CHAINS } from '@/lib/aaveV3';
+import { ChainIcon, getChainName } from '@/components/common/ChainIcon';
 
 interface ChainNotSupportedProps {
   currentChainId?: number;
@@ -20,8 +18,7 @@ export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
       <h3 className="text-xl font-semibold mb-2">Network Not Supported</h3>
       
       <p className="text-muted-foreground mb-6">
-        Aave v3 Earn is only available on Ethereum Mainnet and Sepolia Testnet.
-        Please switch networks in your wallet.
+        Aave V3 Earn is available on the following networks. Please switch in your wallet.
       </p>
 
       <div className="flex flex-col sm:flex-row gap-2 justify-center">
@@ -30,12 +27,8 @@ export function ChainNotSupported({ currentChainId }: ChainNotSupportedProps) {
             key={cId}
             className="h-11 gap-2 flex items-center justify-center px-4 rounded-md border border-border text-sm"
           >
-            <img 
-              src={EARN_CHAIN_LOGOS[cId]} 
-              alt="" 
-              className="w-5 h-5 rounded-full"
-            />
-            <span>{EARN_CHAIN_NAMES[cId]}</span>
+            <ChainIcon chainId={cId} size="md" className="w-5 h-5" />
+            <span>{getChainName(cId)}</span>
           </div>
         ))}
       </div>
