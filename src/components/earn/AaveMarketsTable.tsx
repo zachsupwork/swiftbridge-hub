@@ -1,29 +1,31 @@
 /**
- * Aave V3 Markets Table
+ * Aave V3 Markets Table — Aave-style layout
  * 
- * Displays Aave V3 lending markets with supply/borrow actions.
- * Similar aesthetic to Aave's official UI.
+ * Shows supply and borrow sections with on-chain reserve data.
+ * Matches app.aave.com UX with oracle price, LTV, utilization.
  */
 
 import { useState, useMemo, memo, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowUpDown,
   Loader2,
   RefreshCw,
   AlertCircle,
   Search,
-  TrendingUp,
-  Wallet,
-  ExternalLink,
   ShieldCheck,
   ArrowUpRight,
   ArrowDownLeft,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
@@ -36,6 +38,7 @@ interface AaveMarketsTableProps {
   onSupply?: (market: LendingMarket) => void;
   onBorrow?: (market: LendingMarket) => void;
   onDetails?: (market: LendingMarket) => void;
+  walletBalances?: Record<string, number>;
 }
 
 function formatAPY(apy: number): string {
@@ -50,180 +53,333 @@ function formatUsd(value: number | null): string {
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
-  return `$${value.toFixed(0)}`;
+  return `$${value.toFixed(2)}`;
 }
 
-type SortKey = 'supplyAPY' | 'borrowAPY' | 'tvl';
+function formatPrice(value: number): string {
+  if (value >= 10000) return `$${value.toFixed(0)}`;
+  if (value >= 1) return `$${value.toFixed(2)}`;
+  if (value >= 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(6)}`;
+}
 
-const DesktopRow = memo(function DesktopRow({
-  market,
-  onSupply,
-  onBorrow,
-}: {
-  market: LendingMarket;
-  onSupply?: (m: LendingMarket) => void;
-  onBorrow?: (m: LendingMarket) => void;
-}) {
+type SortKey = 'supplyAPY' | 'borrowAPY' | 'tvl' | 'priceUsd' | 'availableLiquidityUsd';
+
+// ============================================
+// DETAIL PANEL (expanded row)
+// ============================================
+
+const ReserveDetails = memo(function ReserveDetails({ market }: { market: LendingMarket }) {
   return (
-    <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors">
-      {/* Asset */}
-      <td className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <img
-              src={market.assetLogo}
-              alt={market.assetSymbol}
-              className="w-8 h-8 rounded-full"
-              onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }}
-            />
-            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-background overflow-hidden">
-              <ChainIcon chainId={market.chainId} size="sm" />
-            </div>
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 'auto' }}
+      exit={{ opacity: 0, height: 0 }}
+      className="overflow-hidden"
+    >
+      <div className="px-4 pb-4 pt-1">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Oracle Price</div>
+            <div className="font-medium">{formatPrice(market.priceUsd)}</div>
           </div>
-          <div>
-            <div className="font-medium text-sm">{market.assetSymbol}</div>
-            <div className="text-xs text-muted-foreground">{market.chainName}</div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">LTV</div>
+            <div className="font-medium">{market.ltv > 0 ? `${market.ltv.toFixed(0)}%` : '—'}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Liquidation Threshold</div>
+            <div className="font-medium">{market.liquidationThreshold > 0 ? `${market.liquidationThreshold.toFixed(0)}%` : '—'}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Liquidation Bonus</div>
+            <div className="font-medium">{market.liquidationBonus > 0 ? `${market.liquidationBonus.toFixed(1)}%` : '—'}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Utilization Rate</div>
+            <div className="font-medium">{market.utilizationRate.toFixed(1)}%</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Reserve Factor</div>
+            <div className="font-medium">{market.reserveFactor.toFixed(0)}%</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Supply Cap</div>
+            <div className="font-medium">{market.supplyCap > 0 ? market.supplyCap.toLocaleString() : '∞'}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Borrow Cap</div>
+            <div className="font-medium">{market.borrowCap > 0 ? market.borrowCap.toLocaleString() : '∞'}</div>
+          </div>
+          {market.eModeCategoryId > 0 && (
+            <div className="glass rounded-lg p-2.5">
+              <div className="text-muted-foreground mb-0.5">E-Mode Category</div>
+              <div className="font-medium">{market.eModeCategoryId}</div>
+            </div>
+          )}
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Total Supply</div>
+            <div className="font-medium">{formatUsd(market.totalSupplyUsd)}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Total Borrow</div>
+            <div className="font-medium">{formatUsd(market.totalBorrowUsd)}</div>
+          </div>
+          <div className="glass rounded-lg p-2.5">
+            <div className="text-muted-foreground mb-0.5">Available Liquidity</div>
+            <div className="font-medium">{formatUsd(market.availableLiquidityUsd)}</div>
           </div>
         </div>
-      </td>
-      {/* Supply APY */}
-      <td className="p-4 text-right">
-        <span className={cn("font-medium text-sm", market.supplyAPY > 0 ? "text-success" : "text-muted-foreground")}>
-          {formatAPY(market.supplyAPY)}
-        </span>
-      </td>
-      {/* Borrow APY */}
-      <td className="p-4 text-right">
-        <span className="font-medium text-sm text-warning">
-          {formatAPY(market.borrowAPY)}
-        </span>
-      </td>
-      {/* TVL */}
-      <td className="p-4 text-right">
-        <span className="text-sm">{formatUsd(market.tvl)}</span>
-      </td>
-      {/* Collateral */}
-      <td className="p-4 text-center">
-        {market.collateralEnabled ? (
-          <ShieldCheck className="w-4 h-4 text-success mx-auto" />
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        )}
-      </td>
-      {/* Actions */}
-      <td className="p-4 text-right">
-        <div className="flex items-center gap-1.5 justify-end">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 px-3 text-xs gap-1"
-            onClick={() => onSupply?.(market)}
-          >
-            <ArrowUpRight className="w-3 h-3" />
-            Supply
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 px-3 text-xs gap-1"
-            onClick={() => onBorrow?.(market)}
-          >
-            <ArrowDownLeft className="w-3 h-3" />
-            Borrow
-          </Button>
-          <a
-            href={market.protocolUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-muted/50 transition-colors"
-          >
-            <ExternalLink className="w-3 h-3 text-muted-foreground" />
+        <div className="flex gap-2 mt-3">
+          {market.isFrozen && <Badge variant="outline" className="text-destructive border-destructive/30">Frozen</Badge>}
+          {market.isPaused && <Badge variant="outline" className="text-destructive border-destructive/30">Paused</Badge>}
+          {!market.borrowingEnabled && <Badge variant="outline" className="text-muted-foreground">Borrow Disabled</Badge>}
+          <a href={market.protocolUrl} target="_blank" rel="noopener noreferrer"
+            className="ml-auto text-xs text-primary hover:underline flex items-center gap-1">
+            View on Aave <ExternalLink className="w-3 h-3" />
           </a>
         </div>
-      </td>
-    </tr>
+      </div>
+    </motion.div>
   );
 });
 
+// ============================================
+// SUPPLY ROW
+// ============================================
+
+const SupplyRow = memo(function SupplyRow({
+  market, onSupply, expanded, onToggle,
+}: {
+  market: LendingMarket;
+  onSupply?: (m: LendingMarket) => void;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+        onClick={onToggle}>
+        <td className="p-3">
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <img src={market.assetLogo} alt={market.assetSymbol}
+                className="w-7 h-7 rounded-full"
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
+                <ChainIcon chainId={market.chainId} size="sm" />
+              </div>
+            </div>
+            <div>
+              <div className="font-medium text-sm">{market.assetSymbol}</div>
+              <div className="text-[11px] text-muted-foreground">{market.chainName}</div>
+            </div>
+          </div>
+        </td>
+        <td className="p-3 text-right">
+          <span className={cn("font-medium text-sm", market.supplyAPY > 0 ? "text-success" : "text-muted-foreground")}>
+            {formatAPY(market.supplyAPY)}
+          </span>
+        </td>
+        <td className="p-3 text-right hidden md:table-cell">
+          <span className="text-sm">{formatUsd(market.tvl)}</span>
+        </td>
+        <td className="p-3 text-center hidden lg:table-cell">
+          {market.collateralEnabled ? (
+            <ShieldCheck className="w-4 h-4 text-success mx-auto" />
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )}
+        </td>
+        <td className="p-3 text-right">
+          <div className="flex items-center gap-1.5 justify-end">
+            <Button size="sm" variant="outline" className="h-7 px-3 text-xs gap-1"
+              onClick={(e) => { e.stopPropagation(); onSupply?.(market); }}>
+              <ArrowUpRight className="w-3 h-3" />
+              Supply
+            </Button>
+            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          </div>
+        </td>
+      </tr>
+      <AnimatePresence>
+        {expanded && (
+          <tr><td colSpan={5}>
+            <ReserveDetails market={market} />
+          </td></tr>
+        )}
+      </AnimatePresence>
+    </>
+  );
+});
+
+// ============================================
+// BORROW ROW
+// ============================================
+
+const BorrowRow = memo(function BorrowRow({
+  market, onBorrow, expanded, onToggle,
+}: {
+  market: LendingMarket;
+  onBorrow?: (m: LendingMarket) => void;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+        onClick={onToggle}>
+        <td className="p-3">
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <img src={market.assetLogo} alt={market.assetSymbol}
+                className="w-7 h-7 rounded-full"
+                onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
+                <ChainIcon chainId={market.chainId} size="sm" />
+              </div>
+            </div>
+            <div>
+              <div className="font-medium text-sm">{market.assetSymbol}</div>
+              <div className="text-[11px] text-muted-foreground">{market.chainName}</div>
+            </div>
+          </div>
+        </td>
+        <td className="p-3 text-right">
+          <span className="font-medium text-sm text-warning">
+            {formatAPY(market.borrowAPY)}
+          </span>
+        </td>
+        <td className="p-3 text-right hidden md:table-cell">
+          <span className="text-sm">{formatUsd(market.availableLiquidityUsd)}</span>
+        </td>
+        <td className="p-3 text-right hidden lg:table-cell">
+          <span className="text-sm">{market.utilizationRate.toFixed(1)}%</span>
+        </td>
+        <td className="p-3 text-right">
+          <div className="flex items-center gap-1.5 justify-end">
+            <Button size="sm" variant="outline" className="h-7 px-3 text-xs gap-1"
+              disabled={!market.borrowingEnabled || market.isFrozen}
+              onClick={(e) => { e.stopPropagation(); onBorrow?.(market); }}>
+              <ArrowDownLeft className="w-3 h-3" />
+              Borrow
+            </Button>
+            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          </div>
+        </td>
+      </tr>
+      <AnimatePresence>
+        {expanded && (
+          <tr><td colSpan={5}>
+            <ReserveDetails market={market} />
+          </td></tr>
+        )}
+      </AnimatePresence>
+    </>
+  );
+});
+
+// ============================================
+// MOBILE CARD
+// ============================================
+
 const MobileCard = memo(function MobileCard({
-  market,
-  onSupply,
-  onBorrow,
+  market, onSupply, onBorrow, mode,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
   onBorrow?: (m: LendingMarket) => void;
+  mode: 'supply' | 'borrow';
 }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass rounded-xl p-4"
-    >
-      <div className="flex items-center gap-3 mb-3">
+    <div className="glass rounded-xl p-3.5" onClick={() => setExpanded(!expanded)}>
+      <div className="flex items-center gap-2.5 mb-2.5">
         <div className="relative">
-          <img
-            src={market.assetLogo}
-            alt={market.assetSymbol}
-            className="w-9 h-9 rounded-full"
-            onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }}
-          />
-          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border border-background overflow-hidden">
+          <img src={market.assetLogo} alt={market.assetSymbol}
+            className="w-8 h-8 rounded-full"
+            onError={(e) => { (e.target as HTMLImageElement).src = 'https://raw.githubusercontent.com/lifinance/types/main/src/assets/icons/tokens/generic.svg'; }} />
+          <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
             <ChainIcon chainId={market.chainId} size="sm" />
           </div>
         </div>
         <div className="flex-1">
           <div className="font-medium text-sm">{market.assetSymbol}</div>
-          <div className="text-xs text-muted-foreground">{market.chainName}</div>
+          <div className="text-[11px] text-muted-foreground">{market.chainName}</div>
         </div>
-        {market.collateralEnabled && (
-          <Badge variant="outline" className="h-5 text-[10px] gap-1 border-success/30 text-success">
-            <ShieldCheck className="w-3 h-3" />
-            Collateral
-          </Badge>
-        )}
-      </div>
-
-      <div className="grid grid-cols-3 gap-3 mb-3">
-        <div>
-          <div className="text-xs text-muted-foreground">Supply APY</div>
-          <div className={cn("text-sm font-medium", market.supplyAPY > 0 ? "text-success" : "text-muted-foreground")}>
-            {formatAPY(market.supplyAPY)}
+        <div className="text-right">
+          <div className={cn("text-sm font-medium", mode === 'supply' ? "text-success" : "text-warning")}>
+            {mode === 'supply' ? formatAPY(market.supplyAPY) : formatAPY(market.borrowAPY)}
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            {mode === 'supply' ? 'Supply APY' : 'Borrow APY'}
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-2.5 text-xs">
         <div>
-          <div className="text-xs text-muted-foreground">Borrow APY</div>
-          <div className="text-sm font-medium text-warning">{formatAPY(market.borrowAPY)}</div>
+          <div className="text-muted-foreground">{mode === 'supply' ? 'Total Size' : 'Available'}</div>
+          <div className="font-medium">{mode === 'supply' ? formatUsd(market.tvl) : formatUsd(market.availableLiquidityUsd)}</div>
         </div>
         <div>
-          <div className="text-xs text-muted-foreground">TVL</div>
-          <div className="text-sm font-medium">{formatUsd(market.tvl)}</div>
+          <div className="text-muted-foreground">Price</div>
+          <div className="font-medium">{formatPrice(market.priceUsd)}</div>
+        </div>
+        <div>
+          <div className="text-muted-foreground">{mode === 'supply' ? 'Collateral' : 'Utilization'}</div>
+          <div className="font-medium">
+            {mode === 'supply'
+              ? (market.collateralEnabled ? '✓ Yes' : '—')
+              : `${market.utilizationRate.toFixed(0)}%`}
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="flex-1 h-8 text-xs gap-1"
-          onClick={() => onSupply?.(market)}
-        >
-          <ArrowUpRight className="w-3 h-3" />
-          Supply
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="flex-1 h-8 text-xs gap-1"
-          onClick={() => onBorrow?.(market)}
-        >
-          <ArrowDownLeft className="w-3 h-3" />
-          Borrow
-        </Button>
-      </div>
-    </motion.div>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden mb-2.5"
+          >
+            <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/30">
+              <div><span className="text-muted-foreground">LTV:</span> {market.ltv > 0 ? `${market.ltv.toFixed(0)}%` : '—'}</div>
+              <div><span className="text-muted-foreground">Liq. Threshold:</span> {market.liquidationThreshold > 0 ? `${market.liquidationThreshold.toFixed(0)}%` : '—'}</div>
+              <div><span className="text-muted-foreground">Reserve Factor:</span> {market.reserveFactor.toFixed(0)}%</div>
+              <div><span className="text-muted-foreground">Liq. Bonus:</span> {market.liquidationBonus > 0 ? `${market.liquidationBonus.toFixed(1)}%` : '—'}</div>
+              <div><span className="text-muted-foreground">Supply Cap:</span> {market.supplyCap > 0 ? market.supplyCap.toLocaleString() : '∞'}</div>
+              <div><span className="text-muted-foreground">Borrow Cap:</span> {market.borrowCap > 0 ? market.borrowCap.toLocaleString() : '∞'}</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full h-8 text-xs gap-1"
+        disabled={mode === 'borrow' && (!market.borrowingEnabled || market.isFrozen)}
+        onClick={(e) => {
+          e.stopPropagation();
+          mode === 'supply' ? onSupply?.(market) : onBorrow?.(market);
+        }}
+      >
+        {mode === 'supply' ? (
+          <><ArrowUpRight className="w-3 h-3" /> Supply</>
+        ) : (
+          <><ArrowDownLeft className="w-3 h-3" /> Borrow</>
+        )}
+      </Button>
+    </div>
   );
 });
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
 
 export function AaveMarketsTable({
   markets,
@@ -236,18 +392,19 @@ export function AaveMarketsTable({
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [marketMode, setMarketMode] = useState<'supply' | 'borrow'>('supply');
 
   const handleSort = useCallback((key: SortKey) => {
-    if (sortBy === key) {
-      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(key);
-      setSortDir('desc');
-    }
+    if (sortBy === key) setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(key); setSortDir('desc'); }
   }, [sortBy]);
 
   const filtered = useMemo(() => {
-    let result = [...markets];
+    let result = [...markets].filter(m => m.isActive);
+    if (marketMode === 'borrow') {
+      result = result.filter(m => m.borrowingEnabled);
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(m =>
@@ -262,20 +419,18 @@ export function AaveMarketsTable({
         case 'supplyAPY': cmp = a.supplyAPY - b.supplyAPY; break;
         case 'borrowAPY': cmp = a.borrowAPY - b.borrowAPY; break;
         case 'tvl': cmp = (a.tvl || 0) - (b.tvl || 0); break;
+        case 'priceUsd': cmp = a.priceUsd - b.priceUsd; break;
+        case 'availableLiquidityUsd': cmp = a.availableLiquidityUsd - b.availableLiquidityUsd; break;
       }
       return sortDir === 'desc' ? -cmp : cmp;
     });
     return result;
-  }, [markets, searchQuery, sortBy, sortDir]);
+  }, [markets, searchQuery, sortBy, sortDir, marketMode]);
 
   const SortBtn = ({ col, label }: { col: SortKey; label: string }) => (
-    <button
-      onClick={() => handleSort(col)}
-      className={cn(
-        "flex items-center gap-1 text-xs font-medium transition-colors whitespace-nowrap",
-        sortBy === col ? "text-primary" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
+    <button onClick={() => handleSort(col)}
+      className={cn("flex items-center gap-1 text-xs font-medium transition-colors whitespace-nowrap",
+        sortBy === col ? "text-primary" : "text-muted-foreground hover:text-foreground")}>
       {label}
       <ArrowUpDown className={cn("w-3 h-3", sortBy === col && sortDir === 'desc' && "rotate-180")} />
     </button>
@@ -284,15 +439,15 @@ export function AaveMarketsTable({
   if (loading && markets.length === 0) {
     return (
       <div className="space-y-3">
-        {[...Array(6)].map((_, i) => (
+        {[...Array(8)].map((_, i) => (
           <div key={i} className="glass rounded-xl p-4 animate-pulse">
             <div className="flex items-center gap-3">
-              <Skeleton className="w-10 h-10 rounded-full" />
+              <Skeleton className="w-8 h-8 rounded-full" />
               <div className="flex-1 space-y-2">
                 <Skeleton className="h-4 w-24" />
                 <Skeleton className="h-3 w-16" />
               </div>
-              <Skeleton className="h-8 w-20" />
+              <Skeleton className="h-7 w-16" />
             </div>
           </div>
         ))}
@@ -305,7 +460,7 @@ export function AaveMarketsTable({
       <div className="glass rounded-xl p-8 text-center">
         <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-3" />
         <h3 className="text-lg font-semibold mb-2">Unable to load markets</h3>
-        <p className="text-muted-foreground mb-4">{error}</p>
+        <p className="text-sm text-muted-foreground mb-4">{error}</p>
         <Button onClick={onRefresh} className="gap-2">
           <RefreshCw className="w-4 h-4" /> Retry
         </Button>
@@ -313,87 +468,112 @@ export function AaveMarketsTable({
     );
   }
 
-  if (markets.length === 0) {
-    return (
-      <div className="glass rounded-xl p-8 text-center">
-        <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-        <h3 className="text-lg font-semibold mb-2">No Markets Found</h3>
-        <p className="text-muted-foreground">No Aave V3 markets available on this chain.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      {/* Search */}
+      {/* Supply / Borrow toggle */}
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="relative max-w-md flex-1">
+        <Tabs value={marketMode} onValueChange={(v) => setMarketMode(v as 'supply' | 'borrow')}>
+          <TabsList className="h-9">
+            <TabsTrigger value="supply" className="text-xs gap-1.5 px-4">
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              Assets to Supply
+            </TabsTrigger>
+            <TabsTrigger value="borrow" className="text-xs gap-1.5 px-4">
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              Assets to Borrow
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="relative max-w-xs flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search by token or chain..."
+            placeholder="Search token or chain..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 h-10 bg-muted/30 border-border/50"
+            className="pl-10 h-9 bg-muted/30 border-border/50 text-sm"
           />
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <ShieldCheck className="w-3.5 h-3.5 text-success" />
-          <span>Aave V3 verified markets</span>
         </div>
       </div>
 
-      {/* Count */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {filtered.length} market{filtered.length !== 1 ? 's' : ''}
-        </p>
+      {/* Count + status */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{filtered.length} {marketMode === 'supply' ? 'assets' : 'borrowable assets'}</span>
         {loading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Refreshing...
-          </div>
+          <span className="flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Refreshing on-chain data...
+          </span>
         )}
       </div>
 
-      {/* Desktop table */}
-      <div className="hidden md:block glass rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border/50">
-                <th className="text-left p-4"><span className="text-xs font-medium text-muted-foreground">Asset</span></th>
-                <th className="text-right p-4"><SortBtn col="supplyAPY" label="Supply APY" /></th>
-                <th className="text-right p-4"><SortBtn col="borrowAPY" label="Borrow APY" /></th>
-                <th className="text-right p-4"><SortBtn col="tvl" label="Total Market Size" /></th>
-                <th className="text-center p-4"><span className="text-xs font-medium text-muted-foreground">Can Collateral</span></th>
-                <th className="text-right p-4"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(market => (
-                <DesktopRow
-                  key={market.id}
-                  market={market}
-                  onSupply={onSupply}
-                  onBorrow={onBorrow}
-                />
-              ))}
-            </tbody>
-          </table>
+      {filtered.length === 0 ? (
+        <div className="glass rounded-xl p-8 text-center">
+          <Info className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No markets match your search.</p>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block glass rounded-xl overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border/50">
+                  <th className="text-left p-3"><span className="text-xs font-medium text-muted-foreground">Asset</span></th>
+                  {marketMode === 'supply' ? (
+                    <>
+                      <th className="text-right p-3"><SortBtn col="supplyAPY" label="Supply APY" /></th>
+                      <th className="text-right p-3 hidden md:table-cell"><SortBtn col="tvl" label="Total Market Size" /></th>
+                      <th className="text-center p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Collateral</span></th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="text-right p-3"><SortBtn col="borrowAPY" label="Borrow APY" /></th>
+                      <th className="text-right p-3 hidden md:table-cell"><SortBtn col="availableLiquidityUsd" label="Available" /></th>
+                      <th className="text-right p-3 hidden lg:table-cell"><span className="text-xs font-medium text-muted-foreground">Utilization</span></th>
+                    </>
+                  )}
+                  <th className="text-right p-3 w-32"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(market => (
+                  marketMode === 'supply' ? (
+                    <SupplyRow
+                      key={market.id}
+                      market={market}
+                      onSupply={onSupply}
+                      expanded={expandedId === market.id}
+                      onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
+                    />
+                  ) : (
+                    <BorrowRow
+                      key={market.id}
+                      market={market}
+                      onBorrow={onBorrow}
+                      expanded={expandedId === market.id}
+                      onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
+                    />
+                  )
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {/* Mobile cards */}
-      <div className="md:hidden space-y-2">
-        {filtered.map(market => (
-          <MobileCard
-            key={market.id}
-            market={market}
-            onSupply={onSupply}
-            onBorrow={onBorrow}
-          />
-        ))}
-      </div>
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-2">
+            {filtered.map(market => (
+              <MobileCard
+                key={market.id}
+                market={market}
+                onSupply={onSupply}
+                onBorrow={onBorrow}
+                mode={marketMode}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
