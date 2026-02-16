@@ -25,12 +25,18 @@ const BalancesContext = createContext<UnifiedBalancesContext | null>(null);
 export function BalancesProvider({ children }: { children: ReactNode }) {
   const balances = useBalances();
 
-  // Build a fast lookup map: "chainId:address" -> balance
+  // Build a fast lookup map: "chainId:address" -> balance AND "chainId:sym:SYMBOL" -> balance
   const balanceMap = useMemo(() => {
     const map = new Map<string, PortfolioTokenBalance>();
     for (const tb of balances.tokenBalances) {
       const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
       map.set(key, tb);
+      // Symbol-based secondary key for cross-address matching (Aave/Morpho vs LiFi addresses)
+      const symKey = `${tb.chainId}:sym:${tb.token.symbol.toUpperCase()}`;
+      const existing = map.get(symKey);
+      if (!existing || tb.balanceUSD > existing.balanceUSD) {
+        map.set(symKey, tb);
+      }
     }
     return map;
   }, [balances.tokenBalances]);

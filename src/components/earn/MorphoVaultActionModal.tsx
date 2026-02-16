@@ -142,13 +142,14 @@ export function MorphoVaultActionModal({
 
   const isCorrectChain = vault ? walletChainId === vault.chainId : false;
 
-  // Read user's balance of the underlying asset
+  // Read user's balance of the underlying asset — specify chainId to avoid wrong-chain reads
   const { data: assetBalance } = useReadContract({
     address: assetAddress,
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: !!address && !!assetAddress && isOpen && tab === 'deposit' },
+    chainId: vault?.chainId,
+    query: { enabled: !!address && !!assetAddress && isOpen && tab === 'deposit' && isCorrectChain },
   });
 
   // Read user's allowance to the vault
@@ -157,7 +158,8 @@ export function MorphoVaultActionModal({
     abi: erc20Abi,
     functionName: 'allowance',
     args: address && vaultAddress ? [address, vaultAddress] : undefined,
-    query: { enabled: !!address && !!vaultAddress && !!assetAddress && isOpen && tab === 'deposit' },
+    chainId: vault?.chainId,
+    query: { enabled: !!address && !!vaultAddress && !!assetAddress && isOpen && tab === 'deposit' && isCorrectChain },
   });
 
   const parsedAmount = useMemo(() => {

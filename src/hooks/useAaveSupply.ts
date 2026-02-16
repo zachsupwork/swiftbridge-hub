@@ -67,14 +67,15 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
 
   const poolAddress = market ? getAavePoolAddress(market.chainId) : null;
 
-  // Read token balance
+  // Read token balance — MUST specify chainId to avoid reading from wrong chain
   const { data: balance, refetch: refetchBalance } = useReadContract({
     address: market?.address,
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
+    chainId: market?.chainId,
     query: {
-      enabled: !!market && !!address,
+      enabled: !!market && !!address && chainId === market?.chainId,
     },
   });
 
@@ -84,8 +85,9 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     abi: erc20Abi,
     functionName: 'allowance',
     args: address && isPlatformFeeConfigured() ? [address, FEE_WALLET] : undefined,
+    chainId: market?.chainId,
     query: {
-      enabled: !!market && !!address && isPlatformFeeConfigured(),
+      enabled: !!market && !!address && isPlatformFeeConfigured() && chainId === market?.chainId,
     },
   });
 
@@ -95,8 +97,9 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     abi: erc20Abi,
     functionName: 'allowance',
     args: address && poolAddress ? [address, poolAddress] : undefined,
+    chainId: market?.chainId,
     query: {
-      enabled: !!market && !!address && !!poolAddress,
+      enabled: !!market && !!address && !!poolAddress && chainId === market?.chainId,
     },
   });
 
