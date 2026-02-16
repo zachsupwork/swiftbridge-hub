@@ -243,9 +243,10 @@ export default function Earn() {
   const totalPositionCount = aavePositions.length + vaultPositions.length;
   const netWorth = totalSupplyUsd + totalDepositedUsd - totalBorrowUsd;
 
-  // Successful chains count
-  const successfulChains = chainResults.filter(r => r.success).length;
-  const totalChains = chainResults.length;
+  // Compute chain count from actual rendered markets (works even when chainResults is empty/failed but DeFi Llama filled in)
+  const renderedChainIds = [...new Set(allAaveMarkets.map(m => Number(m.chainId)).filter(Boolean))];
+  const chainsCount = renderedChainIds.length;
+  const totalChains = chainResults.length || SUPPORTED_CHAIN_IDS.length;
 
   return (
     <Layout>
@@ -275,14 +276,14 @@ export default function Earn() {
                   <Rocket className="w-3 h-3 mr-1" />
                   Aave V3
                 </Badge>
-                {successfulChains > 0 && (
+                {chainsCount > 0 && (
                   <Badge variant="outline" className="text-[10px] px-1.5 h-5 border-success/30 text-success">
-                    {successfulChains}/{totalChains} chains
+                    {chainsCount}/{totalChains} chains
                   </Badge>
                 )}
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                On-chain Aave V3 markets • {allAaveMarkets.length} assets across {successfulChains} chains
+                On-chain Aave V3 markets • {allAaveMarkets.length} assets across {chainsCount} chains
               </p>
             </div>
 
