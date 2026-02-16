@@ -89,11 +89,16 @@ export function useBalances(): UseBalancesResult {
   const getBalance = useCallback(
     (chainId: number, tokenAddress: string): PortfolioTokenBalance | undefined => {
       const addr = tokenAddress.toLowerCase();
-      return portfolio.tokenBalances.find(
+      // Primary: exact address match
+      const exact = portfolio.tokenBalances.find(
         (tb) =>
           tb.chainId === chainId &&
           tb.token.address.toLowerCase() === addr
       );
+      if (exact) return exact;
+      // No symbol-based fallback here — that's done at the consumer level
+      // to avoid false matches across different tokens
+      return undefined;
     },
     [portfolio.tokenBalances]
   );

@@ -99,18 +99,20 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
   }, [amount, supply]);
 
   const handleSetMax = useCallback(() => {
-    const bal = parseFloat(balanceFormatted);
-    if (bal > 0) {
-      setAmount(bal.toString());
-    } else if (market) {
-      // Fallback: use shared balance (address match or symbol+chain fallback)
+    // Prefer BalancesProvider (works cross-chain), fallback to hook balance
+    if (market) {
       const sb = getBalance(market.chainId, market.assetAddress);
       const sbFallback = !sb ? tokenBalances.find(
         tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
       ) : undefined;
       const effective = sb || sbFallback;
-      if (effective && effective.balance > 0) setAmount(effective.balanceFormatted);
+      if (effective && effective.balance > 0) {
+        setAmount(effective.balanceFormatted);
+        return;
+      }
     }
+    const bal = parseFloat(balanceFormatted);
+    if (bal > 0) setAmount(bal.toString());
   }, [balanceFormatted, market, getBalance, tokenBalances]);
 
   const goToSwap = useCallback(() => {
@@ -127,16 +129,16 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
 
   if (!market) return null;
 
-  // Use shared balance from BalancesProvider as fallback when hook balance is 0
-  const hookBalance = parseFloat(balanceFormatted);
+  // PRIMARY: Use BalancesProvider (works cross-chain). FALLBACK: hook's on-chain read (same-chain only).
   const sharedBal = market ? getBalance(market.chainId, market.assetAddress) : undefined;
-  // If address lookup fails, try symbol+chain fallback from allTokensList
   const symbolFallback = (!sharedBal && market) ? tokenBalances.find(
     tb => tb.chainId === market.chainId && tb.token.symbol.toUpperCase() === market.assetSymbol.toUpperCase() && tb.balance > 0
   ) : undefined;
   const effectiveSharedBal = sharedBal || symbolFallback;
-  const sharedBalFormatted = effectiveSharedBal?.balanceFormatted ?? '0';
-  const displayBalance = hookBalance > 0 ? hookBalance : parseFloat(sharedBalFormatted);
+  const sharedBalValue = effectiveSharedBal ? effectiveSharedBal.balance : 0;
+  const hookBalance = parseFloat(balanceFormatted);
+  // Use whichever is higher (BalancesProvider may have data even when hook reads wrong chain)
+  const displayBalance = Math.max(sharedBalValue, hookBalance);
   const parsedAmount = parseFloat(amount) || 0;
   const isInsufficientBalance = parsedAmount > displayBalance;
   const explorerUrl = supplyState.supplyTxHash ? getExplorerTxUrl(market.chainId, supplyState.supplyTxHash) : '';
