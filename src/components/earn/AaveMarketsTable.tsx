@@ -44,6 +44,8 @@ interface AaveMarketsTableProps {
   onDetails?: (market: LendingMarket) => void;
   walletBalances?: Record<string, number>;
   hasCollateral?: boolean;
+  /** Map of reserveAddress (lowercase) → { suppliedUsd, borrowedUsd } for floating positions to top */
+  userPositionMap?: Record<string, { suppliedUsd: number; borrowedUsd: number }>;
 }
 
 function formatAPY(apy: number): string {
@@ -155,7 +157,7 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
 // ============================================
 
 const SupplyRow = memo(function SupplyRow({
-  market, onSupply, onSwap, expanded, onToggle, walletBalanceUsd,
+  market, onSupply, onSwap, expanded, onToggle, walletBalanceUsd, isSupplied, isBorrowed,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
@@ -163,6 +165,8 @@ const SupplyRow = memo(function SupplyRow({
   expanded: boolean;
   onToggle: () => void;
   walletBalanceUsd?: number;
+  isSupplied?: boolean;
+  isBorrowed?: boolean;
 }) {
   return (
     <>
@@ -440,8 +444,8 @@ export function AaveMarketsTable({
   onBorrow,
   hasCollateral = false,
   walletBalances,
+  userPositionMap = {},
 }: AaveMarketsTableProps) {
-  const navigate = undefined; // removed — using openSwapIntent instead
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -465,7 +469,6 @@ export function AaveMarketsTable({
 
   const filtered = useMemo(() => {
     let result = [...markets].filter(m => m.isActive);
-    // For borrow: show ALL borrowable assets (even without collateral) — like Aave does
     if (marketMode === 'borrow') {
       result = result.filter(m => m.borrowingEnabled && !m.isFrozen);
     }
@@ -477,7 +480,25 @@ export function AaveMarketsTable({
         m.chainName.toLowerCase().includes(q)
       );
     }
+    // Sort: positions float to top, then by selected sort key
     result.sort((a, b) => {
+      const aPos = userPositionMap[`${a.chainId}-${a.assetAddress.toLowerCase()}`];
+      const bPos = userPositionMap[`${b.chainId}-${b.assetAddress.toLowerCase()}`];
+      const aHasPos = aPos && (aPos.suppliedUsd > 0 || aPos.borrowedUsd > 0);
+      const bHasPos = bPos && (bPos.suppliedUsd > 0 || bPos.borrowedUsd > 0);
+
+      // Float positions to top
+      if (aHasPos && !bHasPos) return -1;
+      if (!aHasPos && bHasPos) return 1;
+
+      // Within positions, sort by max(supplied, borrowed) desc
+      if (aHasPos && bHasPos) {
+        const aVal = Math.max(aPos.suppliedUsd, aPos.borrowedUsd);
+        const bVal = Math.max(bPos.suppliedUsd, bPos.borrowedUsd);
+        return bVal - aVal;
+      }
+
+      // Regular sort
       let cmp = 0;
       switch (sortBy) {
         case 'supplyAPY': cmp = a.supplyAPY - b.supplyAPY; break;
@@ -489,7 +510,8 @@ export function AaveMarketsTable({
       return sortDir === 'desc' ? -cmp : cmp;
     });
     return result;
-  }, [markets, searchQuery, sortBy, sortDir, marketMode]);
+  }, [markets, searchQuery, sortBy, sortDir, marketMode, userPositionMap]);
+
 
   const SortBtn = ({ col, label }: { col: SortKey; label: string }) => (
     <button onClick={() => handleSort(col)}
@@ -614,8 +636,12 @@ export function AaveMarketsTable({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(market => (
-                  marketMode === 'supply' ? (
+                {filtered.map(market => {
+                  const posKey = `${market.chainId}-${market.assetAddress.toLowerCase()}`;
+                  const pos = userPositionMap[posKey];
+                  const isSupplied = !!(pos && pos.suppliedUsd > 0);
+                  const isBorrowed = !!(pos && pos.borrowedUsd > 0);
+                  return marketMode === 'supply' ? (
                     <SupplyRow
                       key={market.id}
                       market={market}
@@ -626,6 +652,8 @@ export function AaveMarketsTable({
                       walletBalanceUsd={
                         walletBalances?.[`${market.chainId}:${market.assetAddress.toLowerCase()}`]
                       }
+                      isSupplied={isSupplied}
+                      isBorrowed={isBorrowed}
                     />
                   ) : (
                     <BorrowRow
@@ -636,8 +664,8 @@ export function AaveMarketsTable({
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
                     />
-                  )
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

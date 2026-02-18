@@ -8,7 +8,7 @@
  * - Positions tab: Aave positions + Morpho vault deposits
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -49,6 +49,9 @@ import { AaveBorrowModal } from '@/components/earn/AaveBorrowModal';
 import { AavePositionCard } from '@/components/earn/AavePositionCard';
 import { MorphoVaultsTable } from '@/components/earn/MorphoVaultsTable';
 import { MorphoVaultActionModal } from '@/components/earn/MorphoVaultActionModal';
+import { YourSuppliesSection } from '@/components/earn/YourSuppliesSection';
+import { YourBorrowsSection } from '@/components/earn/YourBorrowsSection';
+import { AccountHealthBar } from '@/components/earn/AccountHealthBar';
 import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
 import { useAavePositions } from '@/hooks/useAavePositions';
 import { useAaveBorrow } from '@/hooks/useAaveBorrow';
@@ -60,6 +63,7 @@ import { openSwapIntent } from '@/lib/swapIntent';
 import { toast } from '@/hooks/use-toast';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
+import type { AavePosition } from '@/hooks/useAavePositions';
 import type { MorphoVault, VaultPosition } from '@/lib/morpho/vaultsClient';
 
 const AUTO_REFRESH_INTERVAL = 30000;
@@ -200,6 +204,28 @@ export default function Earn() {
     setIsVaultModalOpen(true);
   }, [isConnected, vaultPositions, walletChainId, handleSwitchChain]);
 
+  // ─── Withdraw action (opens supply modal for now, Aave withdraw is same modal) ───
+  const handleWithdraw = useCallback(async (position: AavePosition) => {
+    if (position.market) {
+      await handleSupply(position.market);
+    }
+  }, [handleSupply]);
+
+  // ─── Repay action (opens borrow modal) ───
+  const handleRepay = useCallback(async (position: AavePosition) => {
+    if (!isConnected) {
+      toast({ title: 'Connect Wallet', variant: 'destructive' });
+      return;
+    }
+    if (position.market) {
+      if (walletChainId !== position.market.chainId) {
+        await handleSwitchChain(position.market.chainId);
+      }
+      setSelectedMarket(position.market);
+      setIsBorrowModalOpen(true);
+    }
+  }, [isConnected, walletChainId, handleSwitchChain]);
+
   // ─── Close modal + refresh ───
   const handleCloseModal = useCallback(() => {
     setIsSupplyModalOpen(false);
@@ -243,10 +269,26 @@ export default function Earn() {
   const totalPositionCount = aavePositions.length + vaultPositions.length;
   const netWorth = totalSupplyUsd + totalDepositedUsd - totalBorrowUsd;
 
-  // Compute chain count from actual rendered markets (works even when chainResults is empty/failed but DeFi Llama filled in)
+  // Compute chain count from actual rendered markets
   const renderedChainIds = [...new Set(allAaveMarkets.map(m => Number(m.chainId)).filter(Boolean))];
   const chainsCount = renderedChainIds.length;
   const totalChains = chainResults.length || SUPPORTED_CHAIN_IDS.length;
+
+  // Build userPositionMap for market table sorting/badges
+  const userPositionMap = useMemo(() => {
+    const map: Record<string, { suppliedUsd: number; borrowedUsd: number }> = {};
+    for (const pos of aavePositions) {
+      const key = `${pos.chainId}-${pos.assetAddress.toLowerCase()}`;
+      map[key] = {
+        suppliedUsd: pos.supplyBalanceUsd,
+        borrowedUsd: pos.variableDebtUsd,
+      };
+    }
+    return map;
+  }, [aavePositions]);
+
+  const hasSupplied = aavePositions.some(p => p.supplyBalance > 0n);
+  const hasBorrowed = aavePositions.some(p => p.variableDebt > 0n);
 
   return (
     <Layout>
@@ -517,6 +559,37 @@ export default function Earn() {
 
             {/* Markets Tab — Aave V3 */}
             <TabsContent value="markets" className="space-y-4">
+
+              {/* ─── Account Health Bar (when connected + has positions) ─── */}
+              {isConnected && (hasSupplied || hasBorrowed) && (
+                <AccountHealthBar
+                  chainAccountData={chainAccountData}
+                  totalCollateralUsd={totalCollateralUsd}
+                  totalDebtUsd={totalBorrowUsd}
+                  lowestHealthFactor={lowestHealthFactor}
+                />
+              )}
+
+              {/* ─── Your Supplies Section ─── */}
+              {isConnected && hasSupplied && (
+                <YourSuppliesSection
+                  positions={aavePositions}
+                  onSupply={handleSupply}
+                  onWithdraw={handleWithdraw}
+                  onSwap={goToSwap}
+                />
+              )}
+
+              {/* ─── Your Borrows Section ─── */}
+              {isConnected && hasBorrowed && (
+                <YourBorrowsSection
+                  positions={aavePositions}
+                  onBorrow={handleBorrow}
+                  onRepay={handleRepay}
+                  onSwap={goToSwap}
+                />
+              )}
+
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm">
@@ -553,10 +626,10 @@ export default function Earn() {
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
                 hasCollateral={totalCollateralUsd > 0}
+                userPositionMap={userPositionMap}
                 walletBalances={(() => {
                   const map: Record<string, number> = {};
                   for (const tb of tokenBalances) {
-                    // ADDRESS-ONLY key — no symbol fallback to prevent USDC/USDC.e confusion
                     const key = `${tb.chainId}:${tb.token.address.toLowerCase()}`;
                     map[key] = (map[key] || 0) + tb.balanceUSD;
                   }
@@ -564,6 +637,7 @@ export default function Earn() {
                 })()}
               />
             </TabsContent>
+
 
             {/* Vaults Tab — Morpho */}
             <TabsContent value="vaults" className="space-y-4">
