@@ -60,13 +60,15 @@ const VIEM_CHAINS: Record<number, any> = {
 // ──────────────────────────────────────────────
 
 /**
- * getUserReservesData — simpler than getReservesData, reliable across UI provider versions.
- * The function returns: (UserReserveData[], uint8 userEmodeCategoryId)
- * We only use the array; the trailing uint8 is fine to omit IF the chain returns only 1 value.
- * We handle both: if result is a tuple/array of 2 we take index 0, otherwise treat as array directly.
+ * getUserReservesData — Aave V3 UiPoolDataProvider.
+ * CRITICAL: The function ALWAYS returns TWO values:
+ *   1. UserReserveData[]
+ *   2. uint8 userEmodeCategoryId
+ * The ABI MUST declare both or viem will misalign the decode buffer and throw
+ * "Bytes value ... is not a valid boolean" on every chain.
  */
 const UI_POOL_USER_ABI = parseAbi([
-  'function getUserReservesData(address provider, address user) view returns ((address underlyingAsset, uint256 scaledATokenBalance, bool usageAsCollateralEnabledOnUser, uint256 stableBorrowRate, uint256 scaledVariableDebt, uint256 principalStableDebt, uint256 stableBorrowLastUpdateTimestamp)[])',
+  'function getUserReservesData(address provider, address user) view returns ((address underlyingAsset, uint256 scaledATokenBalance, bool usageAsCollateralEnabledOnUser, uint256 stableBorrowRate, uint256 scaledVariableDebt, uint256 principalStableDebt, uint256 stableBorrowLastUpdateTimestamp)[], uint8)',
 ]);
 
 /**
@@ -236,10 +238,11 @@ function extractBigInt(obj: any, name: string, index: number): bigint {
 function parseUserReservesResult(result: unknown): any[] {
   if (!result) return [];
   if (Array.isArray(result)) {
-    // Check if it's [UserReserveData[], uint8] tuple
-    if (result.length === 2 && Array.isArray(result[0])) return result[0];
-    // Or plain array of structs
-    return result;
+    // ABI now correctly declares both return values → viem gives us [UserReserveData[], uint8]
+    // Always take index 0 (the array). Guard for edge cases where only the array is returned.
+    if (result.length >= 1 && Array.isArray(result[0])) return result[0];
+    // Fallback: plain array of structs (shouldn't happen with fixed ABI, but safe)
+    if (result.length > 0 && !Array.isArray(result[0])) return result;
   }
   return [];
 }
