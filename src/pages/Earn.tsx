@@ -54,7 +54,7 @@ import { YourBorrowsSection } from '@/components/earn/YourBorrowsSection';
 import { AccountHealthBar } from '@/components/earn/AccountHealthBar';
 import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
 import { useAavePositions } from '@/hooks/useAavePositions';
-import { useAaveBorrow } from '@/hooks/useAaveBorrow';
+
 import { useMorphoVaults } from '@/hooks/useMorphoVaults';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
@@ -117,8 +117,6 @@ export default function Earn() {
     debugInfo: positionsDebugInfo,
   } = useAavePositions(allAaveMarkets);
 
-  // ─── Aave Borrow (for account data) ───
-  const { accountData } = useAaveBorrow();
 
   // ─── Morpho Vaults ───
   const {
@@ -293,6 +291,35 @@ export default function Earn() {
 
   const hasSupplied = aavePositions.some(p => p.supplyBalance > 0n);
   const hasBorrowed = aavePositions.some(p => p.variableDebt > 0n);
+
+  // ─── Derive accountData for selected market's chain from chainAccountData ───
+  // This is passed to AaveBorrowModal so it can show HF / collateral / debt
+  const borrowModalAccountData = useMemo(() => {
+    if (!selectedMarket) return null;
+    const chainData = chainAccountData.find(d => d.chainId === selectedMarket.chainId);
+    if (!chainData) return null;
+    const hfRaw = chainData.healthFactor;
+    const hfBig = BigInt(Math.round(hfRaw * 1e18));
+    const ltvBig = BigInt(Math.round(chainData.ltv * 100));
+    const collBase = BigInt(Math.round(chainData.totalCollateralUsd * 1e8));
+    const debtBase = BigInt(Math.round(chainData.totalDebtUsd * 1e8));
+    const availBase = BigInt(Math.round(chainData.availableBorrowsUsd * 1e8));
+    const maxBorrow = chainData.totalCollateralUsd * (chainData.ltv / 10000);
+    const borrowLimitUsedPercent = maxBorrow > 0 ? (chainData.totalDebtUsd / maxBorrow) * 100 : 0;
+    return {
+      totalCollateralBase: collBase,
+      totalDebtBase: debtBase,
+      availableBorrowsBase: availBase,
+      currentLiquidationThreshold: BigInt(Math.round((chainData.liquidationThreshold ?? 0) * 100)),
+      ltv: ltvBig,
+      healthFactor: hfBig,
+      totalCollateralUsd: chainData.totalCollateralUsd,
+      totalDebtUsd: chainData.totalDebtUsd,
+      availableBorrowsUsd: chainData.availableBorrowsUsd,
+      healthFactorFormatted: hfRaw > 1e10 ? Infinity : hfRaw,
+      borrowLimitUsedPercent,
+    };
+  }, [selectedMarket, chainAccountData]);
 
   return (
     <Layout>
@@ -869,7 +896,7 @@ export default function Earn() {
         open={isBorrowModalOpen}
         onClose={handleCloseModal}
         market={selectedMarket}
-        accountData={accountData}
+        accountData={borrowModalAccountData}
       />
 
       <MorphoVaultActionModal

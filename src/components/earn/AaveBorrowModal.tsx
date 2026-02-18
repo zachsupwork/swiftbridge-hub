@@ -5,7 +5,7 @@
  * Balance checks use strict address+chainId (never symbol).
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   ArrowDownLeft,
   CheckCircle2,
@@ -14,7 +14,7 @@ import {
   Shield,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
-import { parseUnits } from 'viem';
+
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -49,7 +49,7 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
     borrowError,
     borrow,
     resetBorrowState,
-    borrowMarkets,
+    fetchReserveTokenAddresses,
   } = useAaveBorrow();
 
   const [amount, setAmount] = useState('');
@@ -81,13 +81,41 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
   const handleBorrow = useCallback(async () => {
     if (!market || !amount || parseFloat(amount) <= 0) return;
 
-    const borrowMarket = borrowMarkets.find(
-      bm => bm.assetAddress.toLowerCase() === market.assetAddress.toLowerCase() && bm.chainId === market.chainId
-    );
-    if (!borrowMarket) return;
+    // Build a minimal BorrowMarket from the LendingMarket data.
+    // For variableDebtTokenAddress, we try fetchReserveTokenAddresses; if it fails
+    // we fall back to the address already stored on the market (may be zero).
+    let variableDebtTokenAddress = market.variableDebtTokenAddress;
+    try {
+      const addrs = await fetchReserveTokenAddresses(market.chainId, market.assetAddress);
+      if (addrs) variableDebtTokenAddress = addrs.variableDebtTokenAddress;
+    } catch { /* use fallback */ }
+
+    const borrowMarket = {
+      id: market.id,
+      chainId: market.chainId,
+      chainName: market.chainName,
+      chainLogo: market.chainLogo,
+      assetSymbol: market.assetSymbol,
+      assetName: market.assetName,
+      assetAddress: market.assetAddress,
+      assetLogo: market.assetLogo,
+      decimals: market.decimals,
+      variableBorrowAPY: market.borrowAPY,
+      stableBorrowAPY: 0,
+      stableBorrowEnabled: false,
+      borrowingEnabled: market.borrowingEnabled,
+      availableLiquidity: market.availableLiquidityUsd,
+      availableLiquidityUsd: market.availableLiquidityUsd,
+      ltv: market.ltv,
+      liquidationThreshold: market.liquidationThreshold,
+      liquidationBonus: market.liquidationBonus,
+      priceInUsd: market.priceUsd,
+      variableDebtTokenAddress,
+      stableDebtTokenAddress: '0x0000000000000000000000000000000000000000' as `0x${string}`,
+    };
 
     await borrow(borrowMarket, amount, 'variable');
-  }, [market, amount, borrowMarkets, borrow]);
+  }, [market, amount, borrow, fetchReserveTokenAddresses]);
 
 
   if (!market) return null;
