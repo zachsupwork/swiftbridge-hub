@@ -275,13 +275,16 @@ export default function Earn() {
   const totalChains = chainResults.length || SUPPORTED_CHAIN_IDS.length;
 
   // Build userPositionMap for market table sorting/badges
+  // hasSupply/hasBorrow use raw bigint so positions show even when price=0
   const userPositionMap = useMemo(() => {
-    const map: Record<string, { suppliedUsd: number; borrowedUsd: number }> = {};
+    const map: Record<string, { suppliedUsd: number; borrowedUsd: number; hasSupply: boolean; hasBorrow: boolean }> = {};
     for (const pos of aavePositions) {
       const key = `${pos.chainId}-${pos.assetAddress.toLowerCase()}`;
       map[key] = {
         suppliedUsd: pos.supplyBalanceUsd,
         borrowedUsd: pos.variableDebtUsd,
+        hasSupply: pos.supplyBalance > 0n,
+        hasBorrow: pos.variableDebt > 0n,
       };
     }
     return map;
@@ -625,7 +628,7 @@ export default function Earn() {
                 onRefresh={refreshMarkets}
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
-                hasCollateral={totalCollateralUsd > 0}
+                hasCollateral={totalCollateralUsd > 0 || hasSupplied}
                 userPositionMap={userPositionMap}
                 walletBalances={(() => {
                   const map: Record<string, number> = {};
