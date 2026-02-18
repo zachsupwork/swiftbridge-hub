@@ -168,10 +168,16 @@ const SupplyRow = memo(function SupplyRow({
   isSupplied?: boolean;
   isBorrowed?: boolean;
 }) {
+  const hasPos = isSupplied || isBorrowed;
   return (
     <>
-      <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
-        onClick={onToggle}>
+      <tr
+        className={cn(
+          "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer",
+          hasPos && "bg-primary/5 hover:bg-primary/10"
+        )}
+        onClick={onToggle}
+      >
         <td className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
@@ -183,7 +189,19 @@ const SupplyRow = memo(function SupplyRow({
               </div>
             </div>
             <div>
-              <div className="font-medium text-sm">{market.assetSymbol}</div>
+              <div className="font-medium text-sm flex items-center gap-1.5">
+                {market.assetSymbol}
+                {isSupplied && (
+                  <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-success/20 text-success border border-success/30 leading-none">
+                    SUPPLIED
+                  </span>
+                )}
+                {isBorrowed && (
+                  <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-warning/20 text-warning border border-warning/30 leading-none">
+                    BORROWED
+                  </span>
+                )}
+              </div>
               <div className="text-[11px] text-muted-foreground">{market.chainName}</div>
             </div>
           </div>

@@ -114,6 +114,7 @@ export default function Earn() {
     totalBorrowUsd,
     totalCollateralUsd,
     lowestHealthFactor,
+    debugInfo: positionsDebugInfo,
   } = useAavePositions(allAaveMarkets);
 
   // ─── Aave Borrow (for account data) ───
@@ -442,6 +443,31 @@ export default function Earn() {
               Learn more <ExternalLink className="w-3 h-3" />
             </Link>
           </div>
+
+          {/* ─── DEV DEBUG PANEL ─── */}
+          {import.meta.env.DEV && isConnected && positionsDebugInfo.length > 0 && (
+            <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs font-mono space-y-1">
+              <div className="font-semibold text-foreground mb-2 flex items-center gap-2">
+                🛠 Positions Debug (DEV only)
+                <span className="font-normal text-muted-foreground">
+                  — {aavePositions.length} total positions
+                </span>
+              </div>
+              {positionsDebugInfo.map(d => (
+                <div key={d.chainId} className={cn(
+                  "flex items-center gap-2",
+                  d.dataSource === 'failed' ? 'text-destructive' :
+                  d.dataSource === 'subgraph' ? 'text-warning' : 'text-success'
+                )}>
+                  <span className="w-20 shrink-0">{d.chainName}</span>
+                  <span className="w-20 shrink-0 uppercase">[{d.dataSource}]</span>
+                  <span className="w-24 shrink-0">{d.positionsFound} positions</span>
+                  <span className="w-20 shrink-0">acct: {d.accountDataFetched ? '✓' : '✗'}</span>
+                  {d.error && <span className="text-destructive truncate max-w-xs" title={d.error}>{d.error.substring(0, 60)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ─── DASHBOARD ─── */}
           {isConnected && (totalPositionCount > 0 || totalBorrowUsd > 0 || totalSupplyUsd > 0) && (

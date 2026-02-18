@@ -1,17 +1,24 @@
 /**
  * Aave V3 Positions Hook
  *
- * CRITICAL FIX: Applies Ray math to convert scaled balances to real balances.
- *   realSupply = scaledATokenBalance * liquidityIndex / RAY
- *   realDebt   = scaledVariableDebt  * variableBorrowIndex / RAY
+ * KEY FIX (production CORS issue):
+ *   The old code used a raw `fetch()` preflight to test RPC liveness.
+ *   That fetch() fails with CORS errors in production browsers even when
+ *   the RPC is perfectly usable via viem (which handles CORS differently).
+ *   
+ *   Fix: replace the fetch() preflight with a direct viem `readContract`
+ *   (getBlockNumber) probe. Viem uses XMLHttpRequest under the hood which
+ *   does NOT trigger the same CORS failures as a raw fetch POST.
  *
- * Fetches:
- *  1. getReservesData  → reserve indexes + metadata
- *  2. getUserReservesData → user scaled balances + collateral flags
- *  3. getUserAccountData → health factor, LTV, available borrows
+ * Subgraph fallback:
+ *   If ALL RPCs for a chain fail, we fall back to the Aave subgraph
+ *   (The Graph) to read user positions and account metrics.
  *
- * USD pricing: uses market.priceUsd first, stablecoin $1 fallback.
- * RPC: retries with fallback list if primary fails.
+ * Balance math:
+ *   realSupply      = scaledATokenBalance * liquidityIndex / RAY
+ *   realVariableDebt = scaledVariableDebt  * variableBorrowIndex / RAY
+ *
+ * USD pricing: market.priceUsd → stablecoin $1 fallback → 0
  * Chain isolation: one chain failing does NOT fail others.
  */
 
@@ -53,10 +60,6 @@ const VIEM_CHAINS: Record<number, any> = {
 // ABIs
 // ──────────────────────────────────────────────
 
-/**
- * getReservesData — fetches per-reserve liquidityIndex + variableBorrowIndex.
- * We only need a minimal ABI subset for the fields we actually use.
- */
 const RESERVES_DATA_ABI = [
   {
     inputs: [
@@ -225,6 +228,8 @@ export interface AavePosition {
   variableDebtFormatted: string;
   variableDebtUsd: number;
   borrowApy: number;
+  // Source of data
+  dataSource: 'rpc' | 'subgraph';
   // Market reference
   market?: LendingMarket;
 }
@@ -237,6 +242,17 @@ export interface AaveChainAccountData {
   availableBorrowsUsd: number;
   healthFactor: number;
   ltv: number;
+  dataSource: 'rpc' | 'subgraph';
+}
+
+export interface ChainDebugInfo {
+  chainId: number;
+  chainName: string;
+  dataSource: 'rpc' | 'subgraph' | 'failed';
+  rpcUsed?: string;
+  positionsFound: number;
+  accountDataFetched: boolean;
+  error?: string;
 }
 
 export interface UseAavePositionsResult {
@@ -249,47 +265,7 @@ export interface UseAavePositionsResult {
   totalBorrowUsd: number;
   totalCollateralUsd: number;
   lowestHealthFactor: number | null;
-}
-
-// ──────────────────────────────────────────────
-// Helper: create client with RPC fallback
-// ──────────────────────────────────────────────
-
-async function createClientWithFallback(
-  chainId: number,
-  primaryRpc: string | undefined,
-): Promise<ReturnType<typeof createPublicClient> | null> {
-  const viemChain = VIEM_CHAINS[chainId];
-  if (!viemChain) return null;
-
-  const candidates: string[] = [];
-  if (primaryRpc) candidates.push(primaryRpc);
-  candidates.push(...getFallbackRpcs(chainId));
-
-  for (const rpc of candidates) {
-    try {
-      // Quick liveness check via raw fetch (avoids viem typing issues)
-      const resp = await fetch(rpc, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const returnedChainId = parseInt(data?.result, 16);
-        if (returnedChainId === chainId) {
-          return createPublicClient({
-            chain: viemChain,
-            transport: http(rpc, { timeout: 15000 }),
-          }) as ReturnType<typeof createPublicClient>;
-        }
-      }
-    } catch {
-      // try next
-    }
-  }
-  return null;
+  debugInfo: ChainDebugInfo[];
 }
 
 // ──────────────────────────────────────────────
@@ -302,6 +278,163 @@ function rayMul(a: bigint, b: bigint): bigint {
 }
 
 // ──────────────────────────────────────────────
+// Helper: create viem client and probe with readContract
+// KEY FIX: No more fetch() preflight that breaks with CORS!
+// We create the client immediately and probe with a lightweight call.
+// ──────────────────────────────────────────────
+
+async function createClientWithFallback(
+  chainId: number,
+  primaryRpc: string | undefined,
+): Promise<{ client: ReturnType<typeof createPublicClient>; rpcUsed: string } | null> {
+  const viemChain = VIEM_CHAINS[chainId];
+  if (!viemChain) return null;
+
+  const candidates: string[] = [];
+  if (primaryRpc) candidates.push(primaryRpc);
+  candidates.push(...getFallbackRpcs(chainId));
+
+  // Deduplicate
+  const seen = new Set<string>();
+  const unique = candidates.filter(rpc => {
+    if (seen.has(rpc)) return false;
+    seen.add(rpc);
+    return true;
+  });
+
+  for (const rpc of unique) {
+    try {
+      const client = createPublicClient({
+        chain: viemChain,
+        transport: http(rpc, { timeout: 12000, retryCount: 0 }),
+      }) as ReturnType<typeof createPublicClient>;
+
+      // Probe with getBlockNumber — a minimal call that works across all chains.
+      // This uses viem's JSON-RPC layer which does NOT suffer from browser CORS
+      // in the same way as a raw fetch() POST (viem uses XHR with proper headers).
+      await (client as any).getBlockNumber();
+
+      if (DEBUG) console.log(`[AavePositions] RPC ok for chain ${chainId}: ${rpc.substring(0, 40)}...`);
+      return { client, rpcUsed: rpc };
+    } catch (err) {
+      if (DEBUG) console.warn(`[AavePositions] RPC failed for chain ${chainId} (${rpc.substring(0, 30)}...):`, err);
+      // try next
+    }
+  }
+
+  return null;
+}
+
+// ──────────────────────────────────────────────
+// Subgraph fallback types
+// ──────────────────────────────────────────────
+
+interface SubgraphUserReserve {
+  underlyingAssetAddress: string;
+  symbol: string;
+  decimals: number;
+  currentATokenBalance: string;    // wei string
+  currentVariableDebt: string;     // wei string
+  usageAsCollateralEnabledOnUser: boolean;
+}
+
+interface SubgraphAccountSummary {
+  totalCollateralUSD: number;
+  totalDebtUSD: number;
+  availableBorrowsUSD: number;
+  healthFactor: number;
+  ltv: number;
+}
+
+// ──────────────────────────────────────────────
+// Subgraph query
+// The Graph — Aave V3 protocol subgraph schema
+// currentATokenBalance and currentVariableDebt are REAL (not scaled) in the subgraph.
+// ──────────────────────────────────────────────
+
+async function fetchPositionsFromSubgraph(
+  subgraphUrl: string,
+  userAddress: string,
+): Promise<{ reserves: SubgraphUserReserve[]; account: SubgraphAccountSummary | null }> {
+  if (!subgraphUrl) return { reserves: [], account: null };
+
+  const query = `
+    query UserPositions($user: String!) {
+      userReserves(where: { user: $user, or: [{ currentATokenBalance_gt: "0" }, { currentVariableDebt_gt: "0" }] }) {
+        reserve {
+          underlyingAsset
+          symbol
+          decimals
+        }
+        currentATokenBalance
+        currentVariableDebt
+        usageAsCollateralEnabledOnUser
+      }
+      users(where: { id: $user }) {
+        totalCollateralUSD
+        totalDebtUSD
+        availableBorrowsUSD
+        healthFactor
+        totalCurrentVariableDebtUSD
+      }
+    }
+  `;
+
+  const resp = await fetch(subgraphUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: { user: userAddress.toLowerCase() } }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!resp.ok) throw new Error(`Subgraph HTTP ${resp.status}`);
+  const json = await resp.json();
+
+  if (json.errors) {
+    if (DEBUG) console.warn('[AavePositions] Subgraph errors:', json.errors);
+  }
+
+  const data = json.data || {};
+  const rawReserves: any[] = data.userReserves || [];
+  const rawUsers: any[] = data.users || [];
+
+  const reserves: SubgraphUserReserve[] = rawReserves
+    .filter((r: any) => {
+      const supply = BigInt(r.currentATokenBalance || '0');
+      const debt = BigInt(r.currentVariableDebt || '0');
+      return supply > 0n || debt > 0n;
+    })
+    .map((r: any) => ({
+      underlyingAssetAddress: r.reserve.underlyingAsset,
+      symbol: r.reserve.symbol,
+      decimals: Number(r.reserve.decimals),
+      currentATokenBalance: r.currentATokenBalance || '0',
+      currentVariableDebt: r.currentVariableDebt || '0',
+      usageAsCollateralEnabledOnUser: r.usageAsCollateralEnabledOnUser || false,
+    }));
+
+  let account: SubgraphAccountSummary | null = null;
+  if (rawUsers.length > 0) {
+    const u = rawUsers[0];
+    account = {
+      totalCollateralUSD: parseFloat(u.totalCollateralUSD || '0'),
+      totalDebtUSD: parseFloat(u.totalDebtUSD || '0'),
+      availableBorrowsUSD: parseFloat(u.availableBorrowsUSD || '0'),
+      healthFactor: parseFloat(u.healthFactor || '0'),
+      ltv: u.totalCollateralUSD > 0
+        ? (parseFloat(u.totalDebtUSD || '0') / parseFloat(u.totalCollateralUSD)) * 100
+        : 0,
+    };
+  }
+
+  if (DEBUG) {
+    console.log(`[AavePositions] Subgraph: found ${reserves.length} positions, account:`, account);
+  }
+
+  return { reserves, account };
+}
+
+// ──────────────────────────────────────────────
 // Main Hook
 // ──────────────────────────────────────────────
 
@@ -311,11 +444,13 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
   const [chainAccountData, setChainAccountData] = useState<AaveChainAccountData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<ChainDebugInfo[]>([]);
 
   const fetchPositions = useCallback(async () => {
     if (!address || !isConnected) {
       setPositions([]);
       setChainAccountData([]);
+      setDebugInfo([]);
       return;
     }
 
@@ -324,6 +459,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
     const allPositions: AavePosition[] = [];
     const allAccountData: AaveChainAccountData[] = [];
+    const allDebugInfo: ChainDebugInfo[] = [];
     let anySuccess = false;
 
     // Build market lookup: chainId-assetAddress(lower) → LendingMarket
@@ -335,203 +471,298 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     // Process all chains in parallel; failures are isolated per-chain
     await Promise.allSettled(
       SUPPORTED_CHAINS.map(async (chainConfig) => {
-        const { chainId, name, logo, rpcUrl } = chainConfig;
+        const { chainId, name, logo, rpcUrl, aaveSubgraph } = chainConfig;
 
         const aaveAddresses = getAaveAddresses(chainId);
         if (!aaveAddresses) return;
 
-        // Create client with fallback RPC logic
-        const client = await createClientWithFallback(chainId, rpcUrl);
-        if (!client) {
-          if (DEBUG) console.warn(`[AavePositions] No working RPC for ${name} (${chainId})`);
-          return;
-        }
+        const debugEntry: ChainDebugInfo = {
+          chainId,
+          chainName: name,
+          dataSource: 'failed',
+          positionsFound: 0,
+          accountDataFetched: false,
+        };
 
         const checksummedProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
         const checksummedUiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
         const checksummedPool = getAddress(aaveAddresses.POOL);
 
-        try {
-          // Fetch all three in parallel
-          const [reservesResult, userReservesResult, accountResult] = await Promise.all([
-            (client.readContract as any)({
-              address: checksummedUiProvider,
-              abi: RESERVES_DATA_ABI,
-              functionName: 'getReservesData',
-              args: [checksummedProvider],
-            }),
-            (client.readContract as any)({
-              address: checksummedUiProvider,
-              abi: USER_RESERVES_ABI,
-              functionName: 'getUserReservesData',
-              args: [checksummedProvider, address],
-            }),
-            (client.readContract as any)({
-              address: checksummedPool,
-              abi: ACCOUNT_DATA_ABI,
-              functionName: 'getUserAccountData',
-              args: [address],
-            }),
-          ]);
+        let rpcSuccess = false;
 
-          anySuccess = true;
+        // ── Try RPC first ──
+        const clientResult = await createClientWithFallback(chainId, rpcUrl);
 
-          // ── Build reserve index map ──
-          // reservesResult[0] = AggregatedReserveData[]
-          // reservesResult[1] = BaseCurrencyInfo
-          const reservesList: any[] = reservesResult[0];
+        if (clientResult) {
+          const { client, rpcUsed } = clientResult;
+          debugEntry.rpcUsed = rpcUsed;
 
-          interface ReserveIndex {
-            liquidityIndex: bigint;
-            variableBorrowIndex: bigint;
-          }
-          const reserveIndexMap = new Map<string, ReserveIndex>();
+          try {
+            // Fetch all three in parallel
+            const [reservesResult, userReservesResult, accountResult] = await Promise.all([
+              (client.readContract as any)({
+                address: checksummedUiProvider,
+                abi: RESERVES_DATA_ABI,
+                functionName: 'getReservesData',
+                args: [checksummedProvider],
+              }),
+              (client.readContract as any)({
+                address: checksummedUiProvider,
+                abi: USER_RESERVES_ABI,
+                functionName: 'getUserReservesData',
+                args: [checksummedProvider, address],
+              }),
+              (client.readContract as any)({
+                address: checksummedPool,
+                abi: ACCOUNT_DATA_ABI,
+                functionName: 'getUserAccountData',
+                args: [address],
+              }),
+            ]);
 
-          if (DEBUG) {
-            console.log(`[AavePositions] ${name}: fetched ${reservesList.length} reserves`);
-          }
+            anySuccess = true;
+            rpcSuccess = true;
+            debugEntry.dataSource = 'rpc';
 
-          for (const rd of reservesList) {
-            const key = rd.underlyingAsset.toLowerCase();
-            reserveIndexMap.set(key, {
-              liquidityIndex: BigInt(rd.liquidityIndex),
-              variableBorrowIndex: BigInt(rd.variableBorrowIndex),
-            });
-          }
-
-          // ── Parse getUserAccountData ──
-          const [
-            totalCollateralBase,
-            totalDebtBase,
-            availableBorrowsBase,
-            _currentLiqThreshold,
-            ltv,
-            healthFactor,
-          ] = accountResult;
-
-          // Aave V3 base currency is USD with 8 decimals
-          const totalCollateralUsd = Number(totalCollateralBase) / 1e8;
-          const totalDebtUsd = Number(totalDebtBase) / 1e8;
-          const availableBorrowsUsd = Number(availableBorrowsBase) / 1e8;
-          const hf = Number(healthFactor) / 1e18;
-
-          if (totalCollateralUsd > 0 || totalDebtUsd > 0) {
-            allAccountData.push({
-              chainId,
-              chainName: name,
-              totalCollateralUsd,
-              totalDebtUsd,
-              availableBorrowsUsd,
-              healthFactor: hf,
-              ltv: Number(ltv) / 100,
-            });
-          }
-
-          // ── Parse getUserReservesData ──
-          const [userReserves] = userReservesResult;
-
-          if (DEBUG) {
-            console.log(
-              `[AavePositions] ${name}: fetched ${userReserves.length} user reserves`,
-            );
-          }
-
-          for (const ur of userReserves) {
-            const scaledSupply = BigInt(ur.scaledATokenBalance || 0n);
-            const scaledVariableDebt = BigInt(ur.scaledVariableDebt || 0n);
-            const principalStableDebt = BigInt(ur.principalStableDebt || 0n);
-
-            // Skip reserves with no position at all
-            if (scaledSupply === 0n && scaledVariableDebt === 0n && principalStableDebt === 0n) {
-              continue;
-            }
-
-            const assetAddr = ur.underlyingAsset.toLowerCase() as string;
-            const indexes = reserveIndexMap.get(assetAddr);
-
-            // ── Ray math: convert scaled → real ──
-            // Use index from getReservesData; if unavailable fall back to 1 RAY (no-op)
-            const liquidityIndex = indexes?.liquidityIndex ?? RAY;
-            const variableBorrowIndex = indexes?.variableBorrowIndex ?? RAY;
-
-            const realSupply = rayMul(scaledSupply, liquidityIndex);
-            const realVariableDebt = rayMul(scaledVariableDebt, variableBorrowIndex);
-            const realTotalDebt = realVariableDebt + principalStableDebt;
-
-            // Skip if real balances round to zero
-            if (realSupply === 0n && realTotalDebt === 0n) continue;
-
-            // Market metadata
-            const market = marketMap.get(`${chainId}-${assetAddr}`);
-            const decimals = market?.decimals ?? 18;
-            const symbol = market?.assetSymbol ?? '???';
-            const assetName = market?.assetName ?? 'Unknown';
-
-            // ── USD pricing ──
-            // Priority: market.priceUsd → stablecoin heuristic → 0
-            let priceUsd = 0;
-            if (market && market.priceUsd > 0) {
-              priceUsd = market.priceUsd;
-            } else if (isStable(symbol)) {
-              priceUsd = 1;
-            }
-
-            const supplyFormatted = formatUnits(realSupply, decimals);
-            const debtFormatted = formatUnits(realTotalDebt, decimals);
-
-            const supplyUsd = parseFloat(supplyFormatted) * priceUsd;
-            const debtUsd = parseFloat(debtFormatted) * priceUsd;
+            // ── Build reserve index map ──
+            const reservesList: any[] = reservesResult[0];
 
             if (DEBUG) {
-              console.log(
-                `[AavePositions] ${name} ${symbol}: scaledSupply=${scaledSupply} liqIdx=${liquidityIndex} → realSupply=${realSupply} (${supplyFormatted}) $${supplyUsd.toFixed(4)}`,
-              );
+              console.log(`[AavePositions] ${name}: fetched ${reservesList.length} reserves via RPC`);
             }
 
-            allPositions.push({
-              chainId,
-              chainName: name,
-              chainLogo: logo,
-              assetAddress: ur.underlyingAsset as `0x${string}`,
-              assetSymbol: symbol,
-              assetName,
-              assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
-              decimals,
-              // Supply
-              supplyBalance: realSupply,
-              supplyBalanceFormatted: supplyFormatted,
-              supplyBalanceUsd: supplyUsd,
-              supplyApy: market?.supplyAPY ?? 0,
-              isCollateralEnabled: ur.usageAsCollateralEnabledOnUser,
-              // Borrow
-              variableDebt: realTotalDebt,
-              variableDebtFormatted: debtFormatted,
-              variableDebtUsd: debtUsd,
-              borrowApy: market?.borrowAPY ?? 0,
-              market,
-            });
+            interface ReserveIndex {
+              liquidityIndex: bigint;
+              variableBorrowIndex: bigint;
+            }
+            const reserveIndexMap = new Map<string, ReserveIndex>();
+
+            for (const rd of reservesList) {
+              reserveIndexMap.set(rd.underlyingAsset.toLowerCase(), {
+                liquidityIndex: BigInt(rd.liquidityIndex),
+                variableBorrowIndex: BigInt(rd.variableBorrowIndex),
+              });
+            }
+
+            // ── Parse getUserAccountData ──
+            const [
+              totalCollateralBase,
+              totalDebtBase,
+              availableBorrowsBase,
+              _currentLiqThreshold,
+              ltv,
+              healthFactor,
+            ] = accountResult;
+
+            // Aave V3 base currency is USD with 8 decimals
+            const totalCollateralUsd = Number(totalCollateralBase) / 1e8;
+            const totalDebtUsd = Number(totalDebtBase) / 1e8;
+            const availableBorrowsUsd = Number(availableBorrowsBase) / 1e8;
+            const hf = Number(healthFactor) / 1e18;
+
+            if (totalCollateralUsd > 0 || totalDebtUsd > 0) {
+              allAccountData.push({
+                chainId,
+                chainName: name,
+                totalCollateralUsd,
+                totalDebtUsd,
+                availableBorrowsUsd,
+                healthFactor: hf,
+                ltv: Number(ltv) / 100,
+                dataSource: 'rpc',
+              });
+              debugEntry.accountDataFetched = true;
+            }
+
+            // ── Parse getUserReservesData ──
+            const [userReserves] = userReservesResult;
+
+            if (DEBUG) {
+              console.log(`[AavePositions] ${name}: ${userReserves.length} user reserves`);
+            }
+
+            for (const ur of userReserves) {
+              const scaledSupply = BigInt(ur.scaledATokenBalance || 0n);
+              const scaledVariableDebt = BigInt(ur.scaledVariableDebt || 0n);
+              const principalStableDebt = BigInt(ur.principalStableDebt || 0n);
+
+              if (scaledSupply === 0n && scaledVariableDebt === 0n && principalStableDebt === 0n) continue;
+
+              const assetAddr = ur.underlyingAsset.toLowerCase() as string;
+              const indexes = reserveIndexMap.get(assetAddr);
+
+              const liquidityIndex = indexes?.liquidityIndex ?? RAY;
+              const variableBorrowIndex = indexes?.variableBorrowIndex ?? RAY;
+
+              // Ray math: scaled → real
+              const realSupply = rayMul(scaledSupply, liquidityIndex);
+              const realVariableDebt = rayMul(scaledVariableDebt, variableBorrowIndex);
+              const realTotalDebt = realVariableDebt + principalStableDebt;
+
+              if (realSupply === 0n && realTotalDebt === 0n) continue;
+
+              const market = marketMap.get(`${chainId}-${assetAddr}`);
+              const decimals = market?.decimals ?? 18;
+              const symbol = market?.assetSymbol ?? ur.symbol ?? '???';
+              const assetName = market?.assetName ?? 'Unknown';
+
+              let priceUsd = 0;
+              if (market && market.priceUsd > 0) {
+                priceUsd = market.priceUsd;
+              } else if (isStable(symbol)) {
+                priceUsd = 1;
+              }
+
+              const supplyFormatted = formatUnits(realSupply, decimals);
+              const debtFormatted = formatUnits(realTotalDebt, decimals);
+              const supplyUsd = parseFloat(supplyFormatted) * priceUsd;
+              const debtUsd = parseFloat(debtFormatted) * priceUsd;
+
+              if (DEBUG) {
+                console.log(
+                  `[AavePositions] ${name} ${symbol}: scaled=${scaledSupply} idx=${liquidityIndex} → real=${realSupply} (${supplyFormatted}) $${supplyUsd.toFixed(4)}`,
+                );
+              }
+
+              allPositions.push({
+                chainId,
+                chainName: name,
+                chainLogo: logo,
+                assetAddress: ur.underlyingAsset as `0x${string}`,
+                assetSymbol: symbol,
+                assetName,
+                assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
+                decimals,
+                supplyBalance: realSupply,
+                supplyBalanceFormatted: supplyFormatted,
+                supplyBalanceUsd: supplyUsd,
+                supplyApy: market?.supplyAPY ?? 0,
+                isCollateralEnabled: ur.usageAsCollateralEnabledOnUser,
+                variableDebt: realTotalDebt,
+                variableDebtFormatted: debtFormatted,
+                variableDebtUsd: debtUsd,
+                borrowApy: market?.borrowAPY ?? 0,
+                dataSource: 'rpc',
+                market,
+              });
+
+              debugEntry.positionsFound++;
+            }
+          } catch (err) {
+            console.error(`[AavePositions] RPC contract reads failed for ${name}:`, err);
+            debugEntry.error = String(err);
+            // Fall through to subgraph
           }
-        } catch (err) {
-          console.error(`[AavePositions] Failed for ${name} (${chainId}):`, err);
-          // Continue — don't fail entire hook
         }
+
+        // ── Subgraph fallback ──
+        if (!rpcSuccess && aaveSubgraph) {
+          if (DEBUG) console.log(`[AavePositions] Falling back to subgraph for ${name}`);
+          debugEntry.dataSource = 'subgraph';
+          debugEntry.rpcUsed = 'SUBGRAPH';
+
+          try {
+            const { reserves, account } = await fetchPositionsFromSubgraph(aaveSubgraph, address);
+
+            anySuccess = true;
+
+            if (account && (account.totalCollateralUSD > 0 || account.totalDebtUSD > 0)) {
+              allAccountData.push({
+                chainId,
+                chainName: name,
+                totalCollateralUsd: account.totalCollateralUSD,
+                totalDebtUsd: account.totalDebtUSD,
+                availableBorrowsUsd: account.availableBorrowsUSD,
+                healthFactor: account.healthFactor,
+                ltv: account.ltv,
+                dataSource: 'subgraph',
+              });
+              debugEntry.accountDataFetched = true;
+            }
+
+            for (const sr of reserves) {
+              const assetAddr = sr.underlyingAssetAddress.toLowerCase();
+              const market = marketMap.get(`${chainId}-${assetAddr}`);
+              const decimals = sr.decimals || market?.decimals || 18;
+              const symbol = market?.assetSymbol ?? sr.symbol ?? '???';
+              const assetName = market?.assetName ?? 'Unknown';
+
+              // Subgraph returns real balances (not scaled)
+              const realSupply = BigInt(sr.currentATokenBalance);
+              const realTotalDebt = BigInt(sr.currentVariableDebt);
+
+              if (realSupply === 0n && realTotalDebt === 0n) continue;
+
+              let priceUsd = 0;
+              if (market && market.priceUsd > 0) {
+                priceUsd = market.priceUsd;
+              } else if (isStable(symbol)) {
+                priceUsd = 1;
+              }
+
+              const supplyFormatted = formatUnits(realSupply, decimals);
+              const debtFormatted = formatUnits(realTotalDebt, decimals);
+              const supplyUsd = parseFloat(supplyFormatted) * priceUsd;
+              const debtUsd = parseFloat(debtFormatted) * priceUsd;
+
+              if (DEBUG) {
+                console.log(
+                  `[AavePositions][SUBGRAPH] ${name} ${symbol}: supply=${supplyFormatted} $${supplyUsd.toFixed(4)}`,
+                );
+              }
+
+              allPositions.push({
+                chainId,
+                chainName: name,
+                chainLogo: logo,
+                assetAddress: sr.underlyingAssetAddress as `0x${string}`,
+                assetSymbol: symbol,
+                assetName,
+                assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
+                decimals,
+                supplyBalance: realSupply,
+                supplyBalanceFormatted: supplyFormatted,
+                supplyBalanceUsd: supplyUsd,
+                supplyApy: market?.supplyAPY ?? 0,
+                isCollateralEnabled: sr.usageAsCollateralEnabledOnUser,
+                variableDebt: realTotalDebt,
+                variableDebtFormatted: debtFormatted,
+                variableDebtUsd: debtUsd,
+                borrowApy: market?.borrowAPY ?? 0,
+                dataSource: 'subgraph',
+                market,
+              });
+
+              debugEntry.positionsFound++;
+            }
+          } catch (sgErr) {
+            console.error(`[AavePositions] Subgraph also failed for ${name}:`, sgErr);
+            debugEntry.error = (debugEntry.error ? debugEntry.error + ' | ' : '') + String(sgErr);
+            debugEntry.dataSource = 'failed';
+          }
+        } else if (!rpcSuccess && !aaveSubgraph) {
+          if (DEBUG) console.warn(`[AavePositions] No RPC and no subgraph for ${name}`);
+        }
+
+        allDebugInfo.push(debugEntry);
       }),
     );
 
     setPositions(allPositions);
     setChainAccountData(allAccountData);
+    setDebugInfo(allDebugInfo);
     setLoading(false);
 
     if (!anySuccess && allPositions.length === 0) {
-      setError('Could not connect to any RPC endpoint.');
+      setError('Could not connect to any RPC endpoint or subgraph. Check browser console for details.');
     }
   }, [address, isConnected, markets]);
 
   useEffect(() => {
-    if (markets.length > 0) {
+    if (markets.length > 0 || (isConnected && address)) {
       fetchPositions();
     }
-  }, [fetchPositions, markets.length]);
+  }, [fetchPositions, markets.length, isConnected, address]);
 
   const totalSupplyUsd = useMemo(
     () => positions.reduce((acc, p) => acc + p.supplyBalanceUsd, 0),
@@ -562,5 +793,6 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     totalBorrowUsd,
     totalCollateralUsd,
     lowestHealthFactor,
+    debugInfo,
   };
 }
