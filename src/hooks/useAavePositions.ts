@@ -25,6 +25,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from 'wagmi';
 import { createPublicClient, http, fallback, formatUnits, getAddress } from 'viem';
+import { normalizeAddress, tryNormalizeAddress } from '@/lib/address';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getFallbackRpcs } from '@/lib/chainConfig';
 import { getAaveAddresses } from '@/lib/aaveAddressBook';
@@ -456,9 +457,13 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     let anySuccess = false;
 
     // Build market lookup: chainId-assetAddress(lower) → LendingMarket
+    // Normalize market addresses defensively to ensure consistent keys
     const marketMap = new Map<string, LendingMarket>();
     for (const m of markets) {
-      marketMap.set(`${m.chainId}-${m.assetAddress.toLowerCase()}`, m);
+      const normalizedMarketAddr = tryNormalizeAddress(m.assetAddress);
+      if (normalizedMarketAddr) {
+        marketMap.set(`${m.chainId}-${normalizedMarketAddr.toLowerCase()}`, m);
+      }
     }
 
     // Process all chains in parallel; failures are isolated per-chain
@@ -531,10 +536,20 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             }
             const reserveIndexMap = new Map<string, ReserveIndex>();
             for (const rd of reservesList) {
-              reserveIndexMap.set(rd.underlyingAsset.toLowerCase(), {
+              // CRITICAL: normalize address — viem may return Uint8Array or number[]
+              const normalizedAsset = tryNormalizeAddress(rd.underlyingAsset);
+              if (!normalizedAsset) {
+                if (DEBUG) console.warn(`[AavePositions] ${name}: could not normalize reserve asset`, typeof rd.underlyingAsset, rd.underlyingAsset);
+                continue;
+              }
+              reserveIndexMap.set(normalizedAsset.toLowerCase(), {
                 liquidityIndex: BigInt(rd.liquidityIndex),
                 variableBorrowIndex: BigInt(rd.variableBorrowIndex),
               });
+            }
+
+            if (DEBUG) {
+              console.log(`[AavePositions] ${name}: reserveIndexMap has ${reserveIndexMap.size} entries`);
             }
 
             // ── Parse getUserAccountData ──
@@ -576,71 +591,95 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             }
 
             for (const ur of userReserves) {
-              const scaledSupply = BigInt(ur.scaledATokenBalance || 0n);
-              const scaledVariableDebt = BigInt(ur.scaledVariableDebt || 0n);
-              const principalStableDebt = BigInt(ur.principalStableDebt || 0n);
+              // Per-reserve try/catch: one bad asset must not crash the whole chain
+              try {
+                const scaledSupply = BigInt(ur.scaledATokenBalance || 0n);
+                const scaledVariableDebt = BigInt(ur.scaledVariableDebt || 0n);
+                const principalStableDebt = BigInt(ur.principalStableDebt || 0n);
 
-              if (scaledSupply === 0n && scaledVariableDebt === 0n && principalStableDebt === 0n) continue;
+                if (scaledSupply === 0n && scaledVariableDebt === 0n && principalStableDebt === 0n) continue;
 
-              const assetAddr = ur.underlyingAsset.toLowerCase() as string;
-              const indexes = reserveIndexMap.get(assetAddr);
+                // Normalize address — core fix for Bytes value error
+                const normalizedAsset = tryNormalizeAddress(ur.underlyingAsset);
+                if (!normalizedAsset) {
+                  if (DEBUG) {
+                    console.warn(
+                      `[AavePositions] ${name}: could not normalize user reserve asset`,
+                      `type=${typeof ur.underlyingAsset}`,
+                      `isArray=${Array.isArray(ur.underlyingAsset)}`,
+                      `isUint8Array=${ur.underlyingAsset instanceof Uint8Array}`,
+                      `value=${String(ur.underlyingAsset).slice(0, 40)}`,
+                    );
+                  }
+                  continue;
+                }
 
-              const liquidityIndex = indexes?.liquidityIndex ?? RAY;
-              const variableBorrowIndex = indexes?.variableBorrowIndex ?? RAY;
+                const assetAddr = normalizedAsset.toLowerCase();
+                const indexes = reserveIndexMap.get(assetAddr);
 
-              // Ray math: scaled → real
-              const realSupply = rayMul(scaledSupply, liquidityIndex);
-              const realVariableDebt = rayMul(scaledVariableDebt, variableBorrowIndex);
-              const realTotalDebt = realVariableDebt + principalStableDebt;
+                const liquidityIndex = indexes?.liquidityIndex ?? RAY;
+                const variableBorrowIndex = indexes?.variableBorrowIndex ?? RAY;
 
-              if (realSupply === 0n && realTotalDebt === 0n) continue;
+                // Ray math: scaled → real
+                const realSupply = rayMul(scaledSupply, liquidityIndex);
+                const realVariableDebt = rayMul(scaledVariableDebt, variableBorrowIndex);
+                const realTotalDebt = realVariableDebt + principalStableDebt;
 
-              const market = marketMap.get(`${chainId}-${assetAddr}`);
-              const decimals = market?.decimals ?? 18;
-              const symbol = market?.assetSymbol ?? '???';
-              const assetName = market?.assetName ?? 'Unknown';
+                if (realSupply === 0n && realTotalDebt === 0n) continue;
 
-              let priceUsd = 0;
-              if (market && market.priceUsd > 0) {
-                priceUsd = market.priceUsd;
-              } else if (isStable(symbol)) {
-                priceUsd = 1;
+                const market = marketMap.get(`${chainId}-${assetAddr}`);
+                const decimals = market?.decimals ?? 18;
+                const symbol = market?.assetSymbol ?? '???';
+                const assetName = market?.assetName ?? 'Unknown';
+
+                let priceUsd = 0;
+                if (market && market.priceUsd > 0) {
+                  priceUsd = market.priceUsd;
+                } else if (isStable(symbol)) {
+                  priceUsd = 1;
+                }
+
+                const supplyFormatted = formatUnits(realSupply, decimals);
+                const debtFormatted = formatUnits(realTotalDebt, decimals);
+                const supplyUsd = parseFloat(supplyFormatted) * priceUsd;
+                const debtUsd = parseFloat(debtFormatted) * priceUsd;
+
+                if (DEBUG) {
+                  console.log(
+                    `[AavePositions] ${name} ${symbol}: scaled=${scaledSupply} idx=${liquidityIndex} → real=${realSupply} (${supplyFormatted}) $${supplyUsd.toFixed(4)}`,
+                    `normalizedAsset=${normalizedAsset}`,
+                  );
+                }
+
+                allPositions.push({
+                  chainId,
+                  chainName: name,
+                  chainLogo: logo,
+                  assetAddress: normalizedAsset,
+                  assetSymbol: symbol,
+                  assetName,
+                  assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
+                  decimals,
+                  supplyBalance: realSupply,
+                  supplyBalanceFormatted: supplyFormatted,
+                  supplyBalanceUsd: supplyUsd,
+                  supplyApy: market?.supplyAPY ?? 0,
+                  isCollateralEnabled: ur.usageAsCollateralEnabledOnUser,
+                  variableDebt: realTotalDebt,
+                  variableDebtFormatted: debtFormatted,
+                  variableDebtUsd: debtUsd,
+                  borrowApy: market?.borrowAPY ?? 0,
+                  dataSource: 'rpc',
+                  market,
+                });
+
+                debugEntry.positionsFound++;
+              } catch (reserveErr) {
+                if (DEBUG) {
+                  console.warn(`[AavePositions] ${name}: skipping reserve due to error:`, reserveErr);
+                }
+                // Continue to next reserve — don't crash the chain
               }
-
-              const supplyFormatted = formatUnits(realSupply, decimals);
-              const debtFormatted = formatUnits(realTotalDebt, decimals);
-              const supplyUsd = parseFloat(supplyFormatted) * priceUsd;
-              const debtUsd = parseFloat(debtFormatted) * priceUsd;
-
-              if (DEBUG) {
-                console.log(
-                  `[AavePositions] ${name} ${symbol}: scaled=${scaledSupply} idx=${liquidityIndex} → real=${realSupply} (${supplyFormatted}) $${supplyUsd.toFixed(4)}`,
-                );
-              }
-
-              allPositions.push({
-                chainId,
-                chainName: name,
-                chainLogo: logo,
-                assetAddress: ur.underlyingAsset as `0x${string}`,
-                assetSymbol: symbol,
-                assetName,
-                assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
-                decimals,
-                supplyBalance: realSupply,
-                supplyBalanceFormatted: supplyFormatted,
-                supplyBalanceUsd: supplyUsd,
-                supplyApy: market?.supplyAPY ?? 0,
-                isCollateralEnabled: ur.usageAsCollateralEnabledOnUser,
-                variableDebt: realTotalDebt,
-                variableDebtFormatted: debtFormatted,
-                variableDebtUsd: debtUsd,
-                borrowApy: market?.borrowAPY ?? 0,
-                dataSource: 'rpc',
-                market,
-              });
-
-              debugEntry.positionsFound++;
             }
           } catch (err) {
             console.error(`[AavePositions] RPC reads failed for ${name}:`, err);
@@ -675,11 +714,19 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             }
 
             for (const sr of reserves) {
-              const assetAddr = sr.underlyingAssetAddress.toLowerCase();
-              const market = marketMap.get(`${chainId}-${assetAddr}`);
-              const decimals = sr.decimals || market?.decimals || 18;
-              const symbol = market?.assetSymbol ?? sr.symbol ?? '???';
-              const assetName = market?.assetName ?? 'Unknown';
+              try {
+                // Normalize subgraph address (usually already 0x string, but be safe)
+                const normalizedSgAsset = tryNormalizeAddress(sr.underlyingAssetAddress);
+                if (!normalizedSgAsset) {
+                  if (DEBUG) console.warn(`[AavePositions][SUBGRAPH] ${name}: bad address`, sr.underlyingAssetAddress);
+                  continue;
+                }
+
+                const assetAddr = normalizedSgAsset.toLowerCase();
+                const market = marketMap.get(`${chainId}-${assetAddr}`);
+                const decimals = sr.decimals || market?.decimals || 18;
+                const symbol = market?.assetSymbol ?? sr.symbol ?? '???';
+                const assetName = market?.assetName ?? 'Unknown';
 
               // Subgraph returns real balances (not scaled)
               const realSupply = BigInt(sr.currentATokenBalance);
@@ -709,7 +756,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                 chainId,
                 chainName: name,
                 chainLogo: logo,
-                assetAddress: sr.underlyingAssetAddress as `0x${string}`,
+                assetAddress: normalizedSgAsset,
                 assetSymbol: symbol,
                 assetName,
                 assetLogo: market?.assetLogo ?? getTokenLogo(symbol),
@@ -728,6 +775,9 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               });
 
               debugEntry.positionsFound++;
+              } catch (srErr) {
+                if (DEBUG) console.warn(`[AavePositions][SUBGRAPH] ${name}: skipping reserve:`, srErr);
+              }
             }
           } catch (sgErr) {
             console.error(`[AavePositions] Subgraph also failed for ${name}:`, sgErr);
