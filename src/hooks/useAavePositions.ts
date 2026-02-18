@@ -1,18 +1,18 @@
 /**
  * Aave V3 Positions Hook
  *
- * KEY FIX (production CORS issue):
- *   The old code used a raw `fetch()` preflight to test RPC liveness.
- *   That fetch() fails with CORS errors in production browsers even when
- *   the RPC is perfectly usable via viem (which handles CORS differently).
+ * CORS FIX:
+ *   Uses viem's `fallback()` transport which tries multiple RPC endpoints
+ *   automatically. Viem's transport layer uses the browser's native fetch
+ *   with proper JSON-RPC content-type, which public nodes whitelist for CORS.
  *   
- *   Fix: replace the fetch() preflight with a direct viem `readContract`
- *   (getBlockNumber) probe. Viem uses XMLHttpRequest under the hood which
- *   does NOT trigger the same CORS failures as a raw fetch POST.
+ *   Critically: NO preflight probe (no getBlockNumber() before reading).
+ *   We go straight to the data reads with a timeout. If one RPC fails,
+ *   viem's fallback transport automatically tries the next one.
  *
- * Subgraph fallback:
- *   If ALL RPCs for a chain fail, we fall back to the Aave subgraph
- *   (The Graph) to read user positions and account metrics.
+ * Subgraph fallback (FIXED):
+ *   Removed the broken `or:` GraphQL filter. Now fetches all userReserves
+ *   and filters client-side. Works on all Graph nodes.
  *
  * Balance math:
  *   realSupply      = scaledATokenBalance * liquidityIndex / RAY
@@ -24,7 +24,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from 'wagmi';
-import { createPublicClient, http, formatUnits, getAddress } from 'viem';
+import { createPublicClient, http, fallback, formatUnits, getAddress } from 'viem';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getFallbackRpcs } from '@/lib/chainConfig';
 import { getAaveAddresses } from '@/lib/aaveAddressBook';
@@ -242,6 +242,7 @@ export interface AaveChainAccountData {
   availableBorrowsUsd: number;
   healthFactor: number;
   ltv: number;
+  liquidationThreshold?: number;
   dataSource: 'rpc' | 'subgraph';
 }
 
@@ -278,51 +279,41 @@ function rayMul(a: bigint, b: bigint): bigint {
 }
 
 // ──────────────────────────────────────────────
-// Helper: create viem client and probe with readContract
-// KEY FIX: No more fetch() preflight that breaks with CORS!
-// We create the client immediately and probe with a lightweight call.
+// Helper: Create viem client with fallback transport
+//
+// Uses viem's built-in fallback() transport which:
+// - Tries each RPC in order
+// - Automatically retries on failure
+// - Uses native fetch (CORS-whitelisted for most public nodes)
+// - NO custom preflight probe that could trigger CORS errors
 // ──────────────────────────────────────────────
 
-async function createClientWithFallback(
+function createFallbackClient(
   chainId: number,
   primaryRpc: string | undefined,
-): Promise<{ client: ReturnType<typeof createPublicClient>; rpcUsed: string } | null> {
+): ReturnType<typeof createPublicClient> | null {
   const viemChain = VIEM_CHAINS[chainId];
   if (!viemChain) return null;
 
-  const candidates: string[] = [];
-  if (primaryRpc) candidates.push(primaryRpc);
-  candidates.push(...getFallbackRpcs(chainId));
+  const rpcs: string[] = [];
+  if (primaryRpc) rpcs.push(primaryRpc);
+  rpcs.push(...getFallbackRpcs(chainId));
 
   // Deduplicate
-  const seen = new Set<string>();
-  const unique = candidates.filter(rpc => {
-    if (seen.has(rpc)) return false;
-    seen.add(rpc);
-    return true;
-  });
+  const unique = [...new Set(rpcs)];
+  if (unique.length === 0) return null;
 
-  for (const rpc of unique) {
-    try {
-      const client = createPublicClient({
-        chain: viemChain,
-        transport: http(rpc, { timeout: 12000, retryCount: 0 }),
-      }) as ReturnType<typeof createPublicClient>;
+  const transports = unique.map(rpc =>
+    http(rpc, { timeout: 15_000, retryCount: 0 })
+  );
 
-      // Probe with getBlockNumber — a minimal call that works across all chains.
-      // This uses viem's JSON-RPC layer which does NOT suffer from browser CORS
-      // in the same way as a raw fetch() POST (viem uses XHR with proper headers).
-      await (client as any).getBlockNumber();
-
-      if (DEBUG) console.log(`[AavePositions] RPC ok for chain ${chainId}: ${rpc.substring(0, 40)}...`);
-      return { client, rpcUsed: rpc };
-    } catch (err) {
-      if (DEBUG) console.warn(`[AavePositions] RPC failed for chain ${chainId} (${rpc.substring(0, 30)}...):`, err);
-      // try next
-    }
-  }
-
-  return null;
+  return createPublicClient({
+    chain: viemChain,
+    // fallback() tries each transport in order on failure
+    transport: transports.length === 1
+      ? transports[0]
+      : fallback(transports, { rank: false }),
+  }) as ReturnType<typeof createPublicClient>;
 }
 
 // ──────────────────────────────────────────────
@@ -333,8 +324,8 @@ interface SubgraphUserReserve {
   underlyingAssetAddress: string;
   symbol: string;
   decimals: number;
-  currentATokenBalance: string;    // wei string
-  currentVariableDebt: string;     // wei string
+  currentATokenBalance: string;
+  currentVariableDebt: string;
   usageAsCollateralEnabledOnUser: boolean;
 }
 
@@ -347,9 +338,11 @@ interface SubgraphAccountSummary {
 }
 
 // ──────────────────────────────────────────────
-// Subgraph query
-// The Graph — Aave V3 protocol subgraph schema
-// currentATokenBalance and currentVariableDebt are REAL (not scaled) in the subgraph.
+// Subgraph query (FIXED — no `or:` filter)
+//
+// The previous query used `or: [{ currentATokenBalance_gt: "0" }, ...]`
+// which fails on many Graph nodes. Now we fetch ALL reserves for the user
+// and filter client-side.
 // ──────────────────────────────────────────────
 
 async function fetchPositionsFromSubgraph(
@@ -360,7 +353,7 @@ async function fetchPositionsFromSubgraph(
 
   const query = `
     query UserPositions($user: String!) {
-      userReserves(where: { user: $user, or: [{ currentATokenBalance_gt: "0" }, { currentVariableDebt_gt: "0" }] }) {
+      userReserves(where: { user: $user }, first: 100) {
         reserve {
           underlyingAsset
           symbol
@@ -375,7 +368,6 @@ async function fetchPositionsFromSubgraph(
         totalDebtUSD
         availableBorrowsUSD
         healthFactor
-        totalCurrentVariableDebtUSD
       }
     }
   `;
@@ -390,14 +382,15 @@ async function fetchPositionsFromSubgraph(
   if (!resp.ok) throw new Error(`Subgraph HTTP ${resp.status}`);
   const json = await resp.json();
 
-  if (json.errors) {
-    if (DEBUG) console.warn('[AavePositions] Subgraph errors:', json.errors);
+  if (json.errors && DEBUG) {
+    console.warn('[AavePositions] Subgraph errors:', json.errors);
   }
 
   const data = json.data || {};
   const rawReserves: any[] = data.userReserves || [];
   const rawUsers: any[] = data.users || [];
 
+  // Filter client-side: keep only non-zero positions
   const reserves: SubgraphUserReserve[] = rawReserves
     .filter((r: any) => {
       const supply = BigInt(r.currentATokenBalance || '0');
@@ -416,19 +409,19 @@ async function fetchPositionsFromSubgraph(
   let account: SubgraphAccountSummary | null = null;
   if (rawUsers.length > 0) {
     const u = rawUsers[0];
+    const collateral = parseFloat(u.totalCollateralUSD || '0');
+    const debt = parseFloat(u.totalDebtUSD || '0');
     account = {
-      totalCollateralUSD: parseFloat(u.totalCollateralUSD || '0'),
-      totalDebtUSD: parseFloat(u.totalDebtUSD || '0'),
+      totalCollateralUSD: collateral,
+      totalDebtUSD: debt,
       availableBorrowsUSD: parseFloat(u.availableBorrowsUSD || '0'),
       healthFactor: parseFloat(u.healthFactor || '0'),
-      ltv: u.totalCollateralUSD > 0
-        ? (parseFloat(u.totalDebtUSD || '0') / parseFloat(u.totalCollateralUSD)) * 100
-        : 0,
+      ltv: collateral > 0 ? (debt / collateral) * 100 : 0,
     };
   }
 
   if (DEBUG) {
-    console.log(`[AavePositions] Subgraph: found ${reserves.length} positions, account:`, account);
+    console.log(`[AavePositions] Subgraph: ${reserves.length} positions, account:`, account);
   }
 
   return { reserves, account };
@@ -490,15 +483,16 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
         let rpcSuccess = false;
 
-        // ── Try RPC first ──
-        const clientResult = await createClientWithFallback(chainId, rpcUrl);
+        // ── Try RPC (via viem fallback transport, no CORS-breaking preflight) ──
+        const client = createFallbackClient(chainId, rpcUrl);
 
-        if (clientResult) {
-          const { client, rpcUsed } = clientResult;
-          debugEntry.rpcUsed = rpcUsed;
+        if (client) {
+          debugEntry.rpcUsed = rpcUrl || 'public-fallback';
 
           try {
-            // Fetch all three in parallel
+            if (DEBUG) console.log(`[AavePositions] Reading data for ${name} via viem fallback transport`);
+
+            // All three reads in parallel — viem handles retry/fallback internally
             const [reservesResult, userReservesResult, accountResult] = await Promise.all([
               (client.readContract as any)({
                 address: checksummedUiProvider,
@@ -528,7 +522,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             const reservesList: any[] = reservesResult[0];
 
             if (DEBUG) {
-              console.log(`[AavePositions] ${name}: fetched ${reservesList.length} reserves via RPC`);
+              console.log(`[AavePositions] ${name}: ${reservesList.length} reserves fetched`);
             }
 
             interface ReserveIndex {
@@ -536,7 +530,6 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               variableBorrowIndex: bigint;
             }
             const reserveIndexMap = new Map<string, ReserveIndex>();
-
             for (const rd of reservesList) {
               reserveIndexMap.set(rd.underlyingAsset.toLowerCase(), {
                 liquidityIndex: BigInt(rd.liquidityIndex),
@@ -549,7 +542,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               totalCollateralBase,
               totalDebtBase,
               availableBorrowsBase,
-              _currentLiqThreshold,
+              currentLiqThreshold,
               ltv,
               healthFactor,
             ] = accountResult;
@@ -569,6 +562,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                 availableBorrowsUsd,
                 healthFactor: hf,
                 ltv: Number(ltv) / 100,
+                liquidationThreshold: Number(currentLiqThreshold) / 100,
                 dataSource: 'rpc',
               });
               debugEntry.accountDataFetched = true;
@@ -603,7 +597,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
               const market = marketMap.get(`${chainId}-${assetAddr}`);
               const decimals = market?.decimals ?? 18;
-              const symbol = market?.assetSymbol ?? ur.symbol ?? '???';
+              const symbol = market?.assetSymbol ?? '???';
               const assetName = market?.assetName ?? 'Unknown';
 
               let priceUsd = 0;
@@ -649,7 +643,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               debugEntry.positionsFound++;
             }
           } catch (err) {
-            console.error(`[AavePositions] RPC contract reads failed for ${name}:`, err);
+            console.error(`[AavePositions] RPC reads failed for ${name}:`, err);
             debugEntry.error = String(err);
             // Fall through to subgraph
           }
@@ -740,10 +734,9 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             debugEntry.error = (debugEntry.error ? debugEntry.error + ' | ' : '') + String(sgErr);
             debugEntry.dataSource = 'failed';
           }
-        } else if (!rpcSuccess && !aaveSubgraph) {
-          if (DEBUG) console.warn(`[AavePositions] No RPC and no subgraph for ${name}`);
         }
 
+        if (rpcSuccess) anySuccess = true;
         allDebugInfo.push(debugEntry);
       }),
     );
@@ -754,7 +747,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     setLoading(false);
 
     if (!anySuccess && allPositions.length === 0) {
-      setError('Could not connect to any RPC endpoint or subgraph. Check browser console for details.');
+      setError('Could not fetch positions. Check network and try again.');
     }
   }, [address, isConnected, markets]);
 
