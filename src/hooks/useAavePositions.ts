@@ -24,8 +24,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from 'wagmi';
-import { createPublicClient, http, fallback, formatUnits, getAddress } from 'viem';
-import { normalizeAddress, tryNormalizeAddress } from '@/lib/address';
+import { createPublicClient, http, fallback, formatUnits, getAddress, parseAbi } from 'viem';
+import { tryNormalizeAddress } from '@/lib/address';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getFallbackRpcs } from '@/lib/chainConfig';
 import { getAaveAddresses } from '@/lib/aaveAddressBook';
@@ -61,124 +61,19 @@ const VIEM_CHAINS: Record<number, any> = {
 // ABIs
 // ──────────────────────────────────────────────
 
-const RESERVES_DATA_ABI = [
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' },
-    ],
-    name: 'getReservesData',
-    outputs: [
-      {
-        components: [
-          { internalType: 'address', name: 'underlyingAsset', type: 'address' },
-          { internalType: 'string', name: 'name', type: 'string' },
-          { internalType: 'string', name: 'symbol', type: 'string' },
-          { internalType: 'uint256', name: 'decimals', type: 'uint256' },
-          { internalType: 'uint256', name: 'baseLTVasCollateral', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationThreshold', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationBonus', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveFactor', type: 'uint256' },
-          { internalType: 'bool', name: 'usageAsCollateralEnabled', type: 'bool' },
-          { internalType: 'bool', name: 'borrowingEnabled', type: 'bool' },
-          { internalType: 'bool', name: 'isActive', type: 'bool' },
-          { internalType: 'bool', name: 'isFrozen', type: 'bool' },
-          { internalType: 'uint128', name: 'liquidityIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'liquidityRate', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowRate', type: 'uint128' },
-          { internalType: 'uint40', name: 'lastUpdateTimestamp', type: 'uint40' },
-          { internalType: 'address', name: 'aTokenAddress', type: 'address' },
-          { internalType: 'address', name: 'variableDebtTokenAddress', type: 'address' },
-          { internalType: 'address', name: 'interestRateStrategyAddress', type: 'address' },
-          { internalType: 'uint256', name: 'availableLiquidity', type: 'uint256' },
-          { internalType: 'uint256', name: 'totalScaledVariableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'priceInMarketReferenceCurrency', type: 'uint256' },
-          { internalType: 'address', name: 'priceOracle', type: 'address' },
-          { internalType: 'uint256', name: 'variableRateSlope1', type: 'uint256' },
-          { internalType: 'uint256', name: 'variableRateSlope2', type: 'uint256' },
-          { internalType: 'uint256', name: 'baseVariableBorrowRate', type: 'uint256' },
-          { internalType: 'uint256', name: 'optimalUsageRatio', type: 'uint256' },
-          { internalType: 'bool', name: 'isPaused', type: 'bool' },
-          { internalType: 'bool', name: 'isSiloedBorrowing', type: 'bool' },
-          { internalType: 'uint128', name: 'accruedToTreasury', type: 'uint128' },
-          { internalType: 'uint128', name: 'unbacked', type: 'uint128' },
-          { internalType: 'uint128', name: 'isolationModeTotalDebt', type: 'uint128' },
-          { internalType: 'bool', name: 'flashLoanEnabled', type: 'bool' },
-          { internalType: 'uint256', name: 'debtCeiling', type: 'uint256' },
-          { internalType: 'uint256', name: 'debtCeilingDecimals', type: 'uint256' },
-          { internalType: 'uint8', name: 'eModeCategoryId', type: 'uint8' },
-          { internalType: 'uint256', name: 'borrowCap', type: 'uint256' },
-          { internalType: 'uint256', name: 'supplyCap', type: 'uint256' },
-          { internalType: 'bool', name: 'borrowableInIsolation', type: 'bool' },
-          { internalType: 'bool', name: 'virtualAccActive', type: 'bool' },
-          { internalType: 'uint128', name: 'virtualUnderlyingBalance', type: 'uint128' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.AggregatedReserveData[]',
-        name: '',
-        type: 'tuple[]',
-      },
-      {
-        components: [
-          { internalType: 'uint256', name: 'marketReferenceCurrencyUnit', type: 'uint256' },
-          { internalType: 'int256', name: 'marketReferenceCurrencyPriceInUsd', type: 'int256' },
-          { internalType: 'int256', name: 'networkBaseTokenPriceInUsd', type: 'int256' },
-          { internalType: 'uint8', name: 'networkBaseTokenPriceDecimals', type: 'uint8' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.BaseCurrencyInfo',
-        name: '',
-        type: 'tuple',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
+// Use parseAbi for strongly-typed, correctly-encoded ABIs.
+// This avoids viem mis-encoding struct fields as bytes arrays when using hand-written objects.
+const UI_POOL_ABI = parseAbi([
+  'function getReservesData(address provider) view returns ((address underlyingAsset, string name, string symbol, uint256 decimals, uint256 baseLTVasCollateral, uint256 reserveLiquidationThreshold, uint256 reserveLiquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool isActive, bool isFrozen, uint128 liquidityIndex, uint128 variableBorrowIndex, uint128 liquidityRate, uint128 variableBorrowRate, uint40 lastUpdateTimestamp, address aTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint256 availableLiquidity, uint256 totalScaledVariableDebt, uint256 priceInMarketReferenceCurrency, address priceOracle, uint256 variableRateSlope1, uint256 variableRateSlope2, uint256 baseVariableBorrowRate, uint256 optimalUsageRatio, bool isPaused, bool isSiloedBorrowing, uint128 accruedToTreasury, uint128 unbacked, uint128 isolationModeTotalDebt, bool flashLoanEnabled, uint256 debtCeiling, uint256 debtCeilingDecimals, uint8 eModeCategoryId, uint256 borrowCap, uint256 supplyCap, bool borrowableInIsolation, bool virtualAccActive, uint128 virtualUnderlyingBalance)[], (uint256 marketReferenceCurrencyUnit, int256 marketReferenceCurrencyPriceInUsd, int256 networkBaseTokenPriceInUsd, uint8 networkBaseTokenPriceDecimals))',
+]);
 
-const USER_RESERVES_ABI = [
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' },
-      { internalType: 'address', name: 'user', type: 'address' },
-    ],
-    name: 'getUserReservesData',
-    outputs: [
-      {
-        components: [
-          { internalType: 'address', name: 'underlyingAsset', type: 'address' },
-          { internalType: 'uint256', name: 'scaledATokenBalance', type: 'uint256' },
-          { internalType: 'bool', name: 'usageAsCollateralEnabledOnUser', type: 'bool' },
-          { internalType: 'uint256', name: 'stableBorrowRate', type: 'uint256' },
-          { internalType: 'uint256', name: 'scaledVariableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'principalStableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'stableBorrowLastUpdateTimestamp', type: 'uint256' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.UserReserveData[]',
-        name: '',
-        type: 'tuple[]',
-      },
-      { internalType: 'uint8', name: '', type: 'uint8' },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
+const UI_POOL_USER_ABI = parseAbi([
+  'function getUserReservesData(address provider, address user) view returns ((address underlyingAsset, uint256 scaledATokenBalance, bool usageAsCollateralEnabledOnUser, uint256 stableBorrowRate, uint256 scaledVariableDebt, uint256 principalStableDebt, uint256 stableBorrowLastUpdateTimestamp)[], uint8)',
+]);
 
-const ACCOUNT_DATA_ABI = [
-  {
-    inputs: [{ internalType: 'address', name: 'user', type: 'address' }],
-    name: 'getUserAccountData',
-    outputs: [
-      { internalType: 'uint256', name: 'totalCollateralBase', type: 'uint256' },
-      { internalType: 'uint256', name: 'totalDebtBase', type: 'uint256' },
-      { internalType: 'uint256', name: 'availableBorrowsBase', type: 'uint256' },
-      { internalType: 'uint256', name: 'currentLiquidationThreshold', type: 'uint256' },
-      { internalType: 'uint256', name: 'ltv', type: 'uint256' },
-      { internalType: 'uint256', name: 'healthFactor', type: 'uint256' },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
+const POOL_ACCOUNT_ABI = parseAbi([
+  'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)',
+]);
 
 // ──────────────────────────────────────────────
 // Token logos
@@ -497,34 +392,51 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
           try {
             if (DEBUG) console.log(`[AavePositions] Reading data for ${name} via viem fallback transport`);
 
-            // All three reads in parallel — viem handles retry/fallback internally
-            const [reservesResult, userReservesResult, accountResult] = await Promise.all([
-              (client.readContract as any)({
+            // Run three calls in parallel, but label each so errors identify which call failed
+            let reservesResult: any;
+            let userReservesResult: any;
+            let accountResult: any;
+
+            try {
+              reservesResult = await (client.readContract as any)({
                 address: checksummedUiProvider,
-                abi: RESERVES_DATA_ABI,
+                abi: UI_POOL_ABI,
                 functionName: 'getReservesData',
                 args: [checksummedProvider],
-              }),
-              (client.readContract as any)({
+              });
+            } catch (e) {
+              throw new Error(`getReservesData failed on ${name} (uiProvider=${checksummedUiProvider}): ${String(e)}`);
+            }
+
+            try {
+              userReservesResult = await (client.readContract as any)({
                 address: checksummedUiProvider,
-                abi: USER_RESERVES_ABI,
+                abi: UI_POOL_USER_ABI,
                 functionName: 'getUserReservesData',
                 args: [checksummedProvider, address],
-              }),
-              (client.readContract as any)({
+              });
+            } catch (e) {
+              throw new Error(`getUserReservesData failed on ${name} (uiProvider=${checksummedUiProvider}): ${String(e)}`);
+            }
+
+            try {
+              accountResult = await (client.readContract as any)({
                 address: checksummedPool,
-                abi: ACCOUNT_DATA_ABI,
+                abi: POOL_ACCOUNT_ABI,
                 functionName: 'getUserAccountData',
                 args: [address],
-              }),
-            ]);
+              });
+            } catch (e) {
+              throw new Error(`getUserAccountData failed on ${name} (pool=${checksummedPool}): ${String(e)}`);
+            }
 
             anySuccess = true;
             rpcSuccess = true;
             debugEntry.dataSource = 'rpc';
 
             // ── Build reserve index map ──
-            const reservesList: any[] = reservesResult[0];
+            // getReservesData returns [reservesArray, baseCurrencyInfo]
+            const reservesList: any[] = Array.isArray(reservesResult) ? reservesResult[0] : [];
 
             if (DEBUG) {
               console.log(`[AavePositions] ${name}: ${reservesList.length} reserves fetched`);
@@ -553,14 +465,15 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             }
 
             // ── Parse getUserAccountData ──
-            const [
-              totalCollateralBase,
-              totalDebtBase,
-              availableBorrowsBase,
-              currentLiqThreshold,
-              ltv,
-              healthFactor,
-            ] = accountResult;
+            // parseAbi with named return values → viem returns a plain object with named keys
+            // Handle both object (named) and array (positional) return shapes defensively
+            const acct = accountResult as any;
+            const totalCollateralBase = acct.totalCollateralBase ?? acct[0] ?? 0n;
+            const totalDebtBase       = acct.totalDebtBase       ?? acct[1] ?? 0n;
+            const availableBorrowsBase = acct.availableBorrowsBase ?? acct[2] ?? 0n;
+            const currentLiqThreshold  = acct.currentLiquidationThreshold ?? acct[3] ?? 0n;
+            const ltv                  = acct.ltv                ?? acct[4] ?? 0n;
+            const healthFactor         = acct.healthFactor       ?? acct[5] ?? 0n;
 
             // Aave V3 base currency is USD with 8 decimals
             const totalCollateralUsd = Number(totalCollateralBase) / 1e8;
@@ -584,7 +497,8 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             }
 
             // ── Parse getUserReservesData ──
-            const [userReserves] = userReservesResult;
+            // getUserReservesData returns [userReservesArray, eModeCategoryId]
+            const userReserves: any[] = Array.isArray(userReservesResult) ? userReservesResult[0] : [];
 
             if (DEBUG) {
               console.log(`[AavePositions] ${name}: ${userReserves.length} user reserves`);
