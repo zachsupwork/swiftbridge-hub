@@ -44,8 +44,8 @@ interface AaveMarketsTableProps {
   onDetails?: (market: LendingMarket) => void;
   walletBalances?: Record<string, number>;
   hasCollateral?: boolean;
-  /** Map of reserveAddress (lowercase) → { suppliedUsd, borrowedUsd } for floating positions to top */
-  userPositionMap?: Record<string, { suppliedUsd: number; borrowedUsd: number }>;
+  /** Map of "chainId-reserveAddress(lower)" → position info for floating/highlighting */
+  userPositionMap?: Record<string, { suppliedUsd: number; borrowedUsd: number; hasSupply: boolean; hasBorrow: boolean }>;
 }
 
 function formatAPY(apy: number): string {
@@ -480,12 +480,12 @@ export function AaveMarketsTable({
         m.chainName.toLowerCase().includes(q)
       );
     }
-    // Sort: positions float to top, then by selected sort key
+    // Sort: positions float to top (use raw flags so even $0-USD positions surface)
     result.sort((a, b) => {
       const aPos = userPositionMap[`${a.chainId}-${a.assetAddress.toLowerCase()}`];
       const bPos = userPositionMap[`${b.chainId}-${b.assetAddress.toLowerCase()}`];
-      const aHasPos = aPos && (aPos.suppliedUsd > 0 || aPos.borrowedUsd > 0);
-      const bHasPos = bPos && (bPos.suppliedUsd > 0 || bPos.borrowedUsd > 0);
+      const aHasPos = aPos && (aPos.hasSupply || aPos.hasBorrow || aPos.suppliedUsd > 0 || aPos.borrowedUsd > 0);
+      const bHasPos = bPos && (bPos.hasSupply || bPos.hasBorrow || bPos.suppliedUsd > 0 || bPos.borrowedUsd > 0);
 
       // Float positions to top
       if (aHasPos && !bHasPos) return -1;
@@ -639,8 +639,8 @@ export function AaveMarketsTable({
                 {filtered.map(market => {
                   const posKey = `${market.chainId}-${market.assetAddress.toLowerCase()}`;
                   const pos = userPositionMap[posKey];
-                  const isSupplied = !!(pos && pos.suppliedUsd > 0);
-                  const isBorrowed = !!(pos && pos.borrowedUsd > 0);
+                  const isSupplied = !!(pos && (pos.hasSupply || pos.suppliedUsd > 0));
+                  const isBorrowed = !!(pos && (pos.hasBorrow || pos.borrowedUsd > 0));
                   return marketMode === 'supply' ? (
                     <SupplyRow
                       key={market.id}
