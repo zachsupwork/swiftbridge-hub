@@ -1,10 +1,9 @@
 /**
  * Aave V3 Address Book - Official Contract Addresses
  * 
- * IMPORTANT: These addresses are sourced from the official @bgd-labs/aave-address-book package.
- * https://github.com/bgd-labs/aave-address-book
- * 
- * DO NOT hardcode addresses elsewhere - always import from this file.
+ * Sources addresses from @bgd-labs/aave-address-book.
+ * Also exports per-chain ASSETS maps with aToken/vToken addresses
+ * for reliable position discovery via balanceOf.
  */
 
 import { getAddress } from 'viem';
@@ -18,7 +17,7 @@ import {
 } from '@bgd-labs/aave-address-book';
 
 // ============================================
-// AAVE V3 CONTRACT ADDRESSES BY CHAIN
+// TYPES
 // ============================================
 
 export interface AaveV3Addresses {
@@ -26,100 +25,93 @@ export interface AaveV3Addresses {
   POOL: `0x${string}`;
   UI_POOL_DATA_PROVIDER: `0x${string}`;
   ORACLE: `0x${string}`;
+  AAVE_PROTOCOL_DATA_PROVIDER: `0x${string}`;
+}
+
+export interface AaveAssetInfo {
+  symbol: string;
+  decimals: number;
+  underlying: `0x${string}`;
+  aToken: `0x${string}`;
+  vToken: `0x${string}`;
 }
 
 export interface AaveV3Market {
   chainId: number;
   label: string;
   addresses: AaveV3Addresses;
+  assets: AaveAssetInfo[];
 }
 
-/**
- * Build the Aave V3 markets map from official address book
- * All addresses are already checksummed by the package
- */
+// ============================================
+// HELPER: Extract assets from address book
+// ============================================
+
+function extractAssets(assetsObj: Record<string, any>): AaveAssetInfo[] {
+  const result: AaveAssetInfo[] = [];
+  for (const [symbol, info] of Object.entries(assetsObj)) {
+    if (!info?.UNDERLYING || !info?.A_TOKEN || !info?.V_TOKEN) continue;
+    try {
+      result.push({
+        symbol,
+        decimals: info.decimals ?? 18,
+        underlying: getAddress(info.UNDERLYING) as `0x${string}`,
+        aToken: getAddress(info.A_TOKEN) as `0x${string}`,
+        vToken: getAddress(info.V_TOKEN) as `0x${string}`,
+      });
+    } catch {
+      // Skip assets with invalid addresses
+    }
+  }
+  return result;
+}
+
+// ============================================
+// BUILD MARKETS MAP
+// ============================================
+
 function buildAaveV3Markets(): Map<number, AaveV3Market> {
   const markets = new Map<number, AaveV3Market>();
 
-  // Ethereum Mainnet
-  markets.set(1, {
-    chainId: 1,
-    label: 'Ethereum',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Ethereum.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Ethereum.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Ethereum.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Ethereum.ORACLE) as `0x${string}`,
-    },
-  });
+  const chainConfigs: Array<{
+    chainId: number;
+    label: string;
+    source: any;
+  }> = [
+    { chainId: 1, label: 'Ethereum', source: AaveV3Ethereum },
+    { chainId: 42161, label: 'Arbitrum', source: AaveV3Arbitrum },
+    { chainId: 10, label: 'Optimism', source: AaveV3Optimism },
+    { chainId: 137, label: 'Polygon', source: AaveV3Polygon },
+    { chainId: 8453, label: 'Base', source: AaveV3Base },
+    { chainId: 43114, label: 'Avalanche', source: AaveV3Avalanche },
+  ];
 
-  // Arbitrum One
-  markets.set(42161, {
-    chainId: 42161,
-    label: 'Arbitrum',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Arbitrum.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Arbitrum.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Arbitrum.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Arbitrum.ORACLE) as `0x${string}`,
-    },
-  });
-
-  // Optimism
-  markets.set(10, {
-    chainId: 10,
-    label: 'Optimism',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Optimism.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Optimism.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Optimism.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Optimism.ORACLE) as `0x${string}`,
-    },
-  });
-
-  // Polygon
-  markets.set(137, {
-    chainId: 137,
-    label: 'Polygon',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Polygon.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Polygon.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Polygon.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Polygon.ORACLE) as `0x${string}`,
-    },
-  });
-
-  // Base
-  markets.set(8453, {
-    chainId: 8453,
-    label: 'Base',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Base.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Base.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Base.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Base.ORACLE) as `0x${string}`,
-    },
-  });
-
-  // Avalanche
-  markets.set(43114, {
-    chainId: 43114,
-    label: 'Avalanche',
-    addresses: {
-      POOL_ADDRESSES_PROVIDER: getAddress(AaveV3Avalanche.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
-      POOL: getAddress(AaveV3Avalanche.POOL) as `0x${string}`,
-      UI_POOL_DATA_PROVIDER: getAddress(AaveV3Avalanche.UI_POOL_DATA_PROVIDER) as `0x${string}`,
-      ORACLE: getAddress(AaveV3Avalanche.ORACLE) as `0x${string}`,
-    },
-  });
+  for (const { chainId, label, source } of chainConfigs) {
+    try {
+      markets.set(chainId, {
+        chainId,
+        label,
+        addresses: {
+          POOL_ADDRESSES_PROVIDER: getAddress(source.POOL_ADDRESSES_PROVIDER) as `0x${string}`,
+          POOL: getAddress(source.POOL) as `0x${string}`,
+          UI_POOL_DATA_PROVIDER: getAddress(source.UI_POOL_DATA_PROVIDER) as `0x${string}`,
+          ORACLE: getAddress(source.ORACLE) as `0x${string}`,
+          AAVE_PROTOCOL_DATA_PROVIDER: getAddress(source.AAVE_PROTOCOL_DATA_PROVIDER) as `0x${string}`,
+        },
+        assets: extractAssets(source.ASSETS || {}),
+      });
+    } catch (e) {
+      console.warn(`[Aave Address Book] Failed to load ${label}:`, e);
+    }
+  }
 
   return markets;
 }
 
-// Build markets once at module load
+// Build once at module load
 export const AAVE_V3_MARKETS = buildAaveV3Markets();
 
-// Legacy compatibility - map to old structure
+// Legacy compatibility
 export const AAVE_V3_ADDRESSES: Record<number, AaveV3Addresses> = {};
 AAVE_V3_MARKETS.forEach((market, chainId) => {
   AAVE_V3_ADDRESSES[chainId] = market.addresses;
@@ -131,6 +123,10 @@ AAVE_V3_MARKETS.forEach((market, chainId) => {
 
 export function getAaveAddresses(chainId: number): AaveV3Addresses | null {
   return AAVE_V3_ADDRESSES[chainId] || null;
+}
+
+export function getAaveAssets(chainId: number): AaveAssetInfo[] {
+  return AAVE_V3_MARKETS.get(chainId)?.assets || [];
 }
 
 export function isAaveSupported(chainId: number): boolean {
@@ -153,163 +149,10 @@ export function getAaveMarket(chainId: number): AaveV3Market | undefined {
 if (import.meta.env.DEV) {
   console.log('[Aave Address Book] Loaded official addresses:');
   AAVE_V3_MARKETS.forEach((market, chainId) => {
-    console.log(`  ${market.label} (${chainId}):`, {
+    console.log(`  ${market.label} (${chainId}): ${market.assets.length} assets`, {
       POOL: market.addresses.POOL,
       POOL_ADDRESSES_PROVIDER: market.addresses.POOL_ADDRESSES_PROVIDER,
       UI_POOL_DATA_PROVIDER: market.addresses.UI_POOL_DATA_PROVIDER,
     });
   });
-}
-
-// ============================================
-// UI POOL DATA PROVIDER ABI
-// ============================================
-
-/**
- * UiPoolDataProviderV3 ABI - Official Aave V3 interface
- * 
- * CRITICAL: The AggregatedReserveData struct fields MUST be in EXACT order.
- * This order matches the user-specified canonical order for UiPoolDataProvider.
- */
-export const UI_POOL_DATA_PROVIDER_ABI = [
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' }
-    ],
-    name: 'getReservesData',
-    outputs: [
-      {
-        components: [
-          { internalType: 'address', name: 'underlyingAsset', type: 'address' },
-          { internalType: 'string', name: 'name', type: 'string' },
-          { internalType: 'string', name: 'symbol', type: 'string' },
-          { internalType: 'uint256', name: 'decimals', type: 'uint256' },
-          { internalType: 'uint256', name: 'baseLTVasCollateral', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationThreshold', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveLiquidationBonus', type: 'uint256' },
-          { internalType: 'uint256', name: 'reserveFactor', type: 'uint256' },
-          { internalType: 'bool', name: 'usageAsCollateralEnabled', type: 'bool' },
-          { internalType: 'bool', name: 'borrowingEnabled', type: 'bool' },
-          { internalType: 'bool', name: 'isActive', type: 'bool' },
-          { internalType: 'bool', name: 'isFrozen', type: 'bool' },
-          { internalType: 'uint128', name: 'liquidityIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowIndex', type: 'uint128' },
-          { internalType: 'uint128', name: 'liquidityRate', type: 'uint128' },
-          { internalType: 'uint128', name: 'variableBorrowRate', type: 'uint128' },
-          { internalType: 'uint40', name: 'lastUpdateTimestamp', type: 'uint40' },
-          { internalType: 'address', name: 'aTokenAddress', type: 'address' },
-          { internalType: 'address', name: 'variableDebtTokenAddress', type: 'address' },
-          { internalType: 'address', name: 'interestRateStrategyAddress', type: 'address' },
-          { internalType: 'uint256', name: 'availableLiquidity', type: 'uint256' },
-          { internalType: 'uint256', name: 'totalScaledVariableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'priceInMarketReferenceCurrency', type: 'uint256' },
-          { internalType: 'address', name: 'priceOracle', type: 'address' },
-          { internalType: 'uint256', name: 'variableRateSlope1', type: 'uint256' },
-          { internalType: 'uint256', name: 'variableRateSlope2', type: 'uint256' },
-          { internalType: 'uint256', name: 'baseVariableBorrowRate', type: 'uint256' },
-          { internalType: 'uint256', name: 'optimalUsageRatio', type: 'uint256' },
-          { internalType: 'bool', name: 'isPaused', type: 'bool' },
-          { internalType: 'bool', name: 'isSiloedBorrowing', type: 'bool' },
-          { internalType: 'uint128', name: 'accruedToTreasury', type: 'uint128' },
-          { internalType: 'uint128', name: 'unbacked', type: 'uint128' },
-          { internalType: 'uint128', name: 'isolationModeTotalDebt', type: 'uint128' },
-          { internalType: 'bool', name: 'flashLoanEnabled', type: 'bool' },
-          { internalType: 'uint256', name: 'debtCeiling', type: 'uint256' },
-          { internalType: 'uint256', name: 'debtCeilingDecimals', type: 'uint256' },
-          { internalType: 'uint8', name: 'eModeCategoryId', type: 'uint8' },
-          { internalType: 'uint256', name: 'borrowCap', type: 'uint256' },
-          { internalType: 'uint256', name: 'supplyCap', type: 'uint256' },
-          { internalType: 'bool', name: 'borrowableInIsolation', type: 'bool' },
-          { internalType: 'bool', name: 'virtualAccActive', type: 'bool' },
-          { internalType: 'uint128', name: 'virtualUnderlyingBalance', type: 'uint128' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.AggregatedReserveData[]',
-        name: '',
-        type: 'tuple[]',
-      },
-      {
-        components: [
-          { internalType: 'uint256', name: 'marketReferenceCurrencyUnit', type: 'uint256' },
-          { internalType: 'int256', name: 'marketReferenceCurrencyPriceInUsd', type: 'int256' },
-          { internalType: 'int256', name: 'networkBaseTokenPriceInUsd', type: 'int256' },
-          { internalType: 'uint8', name: 'networkBaseTokenPriceDecimals', type: 'uint8' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.BaseCurrencyInfo',
-        name: '',
-        type: 'tuple',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' }
-    ],
-    name: 'getReservesList',
-    outputs: [
-      { internalType: 'address[]', name: '', type: 'address[]' }
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-// ============================================
-// RESERVE DATA TYPE
-// ============================================
-
-/**
- * AaveReserveData interface - matches the ABI struct exactly in field order
- */
-export interface AaveReserveData {
-  underlyingAsset: `0x${string}`;
-  name: string;
-  symbol: string;
-  decimals: bigint;
-  baseLTVasCollateral: bigint;
-  reserveLiquidationThreshold: bigint;
-  reserveLiquidationBonus: bigint;
-  reserveFactor: bigint;
-  usageAsCollateralEnabled: boolean;
-  borrowingEnabled: boolean;
-  isActive: boolean;
-  isFrozen: boolean;
-  liquidityIndex: bigint;
-  variableBorrowIndex: bigint;
-  liquidityRate: bigint;
-  variableBorrowRate: bigint;
-  lastUpdateTimestamp: bigint;
-  aTokenAddress: `0x${string}`;
-  variableDebtTokenAddress: `0x${string}`;
-  interestRateStrategyAddress: `0x${string}`;
-  availableLiquidity: bigint;
-  totalScaledVariableDebt: bigint;
-  priceInMarketReferenceCurrency: bigint;
-  priceOracle: `0x${string}`;
-  variableRateSlope1: bigint;
-  variableRateSlope2: bigint;
-  baseVariableBorrowRate: bigint;
-  optimalUsageRatio: bigint;
-  isPaused: boolean;
-  isSiloedBorrowing: boolean;
-  accruedToTreasury: bigint;
-  unbacked: bigint;
-  isolationModeTotalDebt: bigint;
-  flashLoanEnabled: boolean;
-  debtCeiling: bigint;
-  debtCeilingDecimals: bigint;
-  eModeCategoryId: number;
-  borrowCap: bigint;
-  supplyCap: bigint;
-  borrowableInIsolation: boolean;
-  virtualAccActive: boolean;
-  virtualUnderlyingBalance: bigint;
-}
-
-export interface AaveBaseCurrencyInfo {
-  marketReferenceCurrencyUnit: bigint;
-  marketReferenceCurrencyPriceInUsd: bigint;
-  networkBaseTokenPriceInUsd: bigint;
-  networkBaseTokenPriceDecimals: number;
 }
