@@ -1082,6 +1082,7 @@ export default function Earn() {
         open={isPositionDrawerOpen}
         onClose={() => setIsPositionDrawerOpen(false)}
         position={selectedPosition}
+        healthFactor={lowestHealthFactor ?? undefined}
         onSupply={handleSupply}
         onWithdraw={handleWithdraw}
         onBorrow={handleBorrow}
