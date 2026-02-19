@@ -1,21 +1,22 @@
 /**
- * Aave V3 Positions Hook — v5 (NO UiPoolDataProvider at all)
+ * Aave V3 Positions Hook — v6 (getReservesList-based discovery)
  *
  * ARCHITECTURE:
- *   UiPoolDataProvider.getUserReservesData() and getReservesData() BOTH fail on
- *   multiple chains with ABI-decode errors ("Bytes value ... is not a valid boolean").
- *   We completely remove them.
+ *   Instead of iterating only DeFiLlama markets (which misses bridged assets like USDC.e),
+ *   we now call Pool.getReservesList() per chain to discover ALL configured reserves.
  *
- *   New pipeline per chain:
- *   1. For each market asset in the DeFiLlama markets list:
- *        Pool.getReserveData(asset)  →  aTokenAddress, variableDebtTokenAddress
- *   2. aToken.balanceOf(user)             → real supply balance (no ray math needed)
- *      variableDebtToken.balanceOf(user)  → real variable debt (no ray math needed)
- *   3. Pool.getUserAccountData(user)      → HF / collateral / debt / available borrow
+ *   Pipeline per chain:
+ *   1. Pool.getReservesList()                    → all reserve asset addresses on this chain
+ *   2. Pool.getReserveData(asset) per reserve    → aTokenAddress, variableDebtTokenAddress
+ *   3. aToken.balanceOf(user)                    → real supply balance
+ *      variableDebtToken.balanceOf(user)         → real variable debt
+ *   4. Pool.getUserAccountData(user)             → HF / collateral / debt / available borrow
+ *   5. Enrich with DeFiLlama market metadata if a matching market exists
+ *      (symbol, APYs, price, logo). For unknown assets, read ERC20 metadata on-chain.
  *
  *   All calls use stable, simple ABIs — no large structs, no boolean alignment issues.
  *   Chain isolation: one chain failing does NOT fail others.
- *   Batching: all assets on a chain are fetched in parallel.
+ *   Concurrency limit per chain: batches of BATCH_SIZE reserves at a time.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -32,6 +33,9 @@ import type { LendingMarket } from '@/hooks/useLendingMarkets';
 // ──────────────────────────────────────────────
 
 const DEBUG = import.meta.env.DEV;
+
+/** Max reserves to fetch in parallel per chain to avoid RPC rate limits */
+const BATCH_SIZE = 12;
 
 // Known USD stablecoins → always price at $1
 const STABLE_SYMBOLS = new Set([
@@ -57,9 +61,16 @@ const VIEM_CHAINS: Record<number, any> = {
 // ──────────────────────────────────────────────
 
 /**
+ * Pool.getReservesList — returns all configured reserve asset addresses.
+ * This is the authoritative source — includes bridged assets, variant tokens, etc.
+ */
+const POOL_RESERVES_LIST_ABI = parseAbi([
+  'function getReservesList() view returns (address[])',
+]);
+
+/**
  * Pool.getReserveData — returns single reserve state.
  * We only need: aTokenAddress (index 7), variableDebtTokenAddress (index 9).
- * This function works reliably on all chains — no struct mismatch issues.
  */
 const POOL_RESERVE_ABI = parseAbi([
   'function getReserveData(address asset) view returns (uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint8 id)',
@@ -70,6 +81,13 @@ const POOL_RESERVE_ABI = parseAbi([
  */
 const POOL_ACCOUNT_ABI = parseAbi([
   'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)',
+]);
+
+/** ERC20 metadata for unknown reserves */
+const ERC20_META_ABI = parseAbi([
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
+  'function name() view returns (string)',
 ]);
 
 // ──────────────────────────────────────────────
@@ -123,7 +141,7 @@ export interface AavePosition {
   borrowApy: number;
   // Source of data
   dataSource: 'rpc' | 'subgraph';
-  // Market reference
+  // Market reference (present when DeFiLlama had a matching entry)
   market?: LendingMarket;
 }
 
@@ -144,6 +162,8 @@ export interface ChainDebugInfo {
   chainName: string;
   dataSource: 'rpc' | 'subgraph' | 'failed';
   rpcUsed?: string;
+  reservesListCount: number;
+  reservesScannedCount: number;
   positionsFound: number;
   accountDataFetched: boolean;
   error?: string;
@@ -193,6 +213,25 @@ function createFallbackClient(
   }) as ReturnType<typeof createPublicClient>;
 }
 
+// ──────────────────────────────────────────────
+// Helper: Run items in batches to avoid RPC rate limits
+// ──────────────────────────────────────────────
+
+async function runInBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.allSettled(batch.map(fn));
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') results.push(r.value);
+    }
+  }
+  return results;
+}
 
 // ──────────────────────────────────────────────
 // Main Hook
@@ -207,7 +246,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
   const [debugInfo, setDebugInfo] = useState<ChainDebugInfo[]>([]);
 
   const fetchPositions = useCallback(async () => {
-    if (!address || !isConnected || markets.length === 0) {
+    if (!address || !isConnected) {
       setPositions([]);
       setChainAccountData([]);
       setDebugInfo([]);
@@ -221,11 +260,12 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     const allAccountData: AaveChainAccountData[] = [];
     const allDebugInfo: ChainDebugInfo[] = [];
 
-    // Group markets by chainId for efficient per-chain processing
-    const marketsByChain = new Map<number, LendingMarket[]>();
+    // Build a fast lookup map from DeFiLlama markets for metadata enrichment
+    // key = `${chainId}-${assetAddress.toLowerCase()}`
+    const marketLookup = new Map<string, LendingMarket>();
     for (const m of markets) {
-      if (!marketsByChain.has(m.chainId)) marketsByChain.set(m.chainId, []);
-      marketsByChain.get(m.chainId)!.push(m);
+      const key = `${m.chainId}-${m.assetAddress.toLowerCase()}`;
+      marketLookup.set(key, m);
     }
 
     // Process all chains in parallel; failures are isolated per-chain
@@ -236,13 +276,12 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
         const aaveAddresses = getAaveAddresses(chainId);
         if (!aaveAddresses) return;
 
-        const chainMarkets = marketsByChain.get(chainId) || [];
-        if (chainMarkets.length === 0) return; // no markets to check on this chain
-
         const debugEntry: ChainDebugInfo = {
           chainId,
           chainName: name,
           dataSource: 'failed',
+          reservesListCount: 0,
+          reservesScannedCount: 0,
           positionsFound: 0,
           accountDataFetched: false,
         };
@@ -258,8 +297,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
           debugEntry.rpcUsed = rpcUrl || 'public-fallback';
 
-          // ── STEP 1: getUserAccountData (parallel with asset discovery) ──
-          // This uses a simple, proven ABI — no struct issues
+          // ── STEP 1: getUserAccountData (fire in parallel with reserve discovery) ──
           const accountPromise = (client.readContract as any)({
             address: checksummedPool,
             abi: POOL_ACCOUNT_ABI,
@@ -271,52 +309,36 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             return null;
           });
 
-          // ── STEP 2: For each market, get aToken + debtToken addresses ──
-          // Pool.getReserveData is reliable — no UiPoolDataProvider needed
-          const reserveDataResults = await Promise.allSettled(
-            chainMarkets.map(async (market) => {
-              let assetAddr: `0x${string}`;
-              try {
-                assetAddr = getAddress(market.assetAddress) as `0x${string}`;
-              } catch {
-                return null;
-              }
+          // ── STEP 2: getReservesList — get ALL configured assets on this chain ──
+          let reservesList: `0x${string}`[] = [];
+          try {
+            const rawList = await (client.readContract as any)({
+              address: checksummedPool,
+              abi: POOL_RESERVES_LIST_ABI,
+              functionName: 'getReservesList',
+              args: [],
+            });
+            reservesList = (rawList as `0x${string}`[]).filter(
+              (a): a is `0x${string}` => typeof a === 'string' && a.startsWith('0x') && a !== '0x0000000000000000000000000000000000000000',
+            );
+            debugEntry.reservesListCount = reservesList.length;
+            if (DEBUG) console.log(`[AavePositions] ${name}: getReservesList → ${reservesList.length} reserves`);
+          } catch (e: any) {
+            debugEntry.failedStep = 'getReservesList';
+            debugEntry.error = String(e?.message || e);
+            if (DEBUG) console.warn(`[AavePositions] ${name}: getReservesList failed:`, e);
 
-              try {
-                const rd = await (client.readContract as any)({
-                  address: checksummedPool,
-                  abi: POOL_RESERVE_ABI,
-                  functionName: 'getReserveData',
-                  args: [assetAddr],
-                }) as any;
+            // Fallback: use DeFiLlama markets for this chain as asset list
+            const chainMarkets = markets.filter(m => m.chainId === chainId);
+            reservesList = chainMarkets.map(m => {
+              try { return getAddress(m.assetAddress) as `0x${string}`; } catch { return null; }
+            }).filter((a): a is `0x${string}` => a !== null);
 
-                const aTokenAddress = (rd?.aTokenAddress ?? rd?.[7] ?? null) as `0x${string}` | null;
-                const varDebtTokenAddress = (rd?.variableDebtTokenAddress ?? rd?.[9] ?? null) as `0x${string}` | null;
-
-                if (!aTokenAddress || aTokenAddress === '0x0000000000000000000000000000000000000000') {
-                  return null; // asset not configured in pool
-                }
-
-                return { market, assetAddr, aTokenAddress, varDebtTokenAddress };
-              } catch (e) {
-                // Asset not in pool on this chain — skip silently
-                return null;
-              }
-            })
-          );
-
-          // Collect valid reserve data
-          const validReserves = reserveDataResults
-            .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled' && r.value !== null)
-            .map(r => r.value);
-
-          if (DEBUG) {
-            console.log(`[AavePositions] ${name}: ${validReserves.length}/${chainMarkets.length} markets have reserve data`);
+            debugEntry.reservesListCount = reservesList.length;
+            if (DEBUG) console.log(`[AavePositions] ${name}: fallback to ${reservesList.length} DeFiLlama markets`);
           }
 
-          if (validReserves.length === 0) {
-            debugEntry.dataSource = 'rpc';
-            debugEntry.error = 'No valid reserve data found';
+          if (reservesList.length === 0) {
             allDebugInfo.push(debugEntry);
             const accountResult = await accountPromise;
             if (accountResult) {
@@ -326,13 +348,54 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             return;
           }
 
-          // ── STEP 3: For each valid reserve, call balanceOf(user) on aToken + debtToken ──
-          // balanceOf returns the REAL balance (already index-adjusted by the token contract)
-          // This is much simpler and more reliable than reading scaled balances + applying ray math
-          const balanceResults = await Promise.allSettled(
-            validReserves.map(async ({ market, assetAddr, aTokenAddress, varDebtTokenAddress }) => {
+          // ── STEP 3: For each reserve, get aToken + debtToken addresses, then balances ──
+          // Run in batches to avoid RPC rate limits
+          const positionCandidates = await runInBatches(
+            reservesList,
+            BATCH_SIZE,
+            async (assetAddr): Promise<{
+              assetAddr: `0x${string}`;
+              supplyBalance: bigint;
+              variableDebt: bigint;
+              aTokenAddress: `0x${string}`;
+              varDebtTokenAddress: `0x${string}` | null;
+              currentLiquidityRate: bigint;
+              currentVariableBorrowRate: bigint;
+            } | null> => {
+              let checksummedAsset: `0x${string}`;
+              try {
+                checksummedAsset = getAddress(assetAddr) as `0x${string}`;
+              } catch {
+                return null;
+              }
+
+              let aTokenAddress: `0x${string}` | null = null;
+              let varDebtTokenAddress: `0x${string}` | null = null;
+              let currentLiquidityRate = 0n;
+              let currentVariableBorrowRate = 0n;
+
+              try {
+                const rd = await (client.readContract as any)({
+                  address: checksummedPool,
+                  abi: POOL_RESERVE_ABI,
+                  functionName: 'getReserveData',
+                  args: [checksummedAsset],
+                }) as any;
+
+                aTokenAddress = (rd?.aTokenAddress ?? rd?.[7] ?? null) as `0x${string}` | null;
+                varDebtTokenAddress = (rd?.variableDebtTokenAddress ?? rd?.[9] ?? null) as `0x${string}` | null;
+                currentLiquidityRate = safeExtractBigInt(rd, 'currentLiquidityRate', 2);
+                currentVariableBorrowRate = safeExtractBigInt(rd, 'currentVariableBorrowRate', 4);
+
+                if (!aTokenAddress || aTokenAddress === '0x0000000000000000000000000000000000000000') {
+                  return null; // not configured in pool
+                }
+              } catch {
+                return null; // asset doesn't exist in this pool
+              }
+
+              // Read balances in parallel
               const [supplyRaw, debtRaw] = await Promise.all([
-                // aToken.balanceOf(user) = real supply balance
                 (client.readContract as any)({
                   address: aTokenAddress,
                   abi: erc20Abi,
@@ -340,7 +403,6 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                   args: [address],
                 }).catch(() => 0n),
 
-                // variableDebtToken.balanceOf(user) = real variable debt
                 varDebtTokenAddress && varDebtTokenAddress !== '0x0000000000000000000000000000000000000000'
                   ? (client.readContract as any)({
                     address: varDebtTokenAddress,
@@ -354,26 +416,78 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               const supplyBalance = BigInt(supplyRaw ?? 0n);
               const variableDebt = BigInt(debtRaw ?? 0n);
 
-              return { market, assetAddr, supplyBalance, variableDebt };
-            })
+              // Skip if no position
+              if (supplyBalance === 0n && variableDebt === 0n) return null;
+
+              return {
+                assetAddr: checksummedAsset,
+                supplyBalance,
+                variableDebt,
+                aTokenAddress,
+                varDebtTokenAddress,
+                currentLiquidityRate,
+                currentVariableBorrowRate,
+              };
+            },
           );
 
-          // ── STEP 4: Build positions from balances ──
-          for (const result of balanceResults) {
-            if (result.status !== 'fulfilled') continue;
-            const { market, assetAddr, supplyBalance, variableDebt } = result.value;
+          debugEntry.reservesScannedCount = reservesList.length;
 
-            // Skip if no balance
-            if (supplyBalance === 0n && variableDebt === 0n) continue;
+          // ── STEP 4: Build positions — enrich with DeFiLlama or on-chain ERC20 metadata ──
+          for (const candidate of positionCandidates) {
+            if (!candidate) continue;
 
-            const decimals = market.decimals || 18;
-            const symbol = market.assetSymbol;
+            const { assetAddr, supplyBalance, variableDebt, currentLiquidityRate, currentVariableBorrowRate } = candidate;
+            const lookupKey = `${chainId}-${assetAddr.toLowerCase()}`;
+            const matchedMarket = marketLookup.get(lookupKey);
+
+            let symbol = 'UNKNOWN';
+            let assetName = 'Unknown Token';
+            let decimals = 18;
             let priceUsd = 0;
-            if (market.priceUsd > 0) {
-              priceUsd = market.priceUsd;
-            } else if (isStable(symbol)) {
-              priceUsd = 1;
+            let supplyApy = 0;
+            let borrowApy = 0;
+            let assetLogo = getTokenLogo('UNKNOWN');
+            let isCollateralEnabled = true;
+
+            if (matchedMarket) {
+              // Use DeFiLlama metadata
+              symbol = matchedMarket.assetSymbol;
+              assetName = matchedMarket.assetName;
+              decimals = matchedMarket.decimals || 18;
+              priceUsd = matchedMarket.priceUsd || 0;
+              supplyApy = matchedMarket.supplyAPY;
+              borrowApy = matchedMarket.borrowAPY;
+              assetLogo = matchedMarket.assetLogo || getTokenLogo(symbol);
+              isCollateralEnabled = matchedMarket.collateralEnabled;
+            } else {
+              // Fallback: read ERC20 metadata on-chain
+              try {
+                const [sym, dec, nm] = await Promise.all([
+                  (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'symbol' }).catch(() => 'UNKNOWN'),
+                  (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'decimals' }).catch(() => 18),
+                  (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'name' }).catch(() => 'Unknown Token'),
+                ]);
+                symbol = String(sym);
+                decimals = Number(dec);
+                assetName = String(nm);
+              } catch {
+                // keep defaults
+              }
+
+              // Derive APYs from ray-encoded rates (1e27 = 100% APY approx)
+              // RAY APY ≈ (1 + rate/1e27/SECONDS_PER_YEAR)^SECONDS_PER_YEAR - 1, simplified:
+              const RAY = 1e27;
+              supplyApy = (Number(currentLiquidityRate) / RAY) * 100;
+              borrowApy = (Number(currentVariableBorrowRate) / RAY) * 100;
+
+              // Price stablecoins at $1, rest at 0 (no external price source)
+              if (isStable(symbol)) priceUsd = 1;
+
+              assetLogo = getTokenLogo(symbol);
             }
+
+            if (!priceUsd && isStable(symbol)) priceUsd = 1;
 
             const supplyFormatted = formatUnits(supplyBalance, decimals);
             const debtFormatted = formatUnits(variableDebt, decimals);
@@ -382,9 +496,10 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
             if (DEBUG) {
               console.log(
-                `[AavePositions] ${name} ${symbol}:`,
+                `[AavePositions] ${name} ${symbol} (${assetAddr.slice(0, 8)}):`,
                 `supply=${supplyFormatted} ($${supplyBalanceUsd.toFixed(4)})`,
                 `debt=${debtFormatted} ($${variableDebtUsd.toFixed(4)})`,
+                matchedMarket ? '✓ DeFiLlama' : '⚡ on-chain meta',
               );
             }
 
@@ -394,20 +509,20 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               chainLogo: logo,
               assetAddress: assetAddr,
               assetSymbol: symbol,
-              assetName: market.assetName,
-              assetLogo: market.assetLogo || getTokenLogo(symbol),
+              assetName,
+              assetLogo,
               decimals,
               supplyBalance,
               supplyBalanceFormatted: supplyFormatted,
               supplyBalanceUsd,
-              supplyApy: market.supplyAPY,
-              isCollateralEnabled: market.collateralEnabled,
+              supplyApy,
+              isCollateralEnabled,
               variableDebt,
               variableDebtFormatted: debtFormatted,
               variableDebtUsd,
-              borrowApy: market.borrowAPY,
+              borrowApy,
               dataSource: 'rpc',
-              market,
+              market: matchedMarket,
             });
 
             debugEntry.positionsFound++;
@@ -439,21 +554,27 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     setDebugInfo(allDebugInfo);
     setLoading(false);
 
-    if (allPositions.length === 0 && isConnected) {
-      if (DEBUG) console.log('[AavePositions] No positions found across all chains');
+    if (DEBUG) {
+      const total = allDebugInfo.reduce((s, d) => s + d.positionsFound, 0);
+      const scanned = allDebugInfo.reduce((s, d) => s + d.reservesScannedCount, 0);
+      const listed = allDebugInfo.reduce((s, d) => s + d.reservesListCount, 0);
+      console.log(
+        `[AavePositions] Done. Listed=${listed} Scanned=${scanned} PositionsFound=${total}`,
+        allDebugInfo,
+      );
     }
   }, [address, isConnected, markets]);
 
-  // Re-fetch whenever markets load or wallet changes
+  // Re-fetch whenever wallet connects (markets are optional enrichment now)
   useEffect(() => {
-    if (markets.length > 0 && isConnected && address) {
+    if (isConnected && address) {
       fetchPositions();
     } else if (!isConnected) {
       setPositions([]);
       setChainAccountData([]);
       setLoading(false);
     }
-  }, [fetchPositions, markets.length, isConnected, address]);
+  }, [fetchPositions, isConnected, address]);
 
   const totalSupplyUsd = useMemo(
     () => positions.reduce((acc, p) => acc + p.supplyBalanceUsd, 0),
