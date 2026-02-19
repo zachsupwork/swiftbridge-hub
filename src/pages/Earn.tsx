@@ -113,6 +113,8 @@ export default function Earn() {
     totalSupplyUsd,
     totalBorrowUsd,
     totalCollateralUsd,
+    totalAccountDebtUsd,
+    totalAvailableBorrowsUsd,
     lowestHealthFactor,
     debugInfo: positionsDebugInfo,
   } = useAavePositions(allAaveMarkets);
@@ -267,8 +269,13 @@ export default function Earn() {
 
   const aavePositionCount = aavePositions.length;
   const vaultPositionCount = vaultPositions.length;
+
+  // hasAaveActivity: true if the user has any Aave collateral or debt on any chain
+  // This is authoritative from getUserAccountData, so it works even when per-asset
+  // positions haven't loaded yet or prices are 0.
+  const hasAaveActivity = totalCollateralUsd > 0 || totalAccountDebtUsd > 0;
   const totalPositionCount = aavePositionCount + vaultPositionCount;
-  const netWorth = totalSupplyUsd + totalDepositedUsd - totalBorrowUsd;
+  const netWorth = totalCollateralUsd + totalDepositedUsd - totalAccountDebtUsd;
 
   // Compute chain count from actual rendered markets
   const renderedChainIds = [...new Set(allAaveMarkets.map(m => Number(m.chainId)).filter(Boolean))];
@@ -291,8 +298,10 @@ export default function Earn() {
     return map;
   }, [aavePositions]);
 
-  const hasSupplied = aavePositions.some(p => p.supplyBalance > 0n);
-  const hasBorrowed = aavePositions.some(p => p.variableDebt > 0n);
+  // hasSupplied/hasBorrowed: check positions first, fall back to account data totals
+  // This ensures sections render even when per-asset positions haven't loaded yet
+  const hasSupplied = aavePositions.some(p => p.supplyBalance > 0n) || totalCollateralUsd > 0;
+  const hasBorrowed = aavePositions.some(p => p.variableDebt > 0n) || totalAccountDebtUsd > 0;
 
   // ─── Derive accountData for selected market's chain from chainAccountData ───
   // This is passed to AaveBorrowModal so it can show HF / collateral / debt
@@ -499,11 +508,11 @@ export default function Earn() {
           )}
 
           {/* ─── DASHBOARD: Aave Portfolio Card + Morpho Vaults Card (separate) ─── */}
-          {isConnected && (totalPositionCount > 0 || totalBorrowUsd > 0 || totalSupplyUsd > 0 || totalDepositedUsd > 0) && (
+          {isConnected && (hasAaveActivity || totalPositionCount > 0 || totalDepositedUsd > 0) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-              {/* ── Aave Portfolio Card ── */}
-              {(totalSupplyUsd > 0 || totalBorrowUsd > 0 || totalCollateralUsd > 0) && (
+              {/* ── Aave Portfolio Card — totals come from getUserAccountData (authoritative) ── */}
+              {hasAaveActivity && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -514,17 +523,25 @@ export default function Earn() {
                       <Wallet className="w-4 h-4 text-primary" />
                       Aave Portfolio
                     </h2>
-                    {aavePositionCount > 0 && (
+                    {aavePositionCount > 0 ? (
                       <Badge variant="outline" className="text-xs">
                         {aavePositionCount} position{aavePositionCount !== 1 ? 's' : ''}
                       </Badge>
-                    )}
+                    ) : positionsLoading ? (
+                      <Badge variant="outline" className="text-xs animate-pulse">Loading…</Badge>
+                    ) : null}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
-                      <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
+                      {/* Use per-asset USD when available, fallback to collateral from account data */}
+                      <div className="text-lg font-semibold text-success">
+                        {formatUsd(totalSupplyUsd > 0 ? totalSupplyUsd : totalCollateralUsd)}
+                      </div>
+                      {totalSupplyUsd === 0 && totalCollateralUsd > 0 && (
+                        <div className="text-[10px] text-muted-foreground">(from account data)</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
@@ -532,7 +549,13 @@ export default function Earn() {
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
-                      <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
+                      {/* Use per-asset USD when available, fallback to account debt */}
+                      <div className="text-lg font-semibold text-warning">
+                        {formatUsd(totalBorrowUsd > 0 ? totalBorrowUsd : totalAccountDebtUsd)}
+                      </div>
+                      {totalBorrowUsd === 0 && totalAccountDebtUsd > 0 && (
+                        <div className="text-[10px] text-muted-foreground">(from account data)</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
@@ -554,17 +577,17 @@ export default function Earn() {
                   </div>
 
                   {/* Available to borrow */}
-                  {chainAccountData.length > 0 && (
+                  {totalAvailableBorrowsUsd > 0 && (
                     <div className="mt-3 pt-3 border-t border-border/30">
                       <div className="text-xs text-muted-foreground mb-1">Available to Borrow</div>
                       <div className="text-sm font-medium text-success">
-                        {formatUsd(chainAccountData.reduce((s, d) => s + d.availableBorrowsUsd, 0))}
+                        {formatUsd(totalAvailableBorrowsUsd)}
                       </div>
                     </div>
                   )}
 
                   {/* Health Factor bar */}
-                  {totalBorrowUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
+                  {totalAccountDebtUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
                     <div className="mt-3 pt-3 border-t border-border/30">
                       <RiskBar healthFactor={lowestHealthFactor} showLabel size="md" />
                       {lowestHealthFactor < 1 && (
@@ -706,7 +729,7 @@ export default function Earn() {
                 <AccountHealthBar
                   chainAccountData={chainAccountData}
                   totalCollateralUsd={totalCollateralUsd}
-                  totalDebtUsd={totalBorrowUsd}
+                  totalDebtUsd={totalAccountDebtUsd}
                   lowestHealthFactor={lowestHealthFactor}
                 />
               )}
@@ -715,6 +738,8 @@ export default function Earn() {
               {isConnected && hasSupplied && (
                 <YourSuppliesSection
                   positions={aavePositions}
+                  loading={positionsLoading && aavePositions.length === 0}
+                  accountCollateralUsd={totalCollateralUsd}
                   onSupply={handleSupply}
                   onWithdraw={handleWithdraw}
                   onSwap={goToSwap}
@@ -725,6 +750,8 @@ export default function Earn() {
               {isConnected && hasBorrowed && (
                 <YourBorrowsSection
                   positions={aavePositions}
+                  loading={positionsLoading && aavePositions.length === 0}
+                  accountDebtUsd={totalAccountDebtUsd}
                   onBorrow={handleBorrow}
                   onRepay={handleRepay}
                   onSwap={goToSwap}
@@ -814,7 +841,7 @@ export default function Earn() {
                     </div>
                   ))}
                 </div>
-              ) : totalPositionCount === 0 ? (
+              ) : totalPositionCount === 0 && !hasAaveActivity ? (
                 <div className="glass rounded-xl p-8 text-center">
                   <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <h3 className="text-lg font-semibold mb-2">No Positions Yet</h3>
