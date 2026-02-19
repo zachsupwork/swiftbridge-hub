@@ -46,6 +46,10 @@ function aaveRepayWithCollateralUrl(chainId: number): string {
 
 interface YourBorrowsSectionProps {
   positions: AavePosition[];
+  /** When true: positions not yet loaded but account data shows debt */
+  loading?: boolean;
+  /** Authoritative debt USD from getUserAccountData (shown as fallback) */
+  accountDebtUsd?: number;
   onBorrow: (market: LendingMarket) => void;
   onRepay: (position: AavePosition) => void;
   onSwap: (chainId: number, symbol: string, address: string) => void;
@@ -53,6 +57,8 @@ interface YourBorrowsSectionProps {
 
 export function YourBorrowsSection({
   positions,
+  loading,
+  accountDebtUsd,
   onBorrow,
   onRepay,
   onSwap,
@@ -60,6 +66,31 @@ export function YourBorrowsSection({
   const borrowed = positions
     .filter(p => p.variableDebt > 0n)
     .sort((a, b) => b.variableDebtUsd - a.variableDebtUsd);
+
+  // Show loading state when account data says there's debt but positions haven't loaded
+  if (loading && borrowed.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-2"
+      >
+        <div className="flex items-center gap-2">
+          <TrendingDown className="w-4 h-4 text-warning" />
+          <h2 className="text-sm font-semibold text-foreground">Your Borrows</h2>
+          <span className="text-[10px] text-muted-foreground ml-1">Aave V3 · Loading positions…</span>
+        </div>
+        <div className="glass rounded-xl p-4 border border-warning/10 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="h-4 w-32 bg-muted rounded" />
+            {accountDebtUsd && accountDebtUsd > 0 && (
+              <div className="text-sm font-medium text-warning">{fmtUsd(accountDebtUsd)} total debt</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   if (borrowed.length === 0) return null;
 

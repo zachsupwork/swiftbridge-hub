@@ -176,9 +176,16 @@ export interface UseAavePositionsResult {
   loading: boolean;
   error: string | null;
   refresh: () => void;
+  /** Sum of supplyBalanceUsd across all positions (may be 0 when prices missing) */
   totalSupplyUsd: number;
+  /** Sum of variableDebtUsd across all positions (may be 0 when prices missing) */
   totalBorrowUsd: number;
+  /** Sum of totalCollateralUsd from getUserAccountData — authoritative USD collateral value */
   totalCollateralUsd: number;
+  /** Sum of totalDebtUsd from getUserAccountData — authoritative USD debt value */
+  totalAccountDebtUsd: number;
+  /** Sum of availableBorrowsUsd from getUserAccountData */
+  totalAvailableBorrowsUsd: number;
   lowestHealthFactor: number | null;
   debugInfo: ChainDebugInfo[];
 }
@@ -584,8 +591,17 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     () => positions.reduce((acc, p) => acc + p.variableDebtUsd, 0),
     [positions],
   );
+  // Authoritative USD values from getUserAccountData (always accurate even when per-asset prices are 0)
   const totalCollateralUsd = useMemo(
     () => chainAccountData.reduce((acc, d) => acc + d.totalCollateralUsd, 0),
+    [chainAccountData],
+  );
+  const totalAccountDebtUsd = useMemo(
+    () => chainAccountData.reduce((acc, d) => acc + d.totalDebtUsd, 0),
+    [chainAccountData],
+  );
+  const totalAvailableBorrowsUsd = useMemo(
+    () => chainAccountData.reduce((acc, d) => acc + d.availableBorrowsUsd, 0),
     [chainAccountData],
   );
   const lowestHealthFactor = useMemo(() => {
@@ -604,6 +620,8 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
     totalSupplyUsd,
     totalBorrowUsd,
     totalCollateralUsd,
+    totalAccountDebtUsd,
+    totalAvailableBorrowsUsd,
     lowestHealthFactor,
     debugInfo,
   };

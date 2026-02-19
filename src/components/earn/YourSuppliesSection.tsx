@@ -55,6 +55,10 @@ function aaveCollateralSwapUrl(chainId: number, assetAddress: string): string {
 
 interface YourSuppliesSectionProps {
   positions: AavePosition[];
+  /** When true: positions not yet loaded but account data shows collateral */
+  loading?: boolean;
+  /** Authoritative collateral USD from getUserAccountData (shown as fallback) */
+  accountCollateralUsd?: number;
   onSupply: (market: LendingMarket) => void;
   onWithdraw: (position: AavePosition) => void;
   onSwap: (chainId: number, symbol: string, address: string) => void;
@@ -62,6 +66,8 @@ interface YourSuppliesSectionProps {
 
 export function YourSuppliesSection({
   positions,
+  loading,
+  accountCollateralUsd,
   onSupply,
   onWithdraw,
   onSwap,
@@ -69,6 +75,31 @@ export function YourSuppliesSection({
   const supplied = positions
     .filter(p => p.supplyBalance > 0n)
     .sort((a, b) => b.supplyBalanceUsd - a.supplyBalanceUsd);
+
+  // Show loading state when account data says there's collateral but positions haven't loaded
+  if (loading && supplied.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-2"
+      >
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-success" />
+          <h2 className="text-sm font-semibold text-foreground">Your Supplies</h2>
+          <span className="text-[10px] text-muted-foreground ml-1">Aave V3 · Loading positions…</span>
+        </div>
+        <div className="glass rounded-xl p-4 border border-success/10 animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="h-4 w-32 bg-muted rounded" />
+            {accountCollateralUsd && accountCollateralUsd > 0 && (
+              <div className="text-sm font-medium text-success">{fmtUsd(accountCollateralUsd)} total collateral</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
 
   if (supplied.length === 0) return null;
 
