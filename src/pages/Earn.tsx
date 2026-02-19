@@ -15,6 +15,7 @@ import {
   RefreshCw,
   AlertTriangle,
   TrendingUp,
+  TrendingDown,
   Clock,
   Rocket,
   Wallet,
@@ -22,12 +23,14 @@ import {
   List,
   ExternalLink,
   Shield,
+  ShieldCheck,
   Info,
   Repeat,
   Heart,
   DollarSign,
   Percent,
   AlertCircle,
+  ChevronRight,
 } from 'lucide-react';
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
 
@@ -52,6 +55,7 @@ import { MorphoVaultActionModal } from '@/components/earn/MorphoVaultActionModal
 import { YourSuppliesSection } from '@/components/earn/YourSuppliesSection';
 import { YourBorrowsSection } from '@/components/earn/YourBorrowsSection';
 import { AavePositionDrawer } from '@/components/earn/AavePositionDrawer';
+import { AaveReserveOverviewDrawer } from '@/components/earn/AaveReserveOverviewDrawer';
 import { AccountHealthBar } from '@/components/earn/AccountHealthBar';
 import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
 import { useAavePositions } from '@/hooks/useAavePositions';
@@ -59,6 +63,7 @@ import { useAavePositions } from '@/hooks/useAavePositions';
 import { useMorphoVaults } from '@/hooks/useMorphoVaults';
 import { RiskBar } from '@/components/common/RiskBar';
 import { ChainIcon } from '@/components/common/ChainIcon';
+import { TokenIcon } from '@/components/common/TokenIcon';
 import { cn } from '@/lib/utils';
 import { openSwapIntent } from '@/lib/swapIntent';
 import { toast } from '@/hooks/use-toast';
@@ -140,8 +145,11 @@ export default function Earn() {
   const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
   const [isPositionDrawerOpen, setIsPositionDrawerOpen] = useState(false);
+  const [isOverviewDrawerOpen, setIsOverviewDrawerOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<AavePosition | null>(null);
   const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
+  const [overviewPosition, setOverviewPosition] = useState<AavePosition | null>(null);
+  const [overviewMarket, setOverviewMarket] = useState<LendingMarket | null>(null);
   const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
   const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
   const [vaultModalTab, setVaultModalTab] = useState<'deposit' | 'withdraw'>('deposit');
@@ -232,9 +240,24 @@ export default function Earn() {
 
   // ─── Open position drawer ───
   const handleManagePosition = useCallback((position: AavePosition) => {
-    setSelectedPosition(position);
-    setIsPositionDrawerOpen(true);
-  }, []);
+    // Open the deep overview drawer instead of the simpler position drawer
+    const matchingMarket = allAaveMarkets.find(m =>
+      m.chainId === position.chainId && m.assetAddress.toLowerCase() === position.assetAddress.toLowerCase()
+    );
+    setOverviewPosition(position);
+    setOverviewMarket(matchingMarket || position.market || null);
+    setIsOverviewDrawerOpen(true);
+  }, [allAaveMarkets]);
+
+  // ─── Open overview from a market row (may not have position) ───
+  const handleMarketDetails = useCallback((market: LendingMarket) => {
+    const matchingPosition = aavePositions.find(p =>
+      p.chainId === market.chainId && p.assetAddress.toLowerCase() === market.assetAddress.toLowerCase()
+    );
+    setOverviewPosition(matchingPosition || null);
+    setOverviewMarket(market);
+    setIsOverviewDrawerOpen(true);
+  }, [aavePositions]);
 
   // ─── Close modal + refresh ───
   const handleCloseModal = useCallback(() => {
@@ -242,14 +265,24 @@ export default function Earn() {
     setIsBorrowModalOpen(false);
     setIsVaultModalOpen(false);
     setIsPositionDrawerOpen(false);
+    setIsOverviewDrawerOpen(false);
     setSelectedMarket(null);
     setSelectedPosition(null);
+    setOverviewPosition(null);
+    setOverviewMarket(null);
     setSelectedVault(null);
     setSelectedVaultPosition(null);
     refreshMarkets();
     refreshPositions();
     refreshVaults();
   }, [refreshMarkets, refreshPositions, refreshVaults]);
+
+  // Compute chain account for the currently open overview drawer
+  const overviewChainAccount = useMemo(() => {
+    const cid = overviewPosition?.chainId || overviewMarket?.chainId;
+    if (!cid) return null;
+    return chainAccountData.find(d => d.chainId === cid) || null;
+  }, [overviewPosition, overviewMarket, chainAccountData]);
 
   // ─── Swap navigation ───
   const goToSwap = useCallback((chainId: number, tokenSymbol: string, tokenAddress?: string) => {
@@ -263,6 +296,14 @@ export default function Earn() {
   }, [activeTab]);
 
   // ─── Helpers ───
+  const fmtAmount = (val: string) => {
+    const n = parseFloat(val);
+    if (!Number.isFinite(n) || n === 0) return '0';
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+    if (n >= 1) return n.toFixed(4);
+    return n.toFixed(6);
+  };
   const formatUsd = (value: number) => {
     if (!Number.isFinite(value) || value === 0) return '$0.00';
     if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
@@ -522,101 +563,241 @@ export default function Earn() {
           {isConnected && (hasAaveActivity || totalPositionCount > 0 || totalDepositedUsd > 0) && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-              {/* ── Aave Portfolio Card — totals come from getUserAccountData (authoritative) ── */}
+              {/* ── YOUR SUPPLIES PANEL (Aave-style) ── */}
               {hasAaveActivity && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="glass rounded-xl p-5 border border-primary/10"
+                  className="glass rounded-xl border border-success/15 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-semibold flex items-center gap-2">
-                      <Wallet className="w-4 h-4 text-primary" />
-                      Aave Portfolio
-                    </h2>
-                    {aavePositionCount > 0 ? (
-                      <Badge variant="outline" className="text-xs">
-                        {aavePositionCount} position{aavePositionCount !== 1 ? 's' : ''}
-                      </Badge>
-                    ) : positionsLoading ? (
-                      <Badge variant="outline" className="text-xs animate-pulse">Loading…</Badge>
-                    ) : null}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
-                      {/* Use per-asset USD when available, fallback to collateral from account data */}
-                      <div className="text-lg font-semibold text-success">
+                  {/* Panel header */}
+                  <div className="px-5 py-3.5 bg-success/5 border-b border-success/10 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-success/15 flex items-center justify-center">
+                        <TrendingUp className="w-4 h-4 text-success" />
+                      </div>
+                      <h2 className="font-bold text-sm text-foreground">Your supplies</h2>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-success">
                         {formatUsd(totalSupplyUsd > 0 ? totalSupplyUsd : totalCollateralUsd)}
                       </div>
-                      {totalSupplyUsd === 0 && totalCollateralUsd > 0 && (
-                        <div className="text-[10px] text-muted-foreground">(from account data)</div>
-                      )}
+                      <div className="text-[10px] text-muted-foreground">Balance</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
-                      <div className="text-lg font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
+                  </div>
+
+                  {/* Summary metrics row */}
+                  <div className="grid grid-cols-3 gap-px bg-border/10">
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground">Collateral</div>
+                      <div className="text-sm font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
-                      {/* Use per-asset USD when available, fallback to account debt */}
-                      <div className="text-lg font-semibold text-warning">
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Percent className="w-2.5 h-2.5" /> APY (weighted)
+                      </div>
+                      <div className="text-sm font-semibold text-success">
+                        {(() => {
+                          const supplied = aavePositions.filter(p => p.supplyBalance > 0n && p.supplyBalanceUsd > 0);
+                          if (supplied.length === 0) return '—';
+                          const total = supplied.reduce((s, p) => s + p.supplyBalanceUsd, 0);
+                          if (total === 0) return '—';
+                          const wApy = supplied.reduce((s, p) => s + p.supplyApy * p.supplyBalanceUsd, 0) / total;
+                          return `${wApy.toFixed(2)}%`;
+                        })()}
+                      </div>
+                    </div>
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground"># Assets</div>
+                      <div className="text-sm font-semibold text-foreground">
+                        {aavePositions.filter(p => p.supplyBalance > 0n).length || '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Inline token rows */}
+                  <div className="divide-y divide-border/10">
+                    {aavePositions
+                      .filter(p => p.supplyBalance > 0n)
+                      .sort((a, b) => b.supplyBalanceUsd - a.supplyBalanceUsd)
+                      .map(pos => (
+                        <div
+                          key={`panel-supply-${pos.chainId}-${pos.assetAddress}`}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-success/5 cursor-pointer transition-colors group"
+                          onClick={() => handleManagePosition(pos)}
+                        >
+                          <div className="relative flex-shrink-0">
+                            <TokenIcon address={pos.assetAddress} symbol={pos.assetSymbol} chainId={pos.chainId}
+                              logoUrl={pos.assetLogo} size="sm" className="w-8 h-8 ring-2 ring-success/30" />
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
+                              <ChainIcon chainId={pos.chainId} size="sm" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-sm">{pos.assetSymbol}</span>
+                              <Badge className="h-4 px-1.5 text-[9px] bg-success/15 border-success/30 text-success border font-semibold">SUPPLIED</Badge>
+                              {pos.isCollateralEnabled && <ShieldCheck className="w-3 h-3 text-success opacity-70" />}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">{pos.chainName}</div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-bold">{pos.supplyBalanceUsd > 0 ? formatUsd(pos.supplyBalanceUsd) : fmtAmount(pos.supplyBalanceFormatted)}</div>
+                            <div className="text-[10px] text-success font-medium">{pos.supplyApy.toFixed(2)}% APY</div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      ))
+                    }
+                    {aavePositions.filter(p => p.supplyBalance > 0n).length === 0 && totalCollateralUsd > 0 && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+                        <Info className="w-3.5 h-3.5 text-success" />
+                        {formatUsd(totalCollateralUsd)} collateral detected — positions still indexing.
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-success" onClick={refreshPositions}>
+                          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ── YOUR BORROWS PANEL (Aave-style) ── */}
+              {hasAaveActivity && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="glass rounded-xl border border-warning/15 overflow-hidden"
+                >
+                  {/* Panel header */}
+                  <div className="px-5 py-3.5 bg-warning/5 border-b border-warning/10 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-warning/15 flex items-center justify-center">
+                        <TrendingDown className="w-4 h-4 text-warning" />
+                      </div>
+                      <h2 className="font-bold text-sm text-foreground">Your borrows</h2>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-warning">
                         {formatUsd(totalBorrowUsd > 0 ? totalBorrowUsd : totalAccountDebtUsd)}
                       </div>
-                      {totalBorrowUsd === 0 && totalAccountDebtUsd > 0 && (
-                        <div className="text-[10px] text-muted-foreground">(from account data)</div>
-                      )}
+                      <div className="text-[10px] text-muted-foreground">Debt</div>
                     </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                        <Heart className="w-3 h-3" />
-                        Health Factor
+                  </div>
+
+                  {/* Summary metrics row */}
+                  <div className="grid grid-cols-3 gap-px bg-border/10">
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Heart className="w-2.5 h-2.5" /> Health Factor
                       </div>
                       <div className={cn(
-                        "text-lg font-bold",
-                        lowestHealthFactor === null ? "text-success" :
-                        lowestHealthFactor > 1e10 ? "text-success" :
+                        "text-sm font-bold",
+                        lowestHealthFactor === null || (lowestHealthFactor && lowestHealthFactor > 1e10) ? "text-success" :
                         lowestHealthFactor > 1.5 ? "text-success" :
                         lowestHealthFactor > 1 ? "text-warning" : "text-destructive"
                       )}>
-                        {lowestHealthFactor === null ? '∞' :
-                         lowestHealthFactor > 1e10 ? '∞' :
-                         lowestHealthFactor.toFixed(2)}
+                        {lowestHealthFactor === null ? '∞' : lowestHealthFactor > 1e10 ? '∞' : lowestHealthFactor.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground">Borrow Power Used</div>
+                      <div className="text-sm font-semibold text-foreground">
+                        {(() => {
+                          if (totalCollateralUsd === 0) return '0%';
+                          // Approximate borrow power used from account data
+                          const maxBorrow = totalCollateralUsd * 0.8; // approximate avg LTV
+                          const used = maxBorrow > 0 ? (totalAccountDebtUsd / maxBorrow) * 100 : 0;
+                          return `${Math.min(used, 100).toFixed(1)}%`;
+                        })()}
+                      </div>
+                    </div>
+                    <div className="px-3 py-2.5 bg-background">
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Percent className="w-2.5 h-2.5" /> APY (weighted)
+                      </div>
+                      <div className="text-sm font-semibold text-warning">
+                        {(() => {
+                          const borrowed = aavePositions.filter(p => p.variableDebt > 0n && p.variableDebtUsd > 0);
+                          if (borrowed.length === 0) return '—';
+                          const total = borrowed.reduce((s, p) => s + p.variableDebtUsd, 0);
+                          if (total === 0) return '—';
+                          const wApy = borrowed.reduce((s, p) => s + p.borrowApy * p.variableDebtUsd, 0) / total;
+                          return `${wApy.toFixed(2)}%`;
+                        })()}
                       </div>
                     </div>
                   </div>
 
-                  {/* Available to borrow */}
-                  {totalAvailableBorrowsUsd > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border/30">
-                      <div className="text-xs text-muted-foreground mb-1">Available to Borrow</div>
-                      <div className="text-sm font-medium text-success">
-                        {formatUsd(totalAvailableBorrowsUsd)}
-                      </div>
+                  {/* Health Factor bar (inline) */}
+                  {totalAccountDebtUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
+                    <div className="px-4 py-2 bg-background border-b border-border/10">
+                      <RiskBar healthFactor={lowestHealthFactor} showLabel={false} size="sm" />
                     </div>
                   )}
 
-                  {/* Health Factor bar */}
-                  {totalAccountDebtUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
-                    <div className="mt-3 pt-3 border-t border-border/30">
-                      <RiskBar healthFactor={lowestHealthFactor} showLabel size="md" />
-                      {lowestHealthFactor < 1 && (
-                        <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-destructive/10 border border-destructive/30">
-                          <AlertTriangle className="w-4 h-4 text-destructive" />
-                          <span className="text-xs text-destructive font-medium">
-                            Liquidation risk! Your health factor is below 1. Repay debt or add collateral immediately.
-                          </span>
+                  {/* Inline token rows */}
+                  <div className="divide-y divide-border/10">
+                    {aavePositions
+                      .filter(p => p.variableDebt > 0n)
+                      .sort((a, b) => b.variableDebtUsd - a.variableDebtUsd)
+                      .map(pos => (
+                        <div
+                          key={`panel-borrow-${pos.chainId}-${pos.assetAddress}`}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-warning/5 cursor-pointer transition-colors group"
+                          onClick={() => handleManagePosition(pos)}
+                        >
+                          <div className="relative flex-shrink-0">
+                            <TokenIcon address={pos.assetAddress} symbol={pos.assetSymbol} chainId={pos.chainId}
+                              logoUrl={pos.assetLogo} size="sm" className="w-8 h-8 ring-2 ring-warning/30" />
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
+                              <ChainIcon chainId={pos.chainId} size="sm" />
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-sm">{pos.assetSymbol}</span>
+                              <Badge className="h-4 px-1.5 text-[9px] bg-warning/15 border-warning/30 text-warning border font-semibold">BORROWED</Badge>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">{pos.chainName} · Variable rate</div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-bold text-warning">{pos.variableDebtUsd > 0 ? formatUsd(pos.variableDebtUsd) : fmtAmount(pos.variableDebtFormatted)}</div>
+                            <div className="text-[10px] text-warning font-medium">{pos.borrowApy.toFixed(2)}% APY</div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
-                      )}
-                      {lowestHealthFactor >= 1 && lowestHealthFactor < 1.5 && (
-                        <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-warning/10 border border-warning/30">
-                          <AlertTriangle className="w-4 h-4 text-warning" />
-                          <span className="text-xs text-warning font-medium">
-                            Health factor is low. Consider repaying some debt.
-                          </span>
-                        </div>
-                      )}
+                      ))
+                    }
+                    {aavePositions.filter(p => p.variableDebt > 0n).length === 0 && totalAccountDebtUsd > 0 && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-warning" />
+                        {formatUsd(totalAccountDebtUsd)} debt detected — positions still indexing.
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-warning" onClick={refreshPositions}>
+                          <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                        </Button>
+                      </div>
+                    )}
+                    {aavePositions.filter(p => p.variableDebt > 0n).length === 0 && totalAccountDebtUsd === 0 && (
+                      <div className="px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+                        <Info className="w-3.5 h-3.5" />
+                        No active borrows. Supply collateral and borrow from the Markets tab.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* HF warning below panel */}
+                  {lowestHealthFactor !== null && lowestHealthFactor < 1.5 && lowestHealthFactor < 1e10 && (
+                    <div className={cn(
+                      "mx-4 mb-3 mt-1 rounded-lg px-3 py-2 flex items-center gap-2 text-xs",
+                      lowestHealthFactor < 1 ? "bg-destructive/10 border border-destructive/30 text-destructive" :
+                      "bg-warning/10 border border-warning/30 text-warning"
+                    )}>
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                      {lowestHealthFactor < 1
+                        ? "⚠️ Liquidation risk! Health Factor below 1. Repay debt immediately."
+                        : "Health Factor is low. Consider repaying some debt."
+                      }
                     </div>
                   )}
                 </motion.div>
@@ -808,6 +989,7 @@ export default function Earn() {
                 onRefresh={refreshMarkets}
                 onSupply={handleSupply}
                 onBorrow={handleBorrow}
+                onDetails={handleMarketDetails}
                 hasCollateral={totalCollateralUsd > 0 || hasSupplied}
                 userPositionMap={userPositionMap}
                 walletBalances={(() => {
@@ -1087,6 +1269,27 @@ export default function Earn() {
         onWithdraw={handleWithdraw}
         onBorrow={handleBorrow}
         onRepay={handleRepay}
+      />
+
+      <AaveReserveOverviewDrawer
+        open={isOverviewDrawerOpen}
+        onClose={() => setIsOverviewDrawerOpen(false)}
+        position={overviewPosition}
+        market={overviewMarket}
+        chainAccount={overviewChainAccount}
+        walletBalanceUsd={(() => {
+          const addr = overviewPosition?.assetAddress || overviewMarket?.assetAddress;
+          const cid = overviewPosition?.chainId || overviewMarket?.chainId;
+          if (!addr || !cid) return 0;
+          const key = `${cid}:${addr.toLowerCase()}`;
+          const tb = tokenBalances.find(t => `${t.chainId}:${t.token.address.toLowerCase()}` === key);
+          return tb?.balanceUSD || 0;
+        })()}
+        onSupply={handleSupply}
+        onWithdraw={handleWithdraw}
+        onBorrow={handleBorrow}
+        onRepay={handleRepay}
+        onSwap={goToSwap}
       />
     </Layout>
   );
