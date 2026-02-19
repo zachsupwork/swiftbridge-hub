@@ -261,17 +261,24 @@ const SupplyRow = memo(function SupplyRow({
 // ============================================
 
 const BorrowRow = memo(function BorrowRow({
-  market, onBorrow, hasCollateral, expanded, onToggle,
+  market, onBorrow, hasCollateral, expanded, onToggle, isSupplied, isBorrowed,
 }: {
   market: LendingMarket;
   onBorrow?: (m: LendingMarket) => void;
   hasCollateral: boolean;
   expanded: boolean;
   onToggle: () => void;
+  isSupplied?: boolean;
+  isBorrowed?: boolean;
 }) {
+  const hasPos = isSupplied || isBorrowed;
   return (
     <>
-      <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+      <tr className={cn(
+        "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer",
+        isBorrowed && "bg-warning/5 hover:bg-warning/10",
+        !isBorrowed && isSupplied && "bg-primary/5 hover:bg-primary/10"
+      )}
         onClick={onToggle}>
         <td className="p-3">
           <div className="flex items-center gap-2.5">
@@ -284,7 +291,19 @@ const BorrowRow = memo(function BorrowRow({
               </div>
             </div>
             <div>
-              <div className="font-medium text-sm">{market.assetSymbol}</div>
+              <div className="font-medium text-sm flex items-center gap-1.5">
+                {market.assetSymbol}
+                {isBorrowed && (
+                  <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-warning/20 text-warning border border-warning/30 leading-none">
+                    BORROWED
+                  </span>
+                )}
+                {isSupplied && !isBorrowed && (
+                  <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-success/20 text-success border border-success/30 leading-none">
+                    SUPPLIED
+                  </span>
+                )}
+              </div>
               <div className="text-[11px] text-muted-foreground">{market.chainName}</div>
             </div>
           </div>
@@ -498,25 +517,28 @@ export function AaveMarketsTable({
         m.chainName.toLowerCase().includes(q)
       );
     }
-    // Sort: positions float to top (use raw flags so even $0-USD positions surface)
+    // Sort: borrowed first (1), then supplied (2), then rest by metric
     result.sort((a, b) => {
       const aPos = userPositionMap[`${a.chainId}-${a.assetAddress.toLowerCase()}`];
       const bPos = userPositionMap[`${b.chainId}-${b.assetAddress.toLowerCase()}`];
-      const aHasPos = aPos && (aPos.hasSupply || aPos.hasBorrow || aPos.suppliedUsd > 0 || aPos.borrowedUsd > 0);
-      const bHasPos = bPos && (bPos.hasSupply || bPos.hasBorrow || bPos.suppliedUsd > 0 || bPos.borrowedUsd > 0);
+      const aIsBorrowed = !!(aPos && (aPos.hasBorrow || aPos.borrowedUsd > 0));
+      const bIsBorrowed = !!(bPos && (bPos.hasBorrow || bPos.borrowedUsd > 0));
+      const aIsSupplied = !!(aPos && (aPos.hasSupply || aPos.suppliedUsd > 0));
+      const bIsSupplied = !!(bPos && (bPos.hasSupply || bPos.suppliedUsd > 0));
 
-      // Float positions to top
-      if (aHasPos && !bHasPos) return -1;
-      if (!aHasPos && bHasPos) return 1;
+      // Tier: 0 = borrowed, 1 = supplied only, 2 = none
+      const aTier = aIsBorrowed ? 0 : aIsSupplied ? 1 : 2;
+      const bTier = bIsBorrowed ? 0 : bIsSupplied ? 1 : 2;
+      if (aTier !== bTier) return aTier - bTier;
 
-      // Within positions, sort by max(supplied, borrowed) desc
-      if (aHasPos && bHasPos) {
-        const aVal = Math.max(aPos.suppliedUsd, aPos.borrowedUsd);
-        const bVal = Math.max(bPos.suppliedUsd, bPos.borrowedUsd);
+      // Within same tier, sort by USD value desc
+      if (aTier < 2 && bTier < 2) {
+        const aVal = Math.max(aPos!.suppliedUsd, aPos!.borrowedUsd);
+        const bVal = Math.max(bPos!.suppliedUsd, bPos!.borrowedUsd);
         return bVal - aVal;
       }
 
-      // Regular sort
+      // Regular sort for rest
       let cmp = 0;
       switch (sortBy) {
         case 'supplyAPY': cmp = a.supplyAPY - b.supplyAPY; break;
@@ -681,6 +703,8 @@ export function AaveMarketsTable({
                       hasCollateral={hasCollateral}
                       expanded={expandedId === market.id}
                       onToggle={() => setExpandedId(expandedId === market.id ? null : market.id)}
+                      isSupplied={isSupplied}
+                      isBorrowed={isBorrowed}
                     />
                   );
                 })}

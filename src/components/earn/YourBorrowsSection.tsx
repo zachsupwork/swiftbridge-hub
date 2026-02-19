@@ -1,11 +1,12 @@
 /**
  * Your Borrows Section — Aave-style
  *
- * Shows the user's active borrow positions at the top of the Earn page.
+ * Shows the user's active borrow positions.
+ * Actions: Repay, Borrow More, Repay with Collateral (opens Aave UI).
  */
 
 import { motion } from 'framer-motion';
-import { AlertTriangle, ArrowDownLeft, TrendingDown, Repeat } from 'lucide-react';
+import { AlertTriangle, ArrowDownLeft, TrendingDown, ExternalLink, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ChainIcon } from '@/components/common/ChainIcon';
@@ -27,6 +28,20 @@ function fmtUsd(val: number): string {
   if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`;
   if (val >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
   return `$${val.toFixed(2)}`;
+}
+
+/** Build Aave App URL for Repay with Collateral */
+function aaveRepayWithCollateralUrl(chainId: number): string {
+  const chainMap: Record<number, string> = {
+    1: 'ethereum',
+    42161: 'arbitrum',
+    10: 'optimism',
+    137: 'polygon',
+    8453: 'base',
+    43114: 'avalanche',
+  };
+  const chainSlug = chainMap[chainId] || 'ethereum';
+  return `https://app.aave.com/?marketName=proto_${chainSlug}_v3`;
 }
 
 interface YourBorrowsSectionProps {
@@ -61,6 +76,7 @@ export function YourBorrowsSection({
         <Badge variant="outline" className="h-4 px-1.5 text-[10px] bg-warning/10 border-warning/30 text-warning">
           {borrowed.length}
         </Badge>
+        <span className="text-[10px] text-muted-foreground ml-1">Aave V3</span>
       </div>
 
       {/* Desktop table */}
@@ -71,7 +87,7 @@ export function YourBorrowsSection({
               <th className="text-left p-3 text-xs font-medium text-muted-foreground">Asset</th>
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">Debt</th>
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">APY (variable)</th>
-              <th className="text-right p-3 w-40"></th>
+              <th className="text-right p-3 w-72"></th>
             </tr>
           </thead>
           <tbody>
@@ -116,21 +132,32 @@ export function YourBorrowsSection({
                   <span className="text-sm font-medium text-warning">{pos.borrowApy.toFixed(2)}%</span>
                 </td>
                 <td className="p-3 text-right">
-                  <div className="flex items-center gap-1.5 justify-end">
+                  <div className="flex items-center gap-1 justify-end">
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 px-3 text-xs gap-1 border-warning/30 text-warning hover:bg-warning/10"
+                      className="h-7 px-2.5 text-xs gap-1 border-warning/30 text-warning hover:bg-warning/10"
                       onClick={() => onRepay(pos)}
                     >
                       Repay
                     </Button>
                     {pos.market && (
-                      <Button size="sm" variant="ghost" className="h-7 px-3 text-xs gap-1"
+                      <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs gap-1"
                         onClick={() => onBorrow(pos.market!)}>
                         <ArrowDownLeft className="w-3 h-3" /> Borrow More
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2.5 text-xs gap-1 text-primary"
+                      title="Repay with Collateral — repay this debt using your supplied collateral via Aave"
+                      onClick={() => window.open(aaveRepayWithCollateralUrl(pos.chainId), '_blank')}
+                    >
+                      <CreditCard className="w-3 h-3" />
+                      Repay w/ Collateral
+                      <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                    </Button>
                   </div>
                 </td>
               </motion.tr>
@@ -179,7 +206,7 @@ export function YourBorrowsSection({
                 <div className="text-muted-foreground">{fmtUsd(pos.variableDebtUsd)}</div>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 flex-wrap">
               <Button
                 size="sm"
                 variant="outline"
@@ -194,9 +221,14 @@ export function YourBorrowsSection({
                   Borrow More
                 </Button>
               )}
-              <Button size="sm" variant="ghost" className="h-8 text-xs gap-1 text-primary"
-                onClick={() => onSwap(pos.chainId, pos.assetSymbol, pos.assetAddress)}>
-                <Repeat className="w-3 h-3" />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs gap-1 text-primary"
+                onClick={() => window.open(aaveRepayWithCollateralUrl(pos.chainId), '_blank')}
+              >
+                <CreditCard className="w-3 h-3" />
+                Repay w/ Collateral
               </Button>
             </div>
           </div>

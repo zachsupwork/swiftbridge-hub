@@ -265,7 +265,9 @@ export default function Earn() {
       })()
     : null;
 
-  const totalPositionCount = aavePositions.length + vaultPositions.length;
+  const aavePositionCount = aavePositions.length;
+  const vaultPositionCount = vaultPositions.length;
+  const totalPositionCount = aavePositionCount + vaultPositionCount;
   const netWorth = totalSupplyUsd + totalDepositedUsd - totalBorrowUsd;
 
   // Compute chain count from actual rendered markets
@@ -496,89 +498,167 @@ export default function Earn() {
             </div>
           )}
 
-          {/* ─── DASHBOARD ─── */}
-          {isConnected && (totalPositionCount > 0 || totalBorrowUsd > 0 || totalSupplyUsd > 0) && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.98 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="glass rounded-xl p-5"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold flex items-center gap-2">
-                  <Wallet className="w-4 h-4 text-primary" />
-                  Your Dashboard
-                </h2>
-                <Badge variant="outline" className="text-xs">
-                  {totalPositionCount} position{totalPositionCount !== 1 ? 's' : ''}
-                </Badge>
-              </div>
+          {/* ─── DASHBOARD: Aave Portfolio Card + Morpho Vaults Card (separate) ─── */}
+          {isConnected && (totalPositionCount > 0 || totalBorrowUsd > 0 || totalSupplyUsd > 0 || totalDepositedUsd > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                    <DollarSign className="w-3 h-3" />
-                    Net Worth
+              {/* ── Aave Portfolio Card ── */}
+              {(totalSupplyUsd > 0 || totalBorrowUsd > 0 || totalCollateralUsd > 0) && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="glass rounded-xl p-5 border border-primary/10"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="font-semibold flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-primary" />
+                      Aave Portfolio
+                    </h2>
+                    {aavePositionCount > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {aavePositionCount} position{aavePositionCount !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
                   </div>
-                  <div className="text-lg font-bold text-foreground">{formatUsd(netWorth)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
-                  <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
-                  <div className="text-lg font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
-                  <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Vault Deposits</div>
-                  <div className="text-lg font-semibold text-primary">{formatUsd(totalDepositedUsd)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                    <Heart className="w-3 h-3" />
-                    Health Factor
-                  </div>
-                  <div className={cn(
-                    "text-lg font-bold",
-                    lowestHealthFactor === null ? "text-success" :
-                    lowestHealthFactor > 1e10 ? "text-success" :
-                    lowestHealthFactor > 1.5 ? "text-success" :
-                    lowestHealthFactor > 1 ? "text-warning" : "text-destructive"
-                  )}>
-                    {lowestHealthFactor === null ? '∞' :
-                     lowestHealthFactor > 1e10 ? '∞' :
-                     lowestHealthFactor.toFixed(2)}
-                  </div>
-                </div>
-              </div>
 
-              {/* Health Factor bar */}
-              {totalBorrowUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
-                <div className="mt-4 pt-4 border-t border-border/30">
-                  <RiskBar healthFactor={lowestHealthFactor} showLabel size="md" />
-                  {lowestHealthFactor < 1 && (
-                    <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-destructive/10 border border-destructive/30">
-                      <AlertTriangle className="w-4 h-4 text-destructive" />
-                      <span className="text-xs text-destructive font-medium">
-                        Liquidation risk! Your health factor is below 1. Repay debt or add collateral immediately.
-                      </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Total Supplied</div>
+                      <div className="text-lg font-semibold text-success">{formatUsd(totalSupplyUsd)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Total Collateral</div>
+                      <div className="text-lg font-semibold text-primary">{formatUsd(totalCollateralUsd)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1">Total Borrowed</div>
+                      <div className="text-lg font-semibold text-warning">{formatUsd(totalBorrowUsd)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                        <Heart className="w-3 h-3" />
+                        Health Factor
+                      </div>
+                      <div className={cn(
+                        "text-lg font-bold",
+                        lowestHealthFactor === null ? "text-success" :
+                        lowestHealthFactor > 1e10 ? "text-success" :
+                        lowestHealthFactor > 1.5 ? "text-success" :
+                        lowestHealthFactor > 1 ? "text-warning" : "text-destructive"
+                      )}>
+                        {lowestHealthFactor === null ? '∞' :
+                         lowestHealthFactor > 1e10 ? '∞' :
+                         lowestHealthFactor.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Available to borrow */}
+                  {chainAccountData.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-border/30">
+                      <div className="text-xs text-muted-foreground mb-1">Available to Borrow</div>
+                      <div className="text-sm font-medium text-success">
+                        {formatUsd(chainAccountData.reduce((s, d) => s + d.availableBorrowsUsd, 0))}
+                      </div>
                     </div>
                   )}
-                  {lowestHealthFactor >= 1 && lowestHealthFactor < 1.5 && (
-                    <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-warning/10 border border-warning/30">
-                      <AlertTriangle className="w-4 h-4 text-warning" />
-                      <span className="text-xs text-warning font-medium">
-                        Health factor is low. Consider repaying some debt.
-                      </span>
+
+                  {/* Health Factor bar */}
+                  {totalBorrowUsd > 0 && lowestHealthFactor !== null && lowestHealthFactor < 1e10 && (
+                    <div className="mt-3 pt-3 border-t border-border/30">
+                      <RiskBar healthFactor={lowestHealthFactor} showLabel size="md" />
+                      {lowestHealthFactor < 1 && (
+                        <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-destructive/10 border border-destructive/30">
+                          <AlertTriangle className="w-4 h-4 text-destructive" />
+                          <span className="text-xs text-destructive font-medium">
+                            Liquidation risk! Your health factor is below 1. Repay debt or add collateral immediately.
+                          </span>
+                        </div>
+                      )}
+                      {lowestHealthFactor >= 1 && lowestHealthFactor < 1.5 && (
+                        <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-warning/10 border border-warning/30">
+                          <AlertTriangle className="w-4 h-4 text-warning" />
+                          <span className="text-xs text-warning font-medium">
+                            Health factor is low. Consider repaying some debt.
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
+                </motion.div>
               )}
-            </motion.div>
+
+              {/* ── Morpho Vaults Card ── */}
+              {(totalDepositedUsd > 0 || vaultPositionCount > 0) && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="glass rounded-xl p-5 border border-primary/10"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="font-semibold flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary" />
+                      Morpho Vaults
+                    </h2>
+                    {vaultPositionCount > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {vaultPositionCount} vault{vaultPositionCount !== 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                        <DollarSign className="w-3 h-3" />
+                        Total Deposited
+                      </div>
+                      <div className="text-lg font-semibold text-primary">{formatUsd(totalDepositedUsd)}</div>
+                    </div>
+                    {vaultPositions.length > 0 && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                          <Percent className="w-3 h-3" />
+                          Avg APY
+                        </div>
+                        <div className="text-lg font-semibold text-success">
+                          {(() => {
+                            const active = vaultPositions.filter(vp => vp.assetsUsd > 0 && vp.vault && vp.vault.apy > 0);
+                            if (active.length === 0) return '—';
+                            const totalVal = active.reduce((s, vp) => s + vp.assetsUsd, 0);
+                            if (totalVal === 0) return '—';
+                            const wAvg = active.reduce((s, vp) => s + vp.vault!.apy * vp.assetsUsd, 0) / totalVal;
+                            return `${wAvg.toFixed(2)}%`;
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Individual vault deposits */}
+                  {vaultPositions.slice(0, 3).map(vp => (
+                    <div key={`${vp.chainId}-${vp.vaultAddress}`}
+                      className="flex items-center justify-between py-2 border-t border-border/20 text-xs">
+                      <div className="flex items-center gap-2">
+                        <ChainIcon chainId={vp.chainId} size="sm" />
+                        <span className="font-medium truncate max-w-[120px]">{vp.vault?.name || 'Vault'}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium">{vp.assetsUsd > 0 ? formatUsd(vp.assetsUsd) : '—'}</div>
+                        {vp.vault && vp.vault.apy > 0 && (
+                          <div className="text-success">{vp.vault.apy.toFixed(2)}% APY</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {vaultPositions.length > 3 && (
+                    <div className="text-xs text-muted-foreground text-center pt-2">
+                      +{vaultPositions.length - 3} more vaults
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </div>
           )}
 
           {/* Tabs */}
@@ -605,9 +685,14 @@ export default function Earn() {
               <TabsTrigger value="positions" className="gap-2">
                 <List className="w-4 h-4" />
                 Positions
-                {totalPositionCount > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
-                    {totalPositionCount}
+                {aavePositionCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs bg-success/20 text-success">
+                    {aavePositionCount}
+                  </Badge>
+                )}
+                {vaultPositionCount > 0 && (
+                  <Badge variant="secondary" className="ml-0.5 h-5 px-1.5 text-xs bg-primary/20 text-primary">
+                    +{vaultPositionCount}
                   </Badge>
                 )}
               </TabsTrigger>
@@ -743,130 +828,174 @@ export default function Earn() {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {/* Chain Account Summaries */}
-                  {chainAccountData.length > 0 && (
-                    <div className="space-y-2">
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
-                        Account Health by Chain
-                      </h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {chainAccountData.map(data => (
-                          <div key={data.chainId} className="glass rounded-lg p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <ChainIcon chainId={data.chainId} size="sm" />
-                              <span className="text-sm font-medium">{data.chainName}</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2 text-xs">
-                              <div>
-                                <div className="text-muted-foreground">Collateral</div>
-                                <div className="font-medium">{formatUsd(data.totalCollateralUsd)}</div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">Debt</div>
-                                <div className="font-medium text-warning">{formatUsd(data.totalDebtUsd)}</div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">Available</div>
-                                <div className="font-medium text-success">{formatUsd(data.availableBorrowsUsd)}</div>
-                              </div>
-                              <div>
-                                <div className="text-muted-foreground">Health</div>
-                                <div className={cn(
-                                  "font-medium",
-                                  data.healthFactor > 1e10 ? "text-success" :
-                                  data.healthFactor > 1.5 ? "text-success" :
-                                  data.healthFactor > 1 ? "text-warning" : "text-destructive"
-                                )}>
-                                  {data.healthFactor > 1e10 ? '∞' : data.healthFactor.toFixed(2)}
+                <Tabs defaultValue="aave" className="space-y-4">
+                  <TabsList className="h-9">
+                    <TabsTrigger value="aave" className="text-xs gap-1.5 px-4">
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      Aave Positions
+                      {aavePositionCount > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] bg-success/20 text-success">
+                          {aavePositionCount}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="morpho" className="text-xs gap-1.5 px-4">
+                      <Shield className="w-3.5 h-3.5" />
+                      Morpho Vaults
+                      {vaultPositionCount > 0 && (
+                        <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] bg-primary/20 text-primary">
+                          {vaultPositionCount}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  {/* ── Aave Positions Subtab ── */}
+                  <TabsContent value="aave" className="space-y-4">
+                    {/* Chain Account Health */}
+                    {chainAccountData.filter(d => d.totalCollateralUsd > 0 || d.totalDebtUsd > 0).length > 0 && (
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <Shield className="w-4 h-4" />
+                          Aave Account Health by Chain
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {chainAccountData
+                            .filter(d => d.totalCollateralUsd > 0 || d.totalDebtUsd > 0)
+                            .map(data => (
+                              <div key={data.chainId} className="glass rounded-lg p-3 border border-primary/10">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <ChainIcon chainId={data.chainId} size="sm" />
+                                  <span className="text-sm font-medium">{data.chainName}</span>
+                                  <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1">Aave V3</Badge>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div>
+                                    <div className="text-muted-foreground">Collateral</div>
+                                    <div className="font-medium">{formatUsd(data.totalCollateralUsd)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Debt</div>
+                                    <div className="font-medium text-warning">{formatUsd(data.totalDebtUsd)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Available</div>
+                                    <div className="font-medium text-success">{formatUsd(data.availableBorrowsUsd)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground">Health</div>
+                                    <div className={cn(
+                                      "font-medium",
+                                      data.healthFactor > 1e10 ? "text-success" :
+                                      data.healthFactor > 1.5 ? "text-success" :
+                                      data.healthFactor > 1 ? "text-warning" : "text-destructive"
+                                    )}>
+                                      {data.healthFactor > 1e10 ? '∞' : data.healthFactor.toFixed(2)}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Aave position cards */}
+                    {aavePositions.length > 0 ? (
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <LayoutGrid className="w-4 h-4" />
+                          Aave Market Positions ({aavePositions.length})
+                        </h3>
+                        {aavePositions.map(pos => (
+                          <AavePositionCard
+                            key={`${pos.chainId}-${pos.assetAddress}`}
+                            position={pos}
+                            onSupply={(p) => { if (p.market) handleSupply(p.market); }}
+                            onWithdraw={(p) => { handleWithdraw(p); }}
+                            onRepay={(p) => { handleRepay(p); }}
+                            onSwap={(chainId, symbol, addr) => goToSwap(chainId, symbol, addr)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="glass rounded-xl p-6 text-center">
+                        <TrendingUp className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">No Aave positions found.</p>
+                        <Button size="sm" className="mt-3" onClick={() => setActiveTab('markets')}>
+                          Supply to Aave
+                        </Button>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  {/* ── Morpho Vault Positions Subtab ── */}
+                  <TabsContent value="morpho" className="space-y-4">
+                    {vaultPositions.length > 0 ? (
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <Shield className="w-4 h-4" />
+                          Morpho Vault Deposits ({vaultPositions.length})
+                        </h3>
+                        {vaultPositions.map(vp => (
+                          <div key={`${vp.chainId}-${vp.vaultAddress}`}
+                            className="glass rounded-xl p-4 border border-primary/10">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <Shield className="w-5 h-5 text-primary" />
+                                </div>
+                                <div>
+                                  <div className="font-medium text-sm flex items-center gap-1.5">
+                                    {vp.vault?.name || 'Vault'}
+                                    <Badge variant="outline" className="text-[9px] h-4 px-1">Morpho</Badge>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                    <ChainIcon chainId={vp.chainId} size="sm" />
+                                    {vp.vault?.asset.symbol || '???'}
+                                    {vp.vault?.curator && <span>• {vp.vault.curator}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="font-medium text-sm text-primary">
+                                  {vp.assetsUsd > 0 ? formatUsd(vp.assetsUsd) : '—'}
+                                </div>
+                                {vp.vault && vp.vault.apy > 0 && (
+                                  <div className="text-xs text-success">{vp.vault.apy.toFixed(2)}% APY</div>
+                                )}
+                              </div>
                             </div>
+                            {vp.vault && (
+                              <div className="flex gap-2 mt-3">
+                                <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'deposit')}>
+                                  <TrendingUp className="w-3 h-3" />
+                                  Deposit More
+                                </Button>
+                                <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'withdraw')}>
+                                  <Wallet className="w-3 h-3" />
+                                  Withdraw
+                                </Button>
+                                <Button size="sm" variant="ghost" className="gap-1" onClick={() => goToSwap(vp.chainId, vp.vault!.asset.symbol, vp.vault!.asset.address)}>
+                                  <Repeat className="w-3 h-3" />
+                                  Swap
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Aave Positions */}
-                  {aavePositions.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <LayoutGrid className="w-4 h-4" />
-                        Aave Market Positions ({aavePositions.length})
-                      </h3>
-                      {aavePositions.map(pos => (
-                        <AavePositionCard
-                          key={`${pos.chainId}-${pos.assetAddress}`}
-                          position={pos}
-                          onSupply={(p) => { if (p.market) handleSupply(p.market); }}
-                          onWithdraw={(p) => {
-                            if (p.market?.protocolUrl) window.open(p.market.protocolUrl, '_blank');
-                          }}
-                          onRepay={(p) => {
-                            if (p.market?.protocolUrl) window.open(p.market.protocolUrl, '_blank');
-                          }}
-                          onSwap={(chainId, symbol, addr) => goToSwap(chainId, symbol, addr)}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Vault Positions */}
-                  {vaultPositions.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <Shield className="w-4 h-4" />
-                        Vault Deposits ({vaultPositions.length})
-                      </h3>
-                      {vaultPositions.map(vp => (
-                        <div key={`${vp.chainId}-${vp.vaultAddress}`}
-                          className="glass rounded-xl p-4 border border-primary/10">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                <Shield className="w-5 h-5 text-primary" />
-                              </div>
-                              <div>
-                                <div className="font-medium text-sm">{vp.vault?.name || 'Vault'}</div>
-                                <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                  <ChainIcon chainId={vp.chainId} size="sm" />
-                                  {vp.vault?.asset.symbol || '???'}
-                                  {vp.vault?.curator && <span>• {vp.vault.curator}</span>}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="font-medium text-sm text-primary">
-                                {vp.assetsUsd > 0 ? `$${vp.assetsUsd.toFixed(2)}` : '—'}
-                              </div>
-                              {vp.vault && vp.vault.apy > 0 && (
-                                <div className="text-xs text-success">{vp.vault.apy.toFixed(2)}% APY</div>
-                              )}
-                            </div>
-                          </div>
-                          {vp.vault && (
-                            <div className="flex gap-2 mt-3">
-                              <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'deposit')}>
-                                <TrendingUp className="w-3 h-3" />
-                                Deposit More
-                              </Button>
-                              <Button size="sm" variant="outline" className="flex-1 gap-1" onClick={() => handleVaultAction(vp.vault!, 'withdraw')}>
-                                <Wallet className="w-3 h-3" />
-                                Withdraw
-                              </Button>
-                              <Button size="sm" variant="ghost" className="gap-1" onClick={() => goToSwap(vp.chainId, vp.vault!.asset.symbol, vp.vault!.asset.address)}>
-                                <Repeat className="w-3 h-3" />
-                                Swap
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                    ) : (
+                      <div className="glass rounded-xl p-6 text-center">
+                        <Shield className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">No Morpho vault deposits found.</p>
+                        <Button size="sm" className="mt-3" onClick={() => setActiveTab('vaults')}>
+                          Explore Vaults
+                        </Button>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               )}
             </TabsContent>
           </Tabs>
