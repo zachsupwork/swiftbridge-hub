@@ -129,6 +129,22 @@ export interface AavePosition {
   dataSource: 'rpc' | 'subgraph';
   // Market reference (present when DeFiLlama had a matching entry)
   market?: LendingMarket;
+
+  // ── Reserve contract addresses (from getReserveData) ──
+  aTokenAddress: `0x${string}` | null;
+  variableDebtTokenAddress: `0x${string}` | null;
+  stableDebtTokenAddress: `0x${string}` | null;
+  reserveId: number;
+  lastUpdateTimestamp: number;
+  // Raw borrow rates (ray-encoded 1e27)
+  currentLiquidityRate: bigint;
+  currentVariableBorrowRate: bigint;
+
+  // ── Official Aave per-chain protocol addresses ──
+  poolAddress: `0x${string}` | null;
+  poolAddressesProvider: `0x${string}` | null;
+  uiPoolDataProvider: `0x${string}` | null;
+  oracleAddress: `0x${string}` | null;
 }
 
 export interface AaveChainAccountData {
@@ -371,8 +387,11 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                 variableDebt: bigint;
                 aTokenAddress: `0x${string}`;
                 varDebtTokenAddress: `0x${string}` | null;
+                stableDebtTokenAddress: `0x${string}` | null;
                 currentLiquidityRate: bigint;
                 currentVariableBorrowRate: bigint;
+                reserveId: number;
+                lastUpdateTimestamp: number;
               } | null> => {
                 let checksummedAsset: `0x${string}`;
                 try {
@@ -383,8 +402,11 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
                 let aTokenAddress: `0x${string}` | null = null;
                 let varDebtTokenAddress: `0x${string}` | null = null;
+                let stableDebtTokenAddress: `0x${string}` | null = null;
                 let currentLiquidityRate = 0n;
                 let currentVariableBorrowRate = 0n;
+                let reserveId = 0;
+                let lastUpdateTimestamp = 0;
 
                 try {
                   const rd = await (client.readContract as any)({
@@ -395,9 +417,12 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                   }) as any;
 
                   aTokenAddress = (rd?.aTokenAddress ?? rd?.[7] ?? null) as `0x${string}` | null;
+                  stableDebtTokenAddress = (rd?.stableDebtTokenAddress ?? rd?.[8] ?? null) as `0x${string}` | null;
                   varDebtTokenAddress = (rd?.variableDebtTokenAddress ?? rd?.[9] ?? null) as `0x${string}` | null;
                   currentLiquidityRate = safeExtractBigInt(rd, 'currentLiquidityRate', 2);
                   currentVariableBorrowRate = safeExtractBigInt(rd, 'currentVariableBorrowRate', 4);
+                  reserveId = Number(rd?.id ?? rd?.[11] ?? 0);
+                  lastUpdateTimestamp = Number(rd?.lastUpdateTimestamp ?? rd?.[6] ?? 0);
 
                   if (!aTokenAddress || aTokenAddress === '0x0000000000000000000000000000000000000000') {
                     return null;
@@ -437,8 +462,11 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                   variableDebt,
                   aTokenAddress,
                   varDebtTokenAddress,
+                  stableDebtTokenAddress,
                   currentLiquidityRate,
                   currentVariableBorrowRate,
+                  reserveId,
+                  lastUpdateTimestamp,
                 };
               },
             );
@@ -449,7 +477,15 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             for (const candidate of positionCandidates) {
               if (!candidate) continue;
 
-              const { assetAddr, supplyBalance, variableDebt, currentLiquidityRate, currentVariableBorrowRate } = candidate;
+              const {
+                assetAddr, supplyBalance, variableDebt,
+                currentLiquidityRate, currentVariableBorrowRate,
+                aTokenAddress: candidateAToken,
+                varDebtTokenAddress: candidateVarDebt,
+                stableDebtTokenAddress: candidateStableDebt,
+                reserveId: candidateReserveId,
+                lastUpdateTimestamp: candidateLUT,
+              } = candidate;
               const lookupKey = `${chainId}-${assetAddr.toLowerCase()}`;
               const matchedMarket = marketLookup.get(lookupKey);
 
@@ -531,6 +567,19 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
                 borrowApy,
                 dataSource: 'rpc',
                 market: matchedMarket,
+                // Reserve contract addresses
+                aTokenAddress: candidateAToken,
+                variableDebtTokenAddress: candidateVarDebt,
+                stableDebtTokenAddress: candidateStableDebt ?? null,
+                reserveId: candidateReserveId,
+                lastUpdateTimestamp: candidateLUT,
+                currentLiquidityRate,
+                currentVariableBorrowRate,
+                // Protocol addresses for this chain
+                poolAddress: checksummedPool as `0x${string}`,
+                poolAddressesProvider: (aaveAddresses.POOL_ADDRESSES_PROVIDER as `0x${string}`) ?? null,
+                uiPoolDataProvider: (aaveAddresses.UI_POOL_DATA_PROVIDER as `0x${string}`) ?? null,
+                oracleAddress: (aaveAddresses.ORACLE as `0x${string}`) ?? null,
               });
 
               debugEntry.positionsFound++;
