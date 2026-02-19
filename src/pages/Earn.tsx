@@ -51,6 +51,7 @@ import { MorphoVaultsTable } from '@/components/earn/MorphoVaultsTable';
 import { MorphoVaultActionModal } from '@/components/earn/MorphoVaultActionModal';
 import { YourSuppliesSection } from '@/components/earn/YourSuppliesSection';
 import { YourBorrowsSection } from '@/components/earn/YourBorrowsSection';
+import { AavePositionDrawer } from '@/components/earn/AavePositionDrawer';
 import { AccountHealthBar } from '@/components/earn/AccountHealthBar';
 import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
 import { useAavePositions } from '@/hooks/useAavePositions';
@@ -138,6 +139,8 @@ export default function Earn() {
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
+  const [isPositionDrawerOpen, setIsPositionDrawerOpen] = useState(false);
+  const [selectedPosition, setSelectedPosition] = useState<AavePosition | null>(null);
   const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
   const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
   const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
@@ -227,12 +230,20 @@ export default function Earn() {
     }
   }, [isConnected, walletChainId, handleSwitchChain]);
 
+  // ─── Open position drawer ───
+  const handleManagePosition = useCallback((position: AavePosition) => {
+    setSelectedPosition(position);
+    setIsPositionDrawerOpen(true);
+  }, []);
+
   // ─── Close modal + refresh ───
   const handleCloseModal = useCallback(() => {
     setIsSupplyModalOpen(false);
     setIsBorrowModalOpen(false);
     setIsVaultModalOpen(false);
+    setIsPositionDrawerOpen(false);
     setSelectedMarket(null);
+    setSelectedPosition(null);
     setSelectedVault(null);
     setSelectedVaultPosition(null);
     refreshMarkets();
@@ -743,6 +754,8 @@ export default function Earn() {
                   onSupply={handleSupply}
                   onWithdraw={handleWithdraw}
                   onSwap={goToSwap}
+                  onManage={handleManagePosition}
+                  onRefresh={refreshPositions}
                 />
               )}
 
@@ -755,6 +768,8 @@ export default function Earn() {
                   onBorrow={handleBorrow}
                   onRepay={handleRepay}
                   onSwap={goToSwap}
+                  onManage={handleManagePosition}
+                  onRefresh={refreshPositions}
                 />
               )}
 
@@ -1061,6 +1076,16 @@ export default function Earn() {
         vault={selectedVault}
         userPosition={selectedVaultPosition}
         onSuccess={() => { refreshVaults(); refreshPositions(); }}
+      />
+
+      <AavePositionDrawer
+        open={isPositionDrawerOpen}
+        onClose={() => setIsPositionDrawerOpen(false)}
+        position={selectedPosition}
+        onSupply={handleSupply}
+        onWithdraw={handleWithdraw}
+        onBorrow={handleBorrow}
+        onRepay={handleRepay}
       />
     </Layout>
   );
