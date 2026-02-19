@@ -1,8 +1,8 @@
 /**
  * Your Supplies Section — Aave-style
- * 
- * Shows the user's active supply positions at the top of the Earn page,
- * with supply balance, APY, collateral toggle state, and quick actions.
+ *
+ * Shows the user's active supply positions at the top of the Earn page.
+ * Actions: Supply More, Withdraw, Collateral Swap (opens Aave UI).
  */
 
 import { motion } from 'framer-motion';
@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Shield,
   TrendingUp,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +37,20 @@ function fmtUsd(val: number): string {
   if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`;
   if (val >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
   return `$${val.toFixed(2)}`;
+}
+
+/** Build Aave App URL for Collateral Swap */
+function aaveCollateralSwapUrl(chainId: number, assetAddress: string): string {
+  const chainMap: Record<number, string> = {
+    1: 'ethereum',
+    42161: 'arbitrum',
+    10: 'optimism',
+    137: 'polygon',
+    8453: 'base',
+    43114: 'avalanche',
+  };
+  const chainSlug = chainMap[chainId] || 'ethereum';
+  return `https://app.aave.com/?marketName=proto_${chainSlug}_v3`;
 }
 
 interface YourSuppliesSectionProps {
@@ -70,6 +85,7 @@ export function YourSuppliesSection({
         <Badge variant="outline" className="h-4 px-1.5 text-[10px] bg-success/10 border-success/30 text-success">
           {supplied.length}
         </Badge>
+        <span className="text-[10px] text-muted-foreground ml-1">Aave V3</span>
       </div>
 
       {/* Desktop table */}
@@ -81,7 +97,7 @@ export function YourSuppliesSection({
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">Balance</th>
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">APY</th>
               <th className="text-center p-3 text-xs font-medium text-muted-foreground">Collateral</th>
-              <th className="text-right p-3 w-40"></th>
+              <th className="text-right p-3 w-64"></th>
             </tr>
           </thead>
           <tbody>
@@ -127,22 +143,31 @@ export function YourSuppliesSection({
                 </td>
                 <td className="p-3 text-center">
                   {pos.isCollateralEnabled ? (
-                    <div className="flex items-center justify-center gap-1">
-                      <ShieldCheck className="w-4 h-4 text-success" />
-                    </div>
+                    <ShieldCheck className="w-4 h-4 text-success mx-auto" />
                   ) : (
                     <Shield className="w-4 h-4 text-muted-foreground mx-auto" />
                   )}
                 </td>
                 <td className="p-3 text-right">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <Button size="sm" variant="outline" className="h-7 px-3 text-xs gap-1"
+                  <div className="flex items-center gap-1 justify-end">
+                    <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs gap-1"
                       onClick={() => pos.market && onSupply(pos.market)}>
                       <ArrowUpRight className="w-3 h-3" /> Supply
                     </Button>
-                    <Button size="sm" variant="ghost" className="h-7 px-3 text-xs gap-1"
+                    <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs gap-1"
                       onClick={() => onWithdraw(pos)}>
                       <ArrowDownLeft className="w-3 h-3" /> Withdraw
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2.5 text-xs gap-1 text-primary"
+                      title="Collateral Swap — swap this collateral for another asset without withdrawing"
+                      onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId, pos.assetAddress), '_blank')}
+                    >
+                      <Repeat className="w-3 h-3" />
+                      Collateral Swap
+                      <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                     </Button>
                   </div>
                 </td>
@@ -196,7 +221,7 @@ export function YourSuppliesSection({
                 </Badge>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5 flex-wrap">
               <Button size="sm" variant="outline" className="flex-1 h-8 text-xs gap-1"
                 onClick={() => pos.market && onSupply(pos.market)}>
                 <ArrowUpRight className="w-3 h-3" /> Supply
@@ -205,9 +230,14 @@ export function YourSuppliesSection({
                 onClick={() => onWithdraw(pos)}>
                 <ArrowDownLeft className="w-3 h-3" /> Withdraw
               </Button>
-              <Button size="sm" variant="ghost" className="h-8 text-xs gap-1 text-primary"
-                onClick={() => onSwap(pos.chainId, pos.assetSymbol, pos.assetAddress)}>
-                <Repeat className="w-3 h-3" /> Swap
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs gap-1 text-primary"
+                onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId, pos.assetAddress), '_blank')}
+              >
+                <Repeat className="w-3 h-3" />
+                Collateral Swap
               </Button>
             </div>
           </div>
