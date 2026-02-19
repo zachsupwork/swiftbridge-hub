@@ -15,10 +15,25 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getChainConfig, SUPPORTED_CHAINS } from '@/lib/chainConfig';
 import { 
-  UI_POOL_DATA_PROVIDER_ABI,
   getAaveAddresses,
+  getAaveAssets,
 } from '@/lib/aaveAddressBook';
 import { cn } from '@/lib/utils';
+
+// Minimal ABI for diagnostics only — getReservesList on UiPoolDataProvider
+const DIAG_UI_POOL_ABI = [
+  {
+    inputs: [
+      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' }
+    ],
+    name: 'getReservesList',
+    outputs: [
+      { internalType: 'address[]', name: '', type: 'address[]' }
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
 
 // Viem chain objects by chainId
 const VIEM_CHAINS: Record<number, Chain> = {
@@ -36,22 +51,6 @@ const POOL_ADDRESSES_PROVIDER_ABI = [
     inputs: [],
     name: 'getPool',
     outputs: [{ internalType: 'address', name: '', type: 'address' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-// Extended UI Pool Data Provider ABI with getReservesList
-const UI_POOL_DATA_PROVIDER_EXTENDED_ABI = [
-  ...UI_POOL_DATA_PROVIDER_ABI,
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' }
-    ],
-    name: 'getReservesList',
-    outputs: [
-      { internalType: 'address[]', name: '', type: 'address[]' }
-    ],
     stateMutability: 'view',
     type: 'function',
   },
@@ -319,7 +318,7 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const reservesList = await (client.readContract as any)({
         address: checksummedUiProvider,
-        abi: UI_POOL_DATA_PROVIDER_EXTENDED_ABI,
+        abi: DIAG_UI_POOL_ABI,
         functionName: 'getReservesList',
         args: [checksummedProvider],
       }) as `0x${string}`[];
@@ -355,46 +354,31 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
       return;
     }
 
-    // STEP 4: UiPoolDataProvider.getReservesData()
+    // STEP 4: Address Book Assets Check
     try {
       updateStep('reserves-data', { status: 'running' });
       
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (client.readContract as any)({
-        address: checksummedUiProvider,
-        abi: UI_POOL_DATA_PROVIDER_ABI,
-        functionName: 'getReservesData',
-        args: [checksummedProvider],
-      }) as [unknown[], unknown];
-
-      const [reserves] = result;
-
-      if (!reserves || !Array.isArray(reserves) || reserves.length === 0) {
-        throw new Error('getReservesData() returned empty reserves array');
+      const assets = getAaveAssets(walletChainId);
+      
+      if (!assets || assets.length === 0) {
+        throw new Error('No assets found in address book for this chain');
       }
-
-      // Get first reserve symbol for display
-      const firstReserve = reserves[0] as { symbol?: string; name?: string };
-      const exampleSymbol = firstReserve?.symbol || 'Unknown';
 
       updateStep('reserves-data', { 
         status: 'success', 
-        result: `${reserves.length} reserves, e.g. ${exampleSymbol}`,
+        result: `${assets.length} assets in address book, e.g. ${assets[0]?.symbol}`,
         details: { 
-          count: reserves.length,
-          example: firstReserve,
+          count: assets.length,
+          symbols: assets.map(a => a.symbol).join(', '),
         }
       });
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       updateStep('reserves-data', { 
         status: 'failed', 
-        error: `UiPoolDataProvider.getReservesData() failed: ${errMsg}`,
+        error: `Address book assets check failed: ${errMsg}`,
         details: {
-          contract: checksummedUiProvider,
-          args: [checksummedProvider],
           chainId: walletChainId,
-          fullError: String(error),
         }
       });
       setIsRunning(false);

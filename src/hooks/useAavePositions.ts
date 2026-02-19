@@ -1,17 +1,16 @@
 /**
- * Aave V3 Positions Hook — v9 (UiPoolDataProvider-first, minimal ABI)
+ * Aave V3 Positions Hook — v10 (Address Book balanceOf-first)
  *
  * ARCHITECTURE:
- *   PRIMARY PATH (fast — 1 RPC call to discover, then N targeted calls for position reserves only):
- *   1. UiPoolDataProvider.getUserReservesData(addressesProvider, user)
- *      → returns per-reserve scaled balances + collateral state (simple struct, works on ALL chains)
- *   2. For reserves where user HAS a position (typically 1-3):
- *      → Pool.getReserveData(asset) to get liquidityIndex/variableBorrowIndex for balance conversion
- *   3. Pool.getUserAccountData(user) in parallel → HF / collateral / debt totals
- *   4. Enrich with DeFiLlama market metadata
+ *   PRIMARY PATH (reliable — uses static aToken/vToken addresses from @bgd-labs/aave-address-book):
+ *   1. Get known assets list from address book (with aToken + vToken addresses)
+ *   2. Batch balanceOf(user) on all aTokens + vTokens
+ *   3. Any non-zero balance = position found
+ *   4. Pool.getUserAccountData(user) in parallel → HF / collateral / debt totals
+ *   5. Enrich with DeFiLlama market metadata
  *
- *   FALLBACK (slow — N+1 calls per chain, used only when UiPoolDataProvider fails):
- *   Same as v7: getReservesList → getReserveData per reserve → balanceOf per reserve
+ *   NO MORE fragile UiPoolDataProvider ABI struct decoding.
+ *   NO MORE getReserveData ABI version issues.
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -20,16 +19,14 @@ import { createPublicClient, http, fallback, formatUnits, getAddress, parseAbi, 
 import { tryNormalizeAddress } from '@/lib/address';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getFallbackRpcs } from '@/lib/chainConfig';
-import { getAaveAddresses } from '@/lib/aaveAddressBook';
+import { getAaveAddresses, getAaveAssets, type AaveAssetInfo } from '@/lib/aaveAddressBook';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 
 // ──────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────
 
-const DEBUG = true; // Always log for debugging
-
-const BATCH_SIZE = 12;
+const DEBUG = true;
 
 const STABLE_SYMBOLS = new Set([
   'USDC', 'USDT', 'DAI', 'FRAX', 'LUSD', 'TUSD', 'USDP', 'GHO',
@@ -50,59 +47,12 @@ const VIEM_CHAINS: Record<number, any> = {
 };
 
 // ──────────────────────────────────────────────
-// ABIs
+// ABIs (minimal — only getUserAccountData needed)
 // ──────────────────────────────────────────────
-
-const POOL_RESERVES_LIST_ABI = parseAbi([
-  'function getReservesList() view returns (address[])',
-]);
-
-const POOL_RESERVE_ABI = parseAbi([
-  'function getReserveData(address asset) view returns (uint256 configuration, uint128 liquidityIndex, uint128 currentLiquidityRate, uint128 variableBorrowIndex, uint128 currentVariableBorrowRate, uint128 currentStableBorrowRate, uint40 lastUpdateTimestamp, address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress, address interestRateStrategyAddress, uint8 id)',
-]);
 
 const POOL_ACCOUNT_ABI = parseAbi([
   'function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)',
 ]);
-
-const ERC20_META_ABI = parseAbi([
-  'function symbol() view returns (string)',
-  'function decimals() view returns (uint8)',
-  'function name() view returns (string)',
-]);
-
-/**
- * UiPoolDataProvider.getUserReservesData ABI — MINIMAL struct (works on ALL Aave V3 deployments)
- * Returns (UserReserveData[], uint8 eModeCategory)
- */
-const UI_POOL_USER_RESERVES_ABI = [
-  {
-    inputs: [
-      { internalType: 'contract IPoolAddressesProvider', name: 'provider', type: 'address' },
-      { internalType: 'address', name: 'user', type: 'address' },
-    ],
-    name: 'getUserReservesData',
-    outputs: [
-      {
-        components: [
-          { internalType: 'address', name: 'underlyingAsset', type: 'address' },
-          { internalType: 'uint256', name: 'scaledATokenBalance', type: 'uint256' },
-          { internalType: 'bool', name: 'usageAsCollateralEnabledOnUser', type: 'bool' },
-          { internalType: 'uint256', name: 'stableBorrowRate', type: 'uint256' },
-          { internalType: 'uint256', name: 'scaledVariableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'principalStableDebt', type: 'uint256' },
-          { internalType: 'uint256', name: 'stableBorrowLastUpdateTimestamp', type: 'uint256' },
-        ],
-        internalType: 'struct IUiPoolDataProviderV3.UserReserveData[]',
-        name: '',
-        type: 'tuple[]',
-      },
-      { internalType: 'uint8', name: '', type: 'uint8' },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
 
 // ──────────────────────────────────────────────
 // Token logos
@@ -190,11 +140,15 @@ export interface ChainDebugInfo {
   error?: string;
   failedStep?: string;
   startedAt?: number;
-  discoveryMethod?: 'uiPoolDataProvider' | 'fallback-scanning';
-  uiPoolCallOk?: boolean;
-  uiPoolReservesReturned?: number;
-  uiPoolError?: string;
-  scanCallsSucceeded?: number;
+  discoveryMethod?: 'address-book-balanceOf' | 'fallback-scanning';
+  addressBookAssetsCount?: number;
+  balanceOfCallsOk?: number;
+  balanceOfCallsFailed?: number;
+  poolAddress?: string;
+  accountCollateralBase?: string;
+  accountDebtBase?: string;
+  accountHF?: string;
+  wrongMarketWarning?: string;
   firstError?: string;
   lastError?: string;
 }
@@ -243,26 +197,6 @@ function createFallbackClient(
       ? transports[0]
       : fallback(transports, { rank: false }),
   }) as ReturnType<typeof createPublicClient>;
-}
-
-// ──────────────────────────────────────────────
-// Helper: Run items in batches
-// ──────────────────────────────────────────────
-
-async function runInBatches<T, R>(
-  items: T[],
-  batchSize: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.allSettled(batch.map(fn));
-    for (const r of batchResults) {
-      if (r.status === 'fulfilled') results.push(r.value);
-    }
-  }
-  return results;
 }
 
 // ──────────────────────────────────────────────
@@ -321,6 +255,7 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             return;
           }
 
+          const assets = getAaveAssets(chainId);
           const debugEntry: ChainDebugInfo = {
             chainId,
             chainName: name,
@@ -330,9 +265,10 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             positionsFound: 0,
             accountDataFetched: false,
             startedAt,
-            uiPoolCallOk: false,
-            uiPoolReservesReturned: 0,
-            scanCallsSucceeded: 0,
+            addressBookAssetsCount: assets.length,
+            balanceOfCallsOk: 0,
+            balanceOfCallsFailed: 0,
+            poolAddress: aaveAddresses.POOL,
           };
 
           try {
@@ -359,376 +295,144 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             });
 
             // ════════════════════════════════════════════════
-            // PRIMARY: UiPoolDataProvider.getUserReservesData
+            // PRIMARY: Address Book balanceOf discovery
             // ════════════════════════════════════════════════
 
-            let usedPrimaryPath = false;
+            if (assets.length > 0) {
+              console.log(`[AavePositions] ${name}: Scanning ${assets.length} assets via address book balanceOf...`);
+              debugEntry.discoveryMethod = 'address-book-balanceOf';
 
-            try {
-              const uiProvider = getAddress(aaveAddresses.UI_POOL_DATA_PROVIDER);
-              const addressesProvider = getAddress(aaveAddresses.POOL_ADDRESSES_PROVIDER);
+              // Build batch of balanceOf calls: [aToken, vToken] for each asset
+              const balanceCalls = assets.flatMap((asset) => [
+                {
+                  type: 'supply' as const,
+                  asset,
+                  promise: (client.readContract as any)({
+                    address: asset.aToken,
+                    abi: erc20Abi,
+                    functionName: 'balanceOf',
+                    args: [address],
+                  }).catch(() => 0n) as Promise<bigint>,
+                },
+                {
+                  type: 'borrow' as const,
+                  asset,
+                  promise: (client.readContract as any)({
+                    address: asset.vToken,
+                    abi: erc20Abi,
+                    functionName: 'balanceOf',
+                    args: [address],
+                  }).catch(() => 0n) as Promise<bigint>,
+                },
+              ]);
 
-              console.log(`[AavePositions] ${name}: calling getUserReservesData on ${uiProvider} with provider ${addressesProvider}`);
+              // Execute all balanceOf calls
+              const balanceResults = await Promise.allSettled(
+                balanceCalls.map(async (call) => ({
+                  type: call.type,
+                  asset: call.asset,
+                  balance: await call.promise,
+                }))
+              );
 
-              const userReservesRaw = await (client.readContract as any)({
-                address: uiProvider,
-                abi: UI_POOL_USER_RESERVES_ABI,
-                functionName: 'getUserReservesData',
-                args: [addressesProvider, address],
-              });
+              // Group by asset
+              const assetBalances = new Map<string, { supply: bigint; borrow: bigint; asset: AaveAssetInfo }>();
 
-              // Parse — result is [UserReserveData[], uint8] or just the array
-              const userReserves: any[] = Array.isArray(userReservesRaw)
-                ? (Array.isArray(userReservesRaw[0]) ? userReservesRaw[0] : userReservesRaw)
-                : [];
-
-              debugEntry.uiPoolCallOk = true;
-              debugEntry.uiPoolReservesReturned = userReserves.length;
-
-              console.log(`[AavePositions] ${name}: getUserReservesData returned ${userReserves.length} reserves`);
-
-              // Filter to reserves with non-zero positions
-              const activeReserves: Array<{
-                assetAddr: `0x${string}`;
-                scaledAToken: bigint;
-                scaledVarDebt: bigint;
-                isCollateral: boolean;
-              }> = [];
-
-              for (const ur of userReserves) {
-                const scaledAToken = BigInt(ur.scaledATokenBalance ?? ur[1] ?? 0n);
-                const scaledVarDebt = BigInt(ur.scaledVariableDebt ?? ur[4] ?? 0n);
-                const principalStableDebt = BigInt(ur.principalStableDebt ?? ur[5] ?? 0n);
-
-                if (scaledAToken === 0n && scaledVarDebt === 0n && principalStableDebt === 0n) continue;
-
-                const rawAsset = ur.underlyingAsset ?? ur[0];
-                const assetAddr = tryNormalizeAddress(rawAsset);
-                if (!assetAddr) continue;
-
-                const isCollateral = Boolean(ur.usageAsCollateralEnabledOnUser ?? ur[2] ?? true);
-
-                activeReserves.push({ assetAddr, scaledAToken, scaledVarDebt, isCollateral });
+              for (const result of balanceResults) {
+                if (result.status === 'fulfilled') {
+                  debugEntry.balanceOfCallsOk = (debugEntry.balanceOfCallsOk || 0) + 1;
+                  const { type, asset, balance } = result.value;
+                  const key = asset.underlying.toLowerCase();
+                  const existing = assetBalances.get(key) || { supply: 0n, borrow: 0n, asset };
+                  if (type === 'supply') existing.supply = BigInt(balance ?? 0n);
+                  else existing.borrow = BigInt(balance ?? 0n);
+                  assetBalances.set(key, existing);
+                } else {
+                  debugEntry.balanceOfCallsFailed = (debugEntry.balanceOfCallsFailed || 0) + 1;
+                  debugEntry.lastError = result.reason?.message?.slice(0, 200);
+                }
               }
 
-              console.log(`[AavePositions] ${name}: ${activeReserves.length} active positions from getUserReservesData`);
+              debugEntry.reservesScannedCount = assets.length;
 
-              if (activeReserves.length > 0) {
-                // For each active reserve, get reserve data (indices + contract addresses)
-                // This is only 1-5 calls, not 50+
-                const reserveResults = await Promise.allSettled(
-                  activeReserves.map(async (ar) => {
-                    const rd = await (client.readContract as any)({
-                      address: checksummedPool,
-                      abi: POOL_RESERVE_ABI,
-                      functionName: 'getReserveData',
-                      args: [ar.assetAddr],
-                    });
-                    return { ...ar, reserveData: rd };
-                  })
+              // Build positions from non-zero balances
+              for (const [, { supply, borrow, asset }] of assetBalances) {
+                if (supply === 0n && borrow === 0n) continue;
+
+                const lookupKey = `${chainId}-${asset.underlying.toLowerCase()}`;
+                const matchedMarket = marketLookup.get(lookupKey);
+
+                let symbol = asset.symbol;
+                let assetName = asset.symbol;
+                let decimals = asset.decimals;
+                let priceUsd = 0;
+                let supplyApy = 0;
+                let borrowApy = 0;
+                let assetLogo = getTokenLogo(asset.symbol);
+                let isCollateralEnabled = true;
+
+                if (matchedMarket) {
+                  symbol = matchedMarket.assetSymbol;
+                  assetName = matchedMarket.assetName;
+                  decimals = matchedMarket.decimals || asset.decimals;
+                  priceUsd = matchedMarket.priceUsd || 0;
+                  supplyApy = matchedMarket.supplyAPY;
+                  borrowApy = matchedMarket.borrowAPY;
+                  assetLogo = matchedMarket.assetLogo || getTokenLogo(symbol);
+                  isCollateralEnabled = matchedMarket.collateralEnabled;
+                }
+
+                if (!priceUsd && isStable(symbol)) priceUsd = 1;
+
+                const supplyFormatted = formatUnits(supply, decimals);
+                const debtFormatted = formatUnits(borrow, decimals);
+                const supplyBalanceUsd = parseFloat(supplyFormatted) * priceUsd;
+                const variableDebtUsd = parseFloat(debtFormatted) * priceUsd;
+
+                console.log(
+                  `[AavePositions] ${name} ${symbol}: supply=${supplyFormatted} ($${supplyBalanceUsd.toFixed(2)}) debt=${debtFormatted} ($${variableDebtUsd.toFixed(2)}) collateral=${isCollateralEnabled}`,
                 );
 
-                for (const result of reserveResults) {
-                  if (result.status !== 'fulfilled') {
-                    console.warn(`[AavePositions] ${name}: getReserveData failed for a position:`, result.reason?.message);
-                    continue;
-                  }
+                allPositions.push({
+                  chainId,
+                  chainName: name,
+                  chainLogo: logo,
+                  assetAddress: asset.underlying,
+                  assetSymbol: symbol,
+                  assetName,
+                  assetLogo,
+                  decimals,
+                  supplyBalance: supply,
+                  supplyBalanceFormatted: supplyFormatted,
+                  supplyBalanceUsd,
+                  supplyApy,
+                  isCollateralEnabled,
+                  variableDebt: borrow,
+                  variableDebtFormatted: debtFormatted,
+                  variableDebtUsd,
+                  borrowApy,
+                  dataSource: 'rpc',
+                  market: matchedMarket,
+                  aTokenAddress: asset.aToken,
+                  variableDebtTokenAddress: asset.vToken,
+                  stableDebtTokenAddress: null,
+                  reserveId: 0,
+                  lastUpdateTimestamp: 0,
+                  currentLiquidityRate: 0n,
+                  currentVariableBorrowRate: 0n,
+                  poolAddress: checksummedPool as `0x${string}`,
+                  poolAddressesProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER as `0x${string}`,
+                  uiPoolDataProvider: aaveAddresses.UI_POOL_DATA_PROVIDER as `0x${string}`,
+                  oracleAddress: aaveAddresses.ORACLE as `0x${string}`,
+                });
 
-                  const { assetAddr, scaledAToken, scaledVarDebt, isCollateral, reserveData: rd } = result.value;
-
-                  // Extract indices and addresses
-                  const liquidityIndex = BigInt(rd?.liquidityIndex ?? rd?.[1] ?? 10n ** 27n);
-                  const variableBorrowIndex = BigInt(rd?.variableBorrowIndex ?? rd?.[3] ?? 10n ** 27n);
-                  const aTokenAddr = tryNormalizeAddress(rd?.aTokenAddress ?? rd?.[7]);
-                  const stableDebtAddr = tryNormalizeAddress(rd?.stableDebtTokenAddress ?? rd?.[8]);
-                  const varDebtAddr = tryNormalizeAddress(rd?.variableDebtTokenAddress ?? rd?.[9]);
-                  const currentLiquidityRate = safeExtractBigInt(rd, 'currentLiquidityRate', 2);
-                  const currentVariableBorrowRate = safeExtractBigInt(rd, 'currentVariableBorrowRate', 4);
-                  const reserveId = Number(rd?.id ?? rd?.[11] ?? 0);
-                  const lastUpdateTs = Number(rd?.lastUpdateTimestamp ?? rd?.[6] ?? 0);
-
-                  // Convert scaled balances to actual using indices
-                  const RAY = 10n ** 27n;
-                  const supplyBalance = (scaledAToken * liquidityIndex) / RAY;
-                  const variableDebt = (scaledVarDebt * variableBorrowIndex) / RAY;
-
-                  // Enrich with DeFiLlama
-                  const lookupKey = `${chainId}-${assetAddr.toLowerCase()}`;
-                  const matchedMarket = marketLookup.get(lookupKey);
-
-                  let symbol = 'UNKNOWN';
-                  let assetName = 'Unknown Token';
-                  let decimals = 18;
-                  let priceUsd = 0;
-                  let supplyApy = 0;
-                  let borrowApy = 0;
-                  let assetLogo = getTokenLogo('UNKNOWN');
-
-                  if (matchedMarket) {
-                    symbol = matchedMarket.assetSymbol;
-                    assetName = matchedMarket.assetName;
-                    decimals = matchedMarket.decimals || 18;
-                    priceUsd = matchedMarket.priceUsd || 0;
-                    supplyApy = matchedMarket.supplyAPY;
-                    borrowApy = matchedMarket.borrowAPY;
-                    assetLogo = matchedMarket.assetLogo || getTokenLogo(symbol);
-                  } else {
-                    // Fallback: read ERC20 metadata
-                    try {
-                      const [sym, dec, nm] = await Promise.all([
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'symbol' }).catch(() => 'UNKNOWN'),
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'decimals' }).catch(() => 18),
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'name' }).catch(() => 'Unknown Token'),
-                      ]);
-                      symbol = String(sym);
-                      decimals = Number(dec);
-                      assetName = String(nm);
-                    } catch { /* keep defaults */ }
-
-                    const rayF = 1e27;
-                    supplyApy = (Number(currentLiquidityRate) / rayF) * 100;
-                    borrowApy = (Number(currentVariableBorrowRate) / rayF) * 100;
-                    assetLogo = getTokenLogo(symbol);
-                  }
-
-                  if (!priceUsd && isStable(symbol)) priceUsd = 1;
-
-                  const supplyFormatted = formatUnits(supplyBalance, decimals);
-                  const debtFormatted = formatUnits(variableDebt, decimals);
-                  const supplyBalanceUsd = parseFloat(supplyFormatted) * priceUsd;
-                  const variableDebtUsd = parseFloat(debtFormatted) * priceUsd;
-
-                  console.log(
-                    `[AavePositions] ${name} ${symbol}: supply=${supplyFormatted} ($${supplyBalanceUsd.toFixed(2)}) debt=${debtFormatted} ($${variableDebtUsd.toFixed(2)}) collateral=${isCollateral}`,
-                  );
-
-                  allPositions.push({
-                    chainId,
-                    chainName: name,
-                    chainLogo: logo,
-                    assetAddress: assetAddr,
-                    assetSymbol: symbol,
-                    assetName,
-                    assetLogo,
-                    decimals,
-                    supplyBalance,
-                    supplyBalanceFormatted: supplyFormatted,
-                    supplyBalanceUsd,
-                    supplyApy,
-                    isCollateralEnabled: isCollateral,
-                    variableDebt,
-                    variableDebtFormatted: debtFormatted,
-                    variableDebtUsd,
-                    borrowApy,
-                    dataSource: 'rpc',
-                    market: matchedMarket,
-                    aTokenAddress: aTokenAddr,
-                    variableDebtTokenAddress: varDebtAddr,
-                    stableDebtTokenAddress: stableDebtAddr,
-                    reserveId,
-                    lastUpdateTimestamp: lastUpdateTs,
-                    currentLiquidityRate,
-                    currentVariableBorrowRate,
-                    poolAddress: checksummedPool as `0x${string}`,
-                    poolAddressesProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER as `0x${string}`,
-                    uiPoolDataProvider: aaveAddresses.UI_POOL_DATA_PROVIDER as `0x${string}`,
-                    oracleAddress: aaveAddresses.ORACLE as `0x${string}`,
-                  });
-
-                  debugEntry.positionsFound++;
-                }
+                debugEntry.positionsFound++;
               }
 
               debugEntry.dataSource = 'rpc';
-              debugEntry.discoveryMethod = 'uiPoolDataProvider';
-              usedPrimaryPath = true;
-
-            } catch (primaryErr: any) {
-              const errMsg = primaryErr?.message || String(primaryErr);
-              console.warn(`[AavePositions] ${name}: UiPoolDataProvider FAILED: ${errMsg}`);
-              debugEntry.uiPoolCallOk = false;
-              debugEntry.uiPoolError = errMsg.slice(0, 200);
-              debugEntry.failedStep = 'getUserReservesData';
-            }
-
-            // ════════════════════════════════════════════════
-            // FALLBACK: Per-reserve scanning (only if primary failed)
-            // ════════════════════════════════════════════════
-
-            if (!usedPrimaryPath) {
-              console.log(`[AavePositions] ${name}: Falling back to reserve scanning...`);
-              debugEntry.discoveryMethod = 'fallback-scanning';
-
-              let reservesList: `0x${string}`[] = [];
-              try {
-                const rawList = await (client.readContract as any)({
-                  address: checksummedPool,
-                  abi: POOL_RESERVES_LIST_ABI,
-                  functionName: 'getReservesList',
-                  args: [],
-                });
-                reservesList = (rawList as `0x${string}`[]).filter(
-                  (a): a is `0x${string}` => typeof a === 'string' && a.startsWith('0x') && a !== '0x0000000000000000000000000000000000000000',
-                );
-                debugEntry.reservesListCount = reservesList.length;
-                console.log(`[AavePositions] ${name}: getReservesList → ${reservesList.length} reserves`);
-              } catch (e: any) {
-                debugEntry.error = String(e?.message || e);
-                debugEntry.firstError = String(e?.message || e).slice(0, 200);
-                const chainMarkets = currentMarkets.filter(m => m.chainId === chainId);
-                reservesList = chainMarkets.map(m => {
-                  try { return getAddress(m.assetAddress) as `0x${string}`; } catch { return null; }
-                }).filter((a): a is `0x${string}` => a !== null);
-                debugEntry.reservesListCount = reservesList.length;
-              }
-
-              if (reservesList.length > 0) {
-                let callsSucceeded = 0;
-                let lastErr = '';
-
-                const positionCandidates = await runInBatches(
-                  reservesList,
-                  BATCH_SIZE,
-                  async (assetAddr) => {
-                    let checksummedAsset: `0x${string}`;
-                    try {
-                      checksummedAsset = getAddress(assetAddr) as `0x${string}`;
-                    } catch { return null; }
-
-                    let aTokenAddress: `0x${string}` | null = null;
-                    let varDebtTokenAddress: `0x${string}` | null = null;
-                    let stableDebtTokenAddress: `0x${string}` | null = null;
-                    let currentLiquidityRate = 0n;
-                    let currentVariableBorrowRate = 0n;
-                    let reserveId = 0;
-                    let lastUpdateTimestamp = 0;
-
-                    try {
-                      const rd = await (client.readContract as any)({
-                        address: checksummedPool,
-                        abi: POOL_RESERVE_ABI,
-                        functionName: 'getReserveData',
-                        args: [checksummedAsset],
-                      }) as any;
-
-                      aTokenAddress = tryNormalizeAddress(rd?.aTokenAddress ?? rd?.[7]) as `0x${string}` | null;
-                      stableDebtTokenAddress = tryNormalizeAddress(rd?.stableDebtTokenAddress ?? rd?.[8]) as `0x${string}` | null;
-                      varDebtTokenAddress = tryNormalizeAddress(rd?.variableDebtTokenAddress ?? rd?.[9]) as `0x${string}` | null;
-                      currentLiquidityRate = safeExtractBigInt(rd, 'currentLiquidityRate', 2);
-                      currentVariableBorrowRate = safeExtractBigInt(rd, 'currentVariableBorrowRate', 4);
-                      reserveId = Number(rd?.id ?? rd?.[11] ?? 0);
-                      lastUpdateTimestamp = Number(rd?.lastUpdateTimestamp ?? rd?.[6] ?? 0);
-
-                      if (!aTokenAddress || aTokenAddress === '0x0000000000000000000000000000000000000000') return null;
-                      callsSucceeded++;
-                    } catch (e: any) {
-                      lastErr = String(e?.message || e).slice(0, 200);
-                      return null;
-                    }
-
-                    const [supplyRaw, debtRaw] = await Promise.all([
-                      (client.readContract as any)({
-                        address: aTokenAddress,
-                        abi: erc20Abi,
-                        functionName: 'balanceOf',
-                        args: [address],
-                      }).catch(() => 0n),
-                      varDebtTokenAddress && varDebtTokenAddress !== '0x0000000000000000000000000000000000000000'
-                        ? (client.readContract as any)({
-                          address: varDebtTokenAddress,
-                          abi: erc20Abi,
-                          functionName: 'balanceOf',
-                          args: [address],
-                        }).catch(() => 0n)
-                        : Promise.resolve(0n),
-                    ]);
-
-                    const supplyBalance = BigInt(supplyRaw ?? 0n);
-                    const variableDebt = BigInt(debtRaw ?? 0n);
-                    if (supplyBalance === 0n && variableDebt === 0n) return null;
-
-                    return {
-                      assetAddr: checksummedAsset,
-                      supplyBalance,
-                      variableDebt,
-                      aTokenAddress,
-                      varDebtTokenAddress,
-                      stableDebtTokenAddress,
-                      currentLiquidityRate,
-                      currentVariableBorrowRate,
-                      reserveId,
-                      lastUpdateTimestamp,
-                    };
-                  },
-                );
-
-                debugEntry.reservesScannedCount = reservesList.length;
-                debugEntry.scanCallsSucceeded = callsSucceeded;
-                if (lastErr) debugEntry.lastError = lastErr;
-
-                for (const candidate of positionCandidates) {
-                  if (!candidate) continue;
-
-                  const { assetAddr, supplyBalance, variableDebt, currentLiquidityRate, currentVariableBorrowRate } = candidate;
-                  const lookupKey = `${chainId}-${assetAddr.toLowerCase()}`;
-                  const matchedMarket = marketLookup.get(lookupKey);
-
-                  let symbol = 'UNKNOWN', assetName = 'Unknown Token', decimals = 18;
-                  let priceUsd = 0, supplyApy = 0, borrowApy = 0;
-                  let assetLogo = getTokenLogo('UNKNOWN');
-                  let isCollateralEnabled = true;
-
-                  if (matchedMarket) {
-                    symbol = matchedMarket.assetSymbol;
-                    assetName = matchedMarket.assetName;
-                    decimals = matchedMarket.decimals || 18;
-                    priceUsd = matchedMarket.priceUsd || 0;
-                    supplyApy = matchedMarket.supplyAPY;
-                    borrowApy = matchedMarket.borrowAPY;
-                    assetLogo = matchedMarket.assetLogo || getTokenLogo(symbol);
-                    isCollateralEnabled = matchedMarket.collateralEnabled;
-                  } else {
-                    try {
-                      const [sym, dec, nm] = await Promise.all([
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'symbol' }).catch(() => 'UNKNOWN'),
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'decimals' }).catch(() => 18),
-                        (client.readContract as any)({ address: assetAddr, abi: ERC20_META_ABI, functionName: 'name' }).catch(() => 'Unknown Token'),
-                      ]);
-                      symbol = String(sym); decimals = Number(dec); assetName = String(nm);
-                    } catch { /* keep defaults */ }
-                    const rayF = 1e27;
-                    supplyApy = (Number(currentLiquidityRate) / rayF) * 100;
-                    borrowApy = (Number(currentVariableBorrowRate) / rayF) * 100;
-                    if (isStable(symbol)) priceUsd = 1;
-                    assetLogo = getTokenLogo(symbol);
-                  }
-
-                  if (!priceUsd && isStable(symbol)) priceUsd = 1;
-                  const supplyFormatted = formatUnits(supplyBalance, decimals);
-                  const debtFormatted = formatUnits(variableDebt, decimals);
-
-                  allPositions.push({
-                    chainId, chainName: name, chainLogo: logo, assetAddress: assetAddr,
-                    assetSymbol: symbol, assetName, assetLogo, decimals,
-                    supplyBalance, supplyBalanceFormatted: supplyFormatted,
-                    supplyBalanceUsd: parseFloat(supplyFormatted) * priceUsd, supplyApy,
-                    isCollateralEnabled, variableDebt, variableDebtFormatted: debtFormatted,
-                    variableDebtUsd: parseFloat(debtFormatted) * priceUsd, borrowApy,
-                    dataSource: 'rpc', market: matchedMarket,
-                    aTokenAddress: candidate.aTokenAddress,
-                    variableDebtTokenAddress: candidate.varDebtTokenAddress,
-                    stableDebtTokenAddress: candidate.stableDebtTokenAddress ?? null,
-                    reserveId: candidate.reserveId, lastUpdateTimestamp: candidate.lastUpdateTimestamp,
-                    currentLiquidityRate, currentVariableBorrowRate,
-                    poolAddress: checksummedPool as `0x${string}`,
-                    poolAddressesProvider: aaveAddresses.POOL_ADDRESSES_PROVIDER as `0x${string}`,
-                    uiPoolDataProvider: aaveAddresses.UI_POOL_DATA_PROVIDER as `0x${string}`,
-                    oracleAddress: aaveAddresses.ORACLE as `0x${string}`,
-                  });
-                  debugEntry.positionsFound++;
-                }
-                debugEntry.dataSource = 'rpc';
-              }
+            } else {
+              debugEntry.error = 'No assets in address book for this chain';
+              debugEntry.discoveryMethod = 'address-book-balanceOf';
             }
 
             // ── Resolve account data ──
@@ -738,6 +442,14 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               if (ad) {
                 allAccountData.push(ad);
                 debugEntry.accountDataFetched = true;
+                debugEntry.accountCollateralBase = ad.totalCollateralUsd.toFixed(2);
+                debugEntry.accountDebtBase = ad.totalDebtUsd.toFixed(2);
+                debugEntry.accountHF = ad.healthFactor > 1e10 ? '∞' : ad.healthFactor.toFixed(4);
+
+                // Wrong market detection
+                if ((ad.totalCollateralUsd > 0 || ad.totalDebtUsd > 0) && debugEntry.positionsFound === 0) {
+                  debugEntry.wrongMarketWarning = `Account has $${ad.totalCollateralUsd.toFixed(2)} collateral / $${ad.totalDebtUsd.toFixed(2)} debt but 0 positions found. Possible wrong market or missing assets in address book.`;
+                }
               }
             }
 
@@ -764,7 +476,24 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
         );
         // Log detailed debug per chain
         for (const d of allDebugInfo) {
-          console.log(`[AavePositions]   ${d.chainName}: uiPool=${d.uiPoolCallOk ? '✓' : '✗'} reserves=${d.uiPoolReservesReturned ?? 0} positions=${d.positionsFound} acct=${d.accountDataFetched ? '✓' : '✗'}${d.uiPoolError ? ` err=${d.uiPoolError.slice(0, 80)}` : ''}${d.lastError ? ` scanErr=${d.lastError.slice(0, 80)}` : ''}`);
+          const parts = [
+            `${d.chainName}:`,
+            `assets=${d.addressBookAssetsCount}`,
+            `ok=${d.balanceOfCallsOk}`,
+            `fail=${d.balanceOfCallsFailed}`,
+            `positions=${d.positionsFound}`,
+            `acct=${d.accountDataFetched ? '✓' : '✗'}`,
+            d.accountCollateralBase ? `coll=$${d.accountCollateralBase}` : '',
+            d.accountDebtBase ? `debt=$${d.accountDebtBase}` : '',
+            d.accountHF ? `hf=${d.accountHF}` : '',
+          ].filter(Boolean);
+          console.log(`[AavePositions]   ${parts.join(' ')}`);
+          if (d.wrongMarketWarning) {
+            console.warn(`[AavePositions]   ⚠️ ${d.wrongMarketWarning}`);
+          }
+          if (d.lastError) {
+            console.warn(`[AavePositions]   lastErr=${d.lastError.slice(0, 100)}`);
+          }
         }
       } else {
         console.log(`[AavePositions] req#${myFetchId} stale — discarded`);
