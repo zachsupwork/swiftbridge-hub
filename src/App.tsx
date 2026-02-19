@@ -21,6 +21,7 @@ import Market from "./pages/Market";
 import Support from "./pages/Support";
 import Docs from "./pages/Docs";
 import NotFound from "./pages/NotFound";
+import AaveReserveDetails from "./pages/aave/ReserveDetails";
 
 const queryClient = new QueryClient();
 
@@ -61,6 +62,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/swap" element={<Index />} />
             <Route path="/earn" element={<Earn />} />
+            <Route path="/earn/aave/:chainId/:assetAddress" element={<AaveReserveDetails />} />
             <Route path="/borrow" element={<Navigate to="/earn" replace />} />
             <Route path="/market/:marketId" element={<Market />} />
             <Route path="/portfolio" element={<Portfolio />} />

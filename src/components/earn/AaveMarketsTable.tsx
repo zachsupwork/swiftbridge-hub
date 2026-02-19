@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, memo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { openSwapIntent } from '@/lib/swapIntent';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -157,11 +158,12 @@ const ReserveDetails = memo(function ReserveDetails({ market }: { market: Lendin
 // ============================================
 
 const SupplyRow = memo(function SupplyRow({
-  market, onSupply, onSwap, expanded, onToggle, walletBalanceUsd, isSupplied, isBorrowed,
+  market, onSupply, onSwap, expanded, onToggle, onDetails, walletBalanceUsd, isSupplied, isBorrowed,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
   onSwap?: (m: LendingMarket) => void;
+  onDetails?: (m: LendingMarket) => void;
   expanded: boolean;
   onToggle: () => void;
   walletBalanceUsd?: number;
@@ -173,17 +175,19 @@ const SupplyRow = memo(function SupplyRow({
     <>
       <tr
         className={cn(
-          "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer",
-          hasPos && "bg-primary/5 hover:bg-primary/10"
+          "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer group",
+          hasPos && "bg-primary/5 hover:bg-primary/10",
+          isSupplied && "border-l-2 border-l-success/50",
+          isBorrowed && "border-l-2 border-l-warning/50",
         )}
-        onClick={onToggle}
+        onClick={() => onDetails?.(market)}
       >
         <td className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
               <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
                 logoUrl={market.assetLogo} size="sm"
-                className="w-7 h-7" />
+                className={cn("w-7 h-7", isSupplied && "ring-2 ring-success/40", isBorrowed && !isSupplied && "ring-2 ring-warning/40")} />
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
                 <ChainIcon chainId={market.chainId} size="sm" />
               </div>
@@ -241,7 +245,10 @@ const SupplyRow = memo(function SupplyRow({
                 <Repeat className="w-3 h-3" /> Get
               </Button>
             )}
-            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); onDetails?.(market); }}>
+              Details <ChevronDown className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </td>
       </tr>
@@ -261,31 +268,31 @@ const SupplyRow = memo(function SupplyRow({
 // ============================================
 
 const BorrowRow = memo(function BorrowRow({
-  market, onBorrow, hasCollateral, expanded, onToggle, isSupplied, isBorrowed,
+  market, onBorrow, onDetails, hasCollateral, expanded, onToggle, isSupplied, isBorrowed,
 }: {
   market: LendingMarket;
   onBorrow?: (m: LendingMarket) => void;
+  onDetails?: (m: LendingMarket) => void;
   hasCollateral: boolean;
   expanded: boolean;
   onToggle: () => void;
   isSupplied?: boolean;
   isBorrowed?: boolean;
 }) {
-  const hasPos = isSupplied || isBorrowed;
   return (
     <>
       <tr className={cn(
-        "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer",
-        isBorrowed && "bg-warning/5 hover:bg-warning/10",
-        !isBorrowed && isSupplied && "bg-primary/5 hover:bg-primary/10"
+        "border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer group",
+        isBorrowed && "bg-warning/5 hover:bg-warning/10 border-l-2 border-l-warning/50",
+        !isBorrowed && isSupplied && "bg-primary/5 hover:bg-primary/10 border-l-2 border-l-success/50",
       )}
-        onClick={onToggle}>
+        onClick={() => onDetails?.(market)}>
         <td className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
               <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
                 logoUrl={market.assetLogo} size="sm"
-                className="w-7 h-7" />
+                className={cn("w-7 h-7", isBorrowed && "ring-2 ring-warning/40", isSupplied && !isBorrowed && "ring-2 ring-success/40")} />
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border border-background overflow-hidden">
                 <ChainIcon chainId={market.chainId} size="sm" />
               </div>
@@ -335,9 +342,9 @@ const BorrowRow = memo(function BorrowRow({
               <ArrowDownLeft className="w-3 h-3" />
               Borrow
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs"
-              onClick={(e) => { e.stopPropagation(); onToggle(); }}>
-              Details
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => { e.stopPropagation(); onDetails?.(market); }}>
+              Details <ChevronDown className="w-3.5 h-3.5" />
             </Button>
           </div>
         </td>
@@ -358,20 +365,22 @@ const BorrowRow = memo(function BorrowRow({
 // ============================================
 
 const MobileCard = memo(function MobileCard({
-  market, onSupply, onBorrow, onSwap, mode, hasCollateral, walletBalanceUsd,
+  market, onSupply, onBorrow, onSwap, onDetails, mode, hasCollateral, walletBalanceUsd,
 }: {
   market: LendingMarket;
   onSupply?: (m: LendingMarket) => void;
   onBorrow?: (m: LendingMarket) => void;
   onSwap?: (m: LendingMarket) => void;
+  onDetails?: (m: LendingMarket) => void;
   mode: 'supply' | 'borrow';
   hasCollateral: boolean;
   walletBalanceUsd?: number;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   return (
-    <div className="glass rounded-xl p-3.5" onClick={() => setExpanded(!expanded)}>
+    <div
+      className="glass rounded-xl p-3.5 cursor-pointer hover:bg-muted/20 transition-colors active:scale-[0.99]"
+      onClick={() => onDetails?.(market)}
+    >
       <div className="flex items-center gap-2.5 mb-2.5">
         <div className="relative">
           <TokenIcon address={market.assetAddress} symbol={market.assetSymbol} chainId={market.chainId}
@@ -393,6 +402,7 @@ const MobileCard = memo(function MobileCard({
             {mode === 'supply' ? 'Supply APY' : 'APY, variable'}
           </div>
         </div>
+        <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
       </div>
 
       <div className="grid grid-cols-3 gap-2 mb-2.5 text-xs">
@@ -416,27 +426,7 @@ const MobileCard = memo(function MobileCard({
         </div>
       </div>
 
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden mb-2.5"
-          >
-            <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/30">
-              <div><span className="text-muted-foreground">LTV:</span> {market.ltv > 0 ? `${market.ltv.toFixed(0)}%` : '—'}</div>
-              <div><span className="text-muted-foreground">Liq. Threshold:</span> {market.liquidationThreshold > 0 ? `${market.liquidationThreshold.toFixed(0)}%` : '—'}</div>
-              <div><span className="text-muted-foreground">Reserve Factor:</span> {market.reserveFactor > 0 ? `${market.reserveFactor.toFixed(0)}%` : '—'}</div>
-              <div><span className="text-muted-foreground">Liq. Bonus:</span> {market.liquidationBonus > 0 ? `${market.liquidationBonus.toFixed(1)}%` : '—'}</div>
-              <div><span className="text-muted-foreground">Supply Cap:</span> {market.supplyCap > 0 ? market.supplyCap.toLocaleString() : '∞'}</div>
-              <div><span className="text-muted-foreground">Borrow Cap:</span> {market.borrowCap > 0 ? market.borrowCap.toLocaleString() : '∞'}</div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="flex gap-2">
+      <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
         <Button
           size="sm"
           variant="outline"
@@ -460,9 +450,17 @@ const MobileCard = memo(function MobileCard({
             className="h-8 text-xs gap-1 text-primary"
             onClick={(e) => { e.stopPropagation(); onSwap?.(market); }}
           >
-            <Repeat className="w-3 h-3" /> Get via Swap
+            <Repeat className="w-3 h-3" /> Get
           </Button>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 text-xs gap-1 text-muted-foreground"
+          onClick={(e) => { e.stopPropagation(); onDetails?.(market); }}
+        >
+          Details <ChevronDown className="w-3 h-3" />
+        </Button>
       </div>
     </div>
   );
@@ -483,11 +481,16 @@ export function AaveMarketsTable({
   walletBalances,
   userPositionMap = {},
 }: AaveMarketsTableProps) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<SortKey>('tvl');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [marketMode, setMarketMode] = useState<'supply' | 'borrow'>('supply');
+
+  const handleDetails = useCallback((market: LendingMarket) => {
+    navigate(`/earn/aave/${market.chainId}/${market.assetAddress}`);
+  }, [navigate]);
 
   const handleSort = useCallback((key: SortKey) => {
     if (sortBy === key) setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
