@@ -2,7 +2,7 @@
  * Your Supplies Section — Aave-style
  *
  * Shows the user's active supply positions at the top of the Earn page.
- * Actions: Supply More, Withdraw, Collateral Swap (opens Aave UI).
+ * Actions: Supply More, Withdraw, Collateral Swap (opens Aave UI), Manage (drawer).
  */
 
 import { motion } from 'framer-motion';
@@ -14,6 +14,8 @@ import {
   Shield,
   TrendingUp,
   ExternalLink,
+  RefreshCw,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,17 +42,11 @@ function fmtUsd(val: number): string {
 }
 
 /** Build Aave App URL for Collateral Swap */
-function aaveCollateralSwapUrl(chainId: number, assetAddress: string): string {
+function aaveCollateralSwapUrl(chainId: number): string {
   const chainMap: Record<number, string> = {
-    1: 'ethereum',
-    42161: 'arbitrum',
-    10: 'optimism',
-    137: 'polygon',
-    8453: 'base',
-    43114: 'avalanche',
+    1: 'ethereum', 42161: 'arbitrum', 10: 'optimism', 137: 'polygon', 8453: 'base', 43114: 'avalanche',
   };
-  const chainSlug = chainMap[chainId] || 'ethereum';
-  return `https://app.aave.com/?marketName=proto_${chainSlug}_v3`;
+  return `https://app.aave.com/?marketName=proto_${chainMap[chainId] || 'ethereum'}_v3`;
 }
 
 interface YourSuppliesSectionProps {
@@ -62,6 +58,8 @@ interface YourSuppliesSectionProps {
   onSupply: (market: LendingMarket) => void;
   onWithdraw: (position: AavePosition) => void;
   onSwap: (chainId: number, symbol: string, address: string) => void;
+  onManage?: (position: AavePosition) => void;
+  onRefresh?: () => void;
 }
 
 export function YourSuppliesSection({
@@ -71,12 +69,14 @@ export function YourSuppliesSection({
   onSupply,
   onWithdraw,
   onSwap,
+  onManage,
+  onRefresh,
 }: YourSuppliesSectionProps) {
   const supplied = positions
     .filter(p => p.supplyBalance > 0n)
     .sort((a, b) => b.supplyBalanceUsd - a.supplyBalanceUsd);
 
-  // Show loading state when account data says there's collateral but positions haven't loaded
+  // Loading skeleton when positions not yet indexed
   if (loading && supplied.length === 0) {
     return (
       <motion.div
@@ -94,6 +94,42 @@ export function YourSuppliesSection({
             <div className="h-4 w-32 bg-muted rounded" />
             {accountCollateralUsd && accountCollateralUsd > 0 && (
               <div className="text-sm font-medium text-success">{fmtUsd(accountCollateralUsd)} total collateral</div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Positions not indexed yet: account data shows collateral but per-asset scan finished empty
+  if (!loading && supplied.length === 0 && accountCollateralUsd && accountCollateralUsd > 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-2"
+      >
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-success" />
+          <h2 className="text-sm font-semibold text-foreground">Your Supplies</h2>
+          <Badge variant="outline" className="h-4 px-1.5 text-[10px] bg-success/10 border-success/30 text-success">
+            Aave V3
+          </Badge>
+        </div>
+        <div className="glass rounded-xl p-4 border border-success/15">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium text-foreground">
+                {fmtUsd(accountCollateralUsd)} total collateral detected
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Per-asset positions could not be indexed. This may be due to RPC rate limits.
+              </div>
+            </div>
+            {onRefresh && (
+              <Button size="sm" variant="outline" className="gap-1.5 flex-shrink-0" onClick={onRefresh}>
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </Button>
             )}
           </div>
         </div>
@@ -128,7 +164,7 @@ export function YourSuppliesSection({
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">Balance</th>
               <th className="text-right p-3 text-xs font-medium text-muted-foreground">APY</th>
               <th className="text-center p-3 text-xs font-medium text-muted-foreground">Collateral</th>
-              <th className="text-right p-3 w-64"></th>
+              <th className="text-right p-3 w-72"></th>
             </tr>
           </thead>
           <tbody>
@@ -138,7 +174,8 @@ export function YourSuppliesSection({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: i * 0.03 }}
-                className="border-b border-border/20 hover:bg-success/5 transition-colors"
+                className="border-b border-border/20 hover:bg-success/5 transition-colors cursor-pointer"
+                onClick={() => onManage?.(pos)}
               >
                 <td className="p-3">
                   <div className="flex items-center gap-2.5">
@@ -179,7 +216,7 @@ export function YourSuppliesSection({
                     <Shield className="w-4 h-4 text-muted-foreground mx-auto" />
                   )}
                 </td>
-                <td className="p-3 text-right">
+                <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-1 justify-end">
                     <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs gap-1"
                       onClick={() => pos.market && onSupply(pos.market)}>
@@ -194,11 +231,15 @@ export function YourSuppliesSection({
                       variant="ghost"
                       className="h-7 px-2.5 text-xs gap-1 text-primary"
                       title="Collateral Swap — swap this collateral for another asset without withdrawing"
-                      onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId, pos.assetAddress), '_blank')}
+                      onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId), '_blank')}
                     >
                       <Repeat className="w-3 h-3" />
                       Collateral Swap
                       <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-0.5"
+                      onClick={() => onManage?.(pos)}>
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
                     </Button>
                   </div>
                 </td>
@@ -213,7 +254,8 @@ export function YourSuppliesSection({
         {supplied.map((pos) => (
           <div
             key={`${pos.chainId}-${pos.assetAddress}`}
-            className="glass rounded-xl p-3.5 border border-success/15"
+            className="glass rounded-xl p-3.5 border border-success/15 cursor-pointer active:bg-success/5"
+            onClick={() => onManage?.(pos)}
           >
             <div className="flex items-center gap-2.5 mb-2.5">
               <div className="relative">
@@ -237,6 +279,7 @@ export function YourSuppliesSection({
                 <div className="text-sm font-medium text-success">{pos.supplyApy.toFixed(2)}%</div>
                 <div className="text-[10px] text-muted-foreground">APY</div>
               </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground ml-1" />
             </div>
             <div className="flex items-center justify-between mb-2.5 text-xs">
               <div>
@@ -252,7 +295,7 @@ export function YourSuppliesSection({
                 </Badge>
               )}
             </div>
-            <div className="flex gap-1.5 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
               <Button size="sm" variant="outline" className="flex-1 h-8 text-xs gap-1"
                 onClick={() => pos.market && onSupply(pos.market)}>
                 <ArrowUpRight className="w-3 h-3" /> Supply
@@ -265,7 +308,7 @@ export function YourSuppliesSection({
                 size="sm"
                 variant="ghost"
                 className="h-8 text-xs gap-1 text-primary"
-                onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId, pos.assetAddress), '_blank')}
+                onClick={() => window.open(aaveCollateralSwapUrl(pos.chainId), '_blank')}
               >
                 <Repeat className="w-3 h-3" />
                 Collateral Swap
