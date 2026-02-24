@@ -72,13 +72,12 @@ export interface BtcRouteStatus {
  * Request a BTC → EVM route from LI.FI
  */
 export async function createBtcRoute(params: BtcRouteParams): Promise<BtcDepositInstructions> {
-  const body = {
+  const body: Record<string, any> = {
     fromChainId: BTC_CHAIN_ID,
     toChainId: params.toChainId,
     fromTokenAddress: BTC_TOKEN_ADDRESS,
     toTokenAddress: params.toTokenAddress,
     fromAmount: params.fromAmount,
-    fromAddress: params.fromAddress || 'bc1qnull00000000000000000000000000000placeholder',
     toAddress: params.toAddress,
     options: {
       slippage: params.slippage || 0.03,
@@ -87,6 +86,12 @@ export async function createBtcRoute(params: BtcRouteParams): Promise<BtcDeposit
       order: 'RECOMMENDED',
     },
   };
+
+  // Only include fromAddress for UTXO chains if it's a valid BTC address
+  // Never send EVM addresses for Bitcoin routes
+  if (params.fromAddress && /^(bc1|[13]|tb1)/.test(params.fromAddress)) {
+    body.fromAddress = params.fromAddress;
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
