@@ -6,8 +6,7 @@
  */
 
 const LIFI_BASE_URL = import.meta.env.VITE_LIFI_BASE_URL || 'https://li.quest';
-const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'cryptodefibridge';
-const FEE = parseFloat(import.meta.env.VITE_LIFI_FEE || '0.001');
+const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'Lovable';
 
 export const BTC_CHAIN_ID = 20000000000001;
 export const BTC_TOKEN_ADDRESS = 'bitcoin';
@@ -82,7 +81,6 @@ export async function createBtcRoute(params: BtcRouteParams): Promise<BtcDeposit
     options: {
       slippage: params.slippage || 0.03,
       integrator: INTEGRATOR,
-      fee: FEE,
       order: 'RECOMMENDED',
     },
   };
