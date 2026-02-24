@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
-import { SwapCard } from '@/components/swap/SwapCard';
+import { SwapContainer } from '@/components/swap/SwapContainer';
 import { SeoHead, SeoContentBlock } from '@/components/seo';
 import { motion } from 'framer-motion';
 
@@ -27,7 +27,7 @@ const Index = () => {
           </p>
         </motion.div>
 
-        <SwapCard />
+        <SwapContainer />
 
         {/* Features */}
         <motion.div
