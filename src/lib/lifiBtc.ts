@@ -129,6 +129,38 @@ export async function createBtcRoute(params: BtcRouteParams): Promise<BtcDeposit
  * Parse deposit instructions from a LI.FI BTC route response.
  * The transactionRequest contains the vault address (to), memo (data), and value.
  */
+/**
+ * Deep-scan any object for a string matching BTC address formats.
+ * Returns the longest match found (most likely the real address).
+ */
+function findBtcAddressDeepScan(obj: unknown, path = ''): { address: string; path: string } | null {
+  let best: { address: string; path: string } | null = null;
+  const btcRegex = /(bc1[a-z0-9]{25,}|tb1[a-z0-9]{25,}|[13][a-km-zA-HJ-NP-Z1-9]{25,})/g;
+
+  function scan(val: unknown, currentPath: string) {
+    if (!val) return;
+    if (typeof val === 'string') {
+      const matches = val.match(btcRegex);
+      if (matches) {
+        for (const m of matches) {
+          if (!best || m.length > best.address.length) {
+            best = { address: m, path: currentPath };
+          }
+        }
+      }
+    } else if (Array.isArray(val)) {
+      val.forEach((item, i) => scan(item, `${currentPath}[${i}]`));
+    } else if (typeof val === 'object') {
+      for (const key of Object.keys(val as Record<string, unknown>)) {
+        scan((val as Record<string, unknown>)[key], `${currentPath}.${key}`);
+      }
+    }
+  }
+
+  scan(obj, path);
+  return best;
+}
+
 export function parseDepositInstructions(route: any): BtcDepositInstructions {
   const step = route.steps?.[0];
   if (!step) throw new Error('Invalid route: no steps');
@@ -136,40 +168,44 @@ export function parseDepositInstructions(route: any): BtcDepositInstructions {
   const txReq = step.transactionRequest;
   const tool = step.tool || step.toolDetails?.name || 'unknown';
 
-  // For BTC routes, the transactionRequest contains:
-  // - to: vault deposit address
-  // - data: memo (hex or plain string)
-  // - value: amount in satoshis
-  // Temporarily log route structure for debugging
+  // Debug: log full route so we can inspect address location
   console.log('[BTC Route] Full route structure:', JSON.stringify(route, null, 2));
 
   let memo = '';
   let amountSats = route.fromAmount || step.action?.fromAmount || '0';
 
-  // Extract deposit address from multiple possible locations
-  const depositAddress =
+  // Extract deposit address from known locations first
+  let depositAddress =
     txReq?.to ||
     step.estimate?.toolData?.to ||
     step.toolDetails?.depositAddress ||
     step.estimate?.data?.depositAddress ||
     route.depositAddress ||
     '';
+  let depositAddressSource = depositAddress ? 'known_path' : '';
+
+  // Deep-scan fallback: search entire route object for BTC address patterns
+  if (!depositAddress) {
+    const deepResult = findBtcAddressDeepScan(route, 'route');
+    if (deepResult) {
+      depositAddress = deepResult.address;
+      depositAddressSource = `deep_scan:${deepResult.path}`;
+    }
+  }
 
   if (txReq) {
-    // The data field contains the memo for ThorChain routing
     memo = txReq.data || '';
     if (txReq.value) {
       amountSats = txReq.value;
     }
   }
 
-  // Fallback memo extraction
   if (!memo && step.estimate?.data?.memo) {
     memo = step.estimate.data.memo;
   }
 
-  console.log('[BTC Route] Extracted depositAddress:', depositAddress);
-  console.log('[BTC Route] Extracted amountSats:', amountSats);
+  console.log('[BTC Route] depositAddress:', depositAddress, '| source:', depositAddressSource);
+  console.log('[BTC Route] amountSats:', amountSats);
 
   const amountBtc = (parseInt(amountSats) / 1e8).toFixed(8);
 

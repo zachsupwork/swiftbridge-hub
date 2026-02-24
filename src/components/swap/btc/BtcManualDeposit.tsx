@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Copy, Check, AlertTriangle, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,18 @@ interface BtcManualDepositProps {
 export function BtcManualDeposit({ instructions, onConfirmSent, onRequote, expired }: BtcManualDepositProps) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
+  // Store deposit address in state — never overwrite with empty
+  const [btcDepositAddress, setBtcDepositAddress] = useState(instructions.depositAddress || '');
+  const addressSourceRef = useRef<string>('initial');
+
+  useEffect(() => {
+    const addr = instructions.depositAddress;
+    if (addr && addr.length > 0) {
+      setBtcDepositAddress(addr);
+      addressSourceRef.current = 'instructions.depositAddress';
+    }
+  }, [instructions.depositAddress]);
+
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
@@ -23,19 +35,34 @@ export function BtcManualDeposit({ instructions, onConfirmSent, onRequote, expir
 
   const CopyButton = ({ text, field, label }: { text: string; field: string; label: string }) => (
     <button
-      onClick={() => copyToClipboard(text, field)}
-      className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 transition-colors"
+      onClick={() => text && copyToClipboard(text, field)}
+      disabled={!text}
+      className={cn(
+        "flex items-center gap-1.5 text-xs transition-colors",
+        text ? "text-primary hover:text-primary/80" : "text-muted-foreground/40 cursor-not-allowed"
+      )}
     >
       {copiedField === field ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       {copiedField === field ? 'Copied!' : label}
     </button>
   );
 
-  // Build QR data: bitcoin:<address>?amount=<btc>
-  const qrData = `bitcoin:${instructions.depositAddress}?amount=${instructions.amountBtc}`;
+  // Use the single source of truth for the address
+  const qrData = btcDepositAddress
+    ? `bitcoin:${btcDepositAddress}?amount=${instructions.amountBtc}`
+    : '';
+
+  const hasAddress = btcDepositAddress.length > 0;
 
   return (
     <div className="space-y-4">
+      {/* Debug overlay — temporary */}
+      <div className="p-2 rounded bg-muted/50 border border-border/30 text-[10px] font-mono text-muted-foreground space-y-0.5">
+        <div>src: {addressSourceRef.current}</div>
+        <div>addr: {hasAddress ? `${btcDepositAddress.slice(0, 6)}…${btcDepositAddress.slice(-6)}` : '(none)'}</div>
+        <div>raw len: {instructions.depositAddress?.length ?? 0}</div>
+      </div>
+
       {/* Warning banner */}
       <div className="flex items-start gap-2.5 p-3 rounded-lg bg-warning/10 border border-warning/20 text-xs text-warning">
         <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -55,7 +82,13 @@ export function BtcManualDeposit({ instructions, onConfirmSent, onRequote, expir
           {/* QR Code */}
           <div className="flex justify-center py-4">
             <div className="p-4 bg-white rounded-xl shadow-sm">
-              <QRCodeSVG value={qrData} size={180} level="M" />
+              {hasAddress ? (
+                <QRCodeSVG value={qrData} size={180} level="M" />
+              ) : (
+                <div className="w-[180px] h-[180px] flex items-center justify-center text-xs text-muted-foreground">
+                  Generating…
+                </div>
+              )}
             </div>
           </div>
 
@@ -64,10 +97,10 @@ export function BtcManualDeposit({ instructions, onConfirmSent, onRequote, expir
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground font-medium">Deposit Address</span>
-                <CopyButton text={instructions.depositAddress} field="address" label="Copy" />
+                <CopyButton text={btcDepositAddress} field="address" label="Copy" />
               </div>
               <p className="text-sm font-mono break-all bg-muted/40 rounded-lg p-2.5 border border-border/20">
-                {instructions.depositAddress}
+                {hasAddress ? btcDepositAddress : <span className="text-muted-foreground italic">Generating deposit address…</span>}
               </p>
             </div>
 
