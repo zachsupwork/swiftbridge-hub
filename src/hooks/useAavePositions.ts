@@ -17,6 +17,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAccount } from 'wagmi';
 import { createPublicClient, http, fallback, formatUnits, getAddress, parseAbi, erc20Abi } from 'viem';
 import { tryNormalizeAddress } from '@/lib/address';
+import { verifyAaveTokenBalances } from '@/lib/alchemyClient';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getFallbackRpcs } from '@/lib/chainConfig';
 import { getAaveAddresses, getAaveAssets, type AaveAssetInfo } from '@/lib/aaveAddressBook';
@@ -145,12 +146,17 @@ export interface ChainDebugInfo {
   balanceOfCallsOk?: number;
   balanceOfCallsFailed?: number;
   poolAddress?: string;
+  poolAddressesProviderAddress?: string;
+  uiPoolDataProviderAddress?: string;
   accountCollateralBase?: string;
   accountDebtBase?: string;
   accountHF?: string;
   wrongMarketWarning?: string;
   firstError?: string;
   lastError?: string;
+  sampleATokenAddresses?: string[];
+  alchemyVerified?: boolean;
+  alchemyNonZeroTokens?: number;
 }
 
 export interface UseAavePositionsResult {
@@ -269,6 +275,9 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
             balanceOfCallsOk: 0,
             balanceOfCallsFailed: 0,
             poolAddress: aaveAddresses.POOL,
+            poolAddressesProviderAddress: aaveAddresses.POOL_ADDRESSES_PROVIDER,
+            uiPoolDataProviderAddress: aaveAddresses.UI_POOL_DATA_PROVIDER,
+            sampleATokenAddresses: assets.slice(0, 5).map(a => `${a.symbol}:${a.aToken}`),
           };
 
           try {
@@ -300,6 +309,14 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
 
             if (assets.length > 0) {
               console.log(`[AavePositions] ${name}: Scanning ${assets.length} assets via address book balanceOf...`);
+              // Log exact aToken/vToken addresses being queried (first 3 for brevity)
+              if (DEBUG) {
+                const sample = assets.slice(0, 3);
+                for (const a of sample) {
+                  console.log(`[AavePositions]   ${name} ${a.symbol}: aToken=${a.aToken} vToken=${a.vToken} underlying=${a.underlying}`);
+                }
+                if (assets.length > 3) console.log(`[AavePositions]   ${name}: ... and ${assets.length - 3} more assets`);
+              }
               debugEntry.discoveryMethod = 'address-book-balanceOf';
 
               // Build batch of balanceOf calls: [aToken, vToken] for each asset
@@ -435,7 +452,32 @@ export function useAavePositions(markets: LendingMarket[]): UseAavePositionsResu
               debugEntry.discoveryMethod = 'address-book-balanceOf';
             }
 
-            // ── Resolve account data ──
+            // ── Alchemy cross-verification (if 0 positions found but account has activity) ──
+            if (debugEntry.positionsFound === 0 && assets.length > 0) {
+              try {
+                const allATokens = assets.map(a => a.aToken);
+                const allVTokens = assets.map(a => a.vToken);
+                const alchemyBalances = await verifyAaveTokenBalances(
+                  chainId,
+                  address as string,
+                  [...allATokens, ...allVTokens],
+                );
+                debugEntry.alchemyVerified = true;
+                debugEntry.alchemyNonZeroTokens = alchemyBalances.size;
+                if (alchemyBalances.size > 0) {
+                  console.warn(`[AavePositions] ⚠️ ${name}: Alchemy found ${alchemyBalances.size} non-zero aToken/vToken balances but RPC balanceOf returned 0!`);
+                  for (const [addr, bal] of alchemyBalances) {
+                    console.warn(`[AavePositions]   Alchemy: ${addr} = ${bal.toString()}`);
+                  }
+                } else {
+                  console.log(`[AavePositions] ${name}: Alchemy confirms 0 aToken/vToken balances — wallet genuinely has no positions on this market.`);
+                }
+              } catch (alchemyErr: any) {
+                debugEntry.alchemyVerified = false;
+                console.warn(`[AavePositions] ${name}: Alchemy verification failed:`, alchemyErr?.message);
+              }
+            }
+
             const accountResult = await accountPromise;
             if (accountResult) {
               const ad = parseAccountData(accountResult, chainId, name);
