@@ -1,7 +1,6 @@
 // LI.FI API Client wrapper
 const LIFI_BASE_URL = import.meta.env.VITE_LIFI_BASE_URL || 'https://li.quest';
-const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'cryptodefibridge';
-const FEE = parseFloat(import.meta.env.VITE_LIFI_FEE || '0.001');
+const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || 'Lovable';
 
 export interface Chain {
   id: number;
@@ -253,7 +252,6 @@ export async function getRoutes(request: RouteRequest): Promise<RoutesResponse> 
     options: {
       slippage: request.slippage || 0.005,
       integrator: INTEGRATOR,
-      fee: FEE,
       order: 'RECOMMENDED',
     },
   };
@@ -963,17 +961,18 @@ function coerceToken(v: unknown): TokenAmount | null {
 }
 
 // ─── Fee helpers ─────────────────────────────────────────────
+// Fees are now managed by LI.FI portal via the integrator string.
+// These helpers remain for display purposes only.
 
 export function getIntegratorFee(): number {
-  return FEE;
+  return 0; // Fee is portal-managed, not calculated client-side
 }
 
 export function formatFeePercentage(fee: number): string {
+  if (fee === 0) return 'Portal-managed';
   return `${(fee * 100).toFixed(2)}%`;
 }
 
 export function calculateIntegratorFeeAmount(amount: string, decimals: number): string {
-  const amountBigInt = BigInt(amount);
-  const feeAmount = (amountBigInt * BigInt(Math.floor(FEE * 10000))) / BigInt(10000);
-  return feeAmount.toString();
+  return '0'; // Fee is portal-managed
 }
