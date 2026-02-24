@@ -140,12 +140,22 @@ export function parseDepositInstructions(route: any): BtcDepositInstructions {
   // - to: vault deposit address
   // - data: memo (hex or plain string)
   // - value: amount in satoshis
-  let depositAddress = '';
+  // Temporarily log route structure for debugging
+  console.log('[BTC Route] Full route structure:', JSON.stringify(route, null, 2));
+
   let memo = '';
   let amountSats = route.fromAmount || step.action?.fromAmount || '0';
 
+  // Extract deposit address from multiple possible locations
+  const depositAddress =
+    txReq?.to ||
+    step.estimate?.toolData?.to ||
+    step.toolDetails?.depositAddress ||
+    step.estimate?.data?.depositAddress ||
+    route.depositAddress ||
+    '';
+
   if (txReq) {
-    depositAddress = txReq.to || '';
     // The data field contains the memo for ThorChain routing
     memo = txReq.data || '';
     if (txReq.value) {
@@ -153,13 +163,13 @@ export function parseDepositInstructions(route: any): BtcDepositInstructions {
     }
   }
 
-  // If no transactionRequest, try to extract from step action metadata
-  if (!depositAddress && step.estimate?.data?.depositAddress) {
-    depositAddress = step.estimate.data.depositAddress;
-  }
+  // Fallback memo extraction
   if (!memo && step.estimate?.data?.memo) {
     memo = step.estimate.data.memo;
   }
+
+  console.log('[BTC Route] Extracted depositAddress:', depositAddress);
+  console.log('[BTC Route] Extracted amountSats:', amountSats);
 
   const amountBtc = (parseInt(amountSats) / 1e8).toFixed(8);
 
