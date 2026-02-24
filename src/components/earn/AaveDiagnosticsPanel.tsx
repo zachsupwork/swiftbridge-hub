@@ -556,6 +556,33 @@ export function AaveDiagnosticsPanel({ className }: AaveDiagnosticsPanelProps) {
                 <span className="text-muted-foreground w-40">UiPoolDataProvider:</span>
                 <code className="font-mono text-[10px]">{aaveAddresses.UI_POOL_DATA_PROVIDER}</code>
               </div>
+
+              {/* Show aToken addresses being queried */}
+              {(() => {
+                const assets = getAaveAssets(walletChainId);
+                if (!assets || assets.length === 0) return null;
+                return (
+                  <details className="mt-2">
+                    <summary className="text-xs text-muted-foreground cursor-pointer font-medium">
+                      aToken/vToken addresses being queried ({assets.length} assets)
+                    </summary>
+                    <div className="mt-1 space-y-0.5 max-h-40 overflow-y-auto">
+                      {assets.map((a) => (
+                        <div key={a.symbol} className="grid grid-cols-[60px_1fr] gap-1 text-[10px]">
+                          <span className="font-medium">{a.symbol}</span>
+                          <div>
+                            <span className="text-muted-foreground">aToken:</span>{' '}
+                            <code className="font-mono">{a.aToken}</code>
+                            <br />
+                            <span className="text-muted-foreground">vToken:</span>{' '}
+                            <code className="font-mono">{a.vToken}</code>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })()}
             </div>
           )}
 
