@@ -6,6 +6,7 @@
 
 import { erc20Abi, type WalletClient } from 'viem';
 import { getStepTransaction, getTransactionStatus, type Route, type Step } from './lifiClient';
+import { BITCOIN_CHAIN_ID } from './wallets/types';
 import {
   normalizeTxRequest,
   getTransactionSimulation,
@@ -233,9 +234,10 @@ export async function executeRoute(
         return { success: false, stepResults, error: `Step ${i + 1} transaction reverted.` };
       }
 
-      // 6 — If cross-chain, poll bridge status
+      // 6 — If cross-chain, poll bridge status (skip for BTC destinations — relay payouts are slow/flaky)
       const isCrossChain = step.action.fromChainId !== step.action.toChainId;
-      if (isCrossChain) {
+      const isBtcDestination = step.action.toChainId === BITCOIN_CHAIN_ID || route.toChainId === BITCOIN_CHAIN_ID;
+      if (isCrossChain && !isBtcDestination) {
         emit('waiting_bridge', i, `Waiting for bridge (${step.toolDetails?.name || step.tool})…`);
         const bridgeResult = await waitForBridgeCompletion(
           hash,
@@ -248,6 +250,8 @@ export async function executeRoute(
           emit('failed', i, 'Bridge transfer failed.');
           return { success: false, stepResults, error: 'Bridge transfer failed.' };
         }
+      } else if (isCrossChain && isBtcDestination) {
+        emit('sending', i, 'Transaction confirmed. Waiting for BTC payout…');
       }
 
       stepResults.push({ stepIndex: i, tool: step.tool, approvalTxHash, txHash: hash, status: 'completed' });
