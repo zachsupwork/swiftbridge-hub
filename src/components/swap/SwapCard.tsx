@@ -68,6 +68,7 @@ import {
   type ExecutionUpdate,
   type StepResult,
 } from '@/lib/routeExecutor';
+import { BITCOIN_CHAIN_ID } from '@/lib/wallets/types';
 
 type SwapState = 'idle' | 'quoting' | 'quoted' | 'approving' | 'swapping' | 'tracking';
 
@@ -357,7 +358,7 @@ export function SwapCard() {
           fromAmountUSD: route.fromAmountUSD,
           toAmountUSD: route.toAmountUSD,
           txHash: lastHash,
-          status: 'completed',
+          status: route.toChainId === BITCOIN_CHAIN_ID ? 'pending' : 'completed',
           integratorFee: (parseFloat(fromAmount) * integratorFee).toFixed(6),
           integratorFeeUSD: (fromAmountUSD * integratorFee).toFixed(4),
         };

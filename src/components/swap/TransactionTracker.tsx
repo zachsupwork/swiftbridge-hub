@@ -4,6 +4,7 @@ import { Loader2, CheckCircle2, XCircle, ExternalLink, Clock } from 'lucide-reac
 import { Route, getTransactionStatus, TransactionStatus } from '@/lib/lifiClient';
 import { updateSwapStatus } from '@/lib/swapStorage';
 import type { StepResult } from '@/lib/routeExecutor';
+import { BITCOIN_CHAIN_ID } from '@/lib/wallets/types';
 
 interface TransactionTrackerProps {
   txHash: string;
@@ -91,6 +92,9 @@ export function TransactionTracker({ txHash, route, swapId, stepResults, onCompl
   };
 
   const getExplorerUrl = (chainId: number, hash: string) => {
+    if (chainId === BITCOIN_CHAIN_ID) {
+      return `https://mempool.space/tx/${hash}`;
+    }
     const explorers: Record<number, string> = {
       1: 'https://etherscan.io/tx/',
       10: 'https://optimistic.etherscan.io/tx/',
