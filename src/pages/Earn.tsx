@@ -232,26 +232,47 @@ export default function Earn() {
     setIsVaultModalOpen(true);
   }, [isConnected, vaultPositions, walletChainId, handleSwitchChain]);
 
-  // ─── Withdraw action (opens supply modal for now, Aave withdraw is same modal) ───
+  // ─── Withdraw action (opens dedicated withdraw modal) ───
   const handleWithdraw = useCallback(async (position: AavePosition) => {
-    if (position.market) {
-      await handleSupply(position.market);
+    if (!isConnected) {
+      toast({ title: 'Connect Wallet', variant: 'destructive' });
+      return;
     }
-  }, [handleSupply]);
+    if (walletChainId !== position.chainId) {
+      await handleSwitchChain(position.chainId);
+    }
+    setWithdrawPosition(position);
+    setIsWithdrawModalOpen(true);
+  }, [isConnected, walletChainId, handleSwitchChain]);
 
-  // ─── Repay action (opens borrow modal) ───
+  // ─── Repay action (opens dedicated repay modal) ───
   const handleRepay = useCallback(async (position: AavePosition) => {
     if (!isConnected) {
       toast({ title: 'Connect Wallet', variant: 'destructive' });
       return;
     }
-    if (position.market) {
-      if (walletChainId !== position.market.chainId) {
-        await handleSwitchChain(position.market.chainId);
-      }
-      setSelectedMarket(position.market);
-      setIsBorrowModalOpen(true);
+    if (walletChainId !== position.chainId) {
+      await handleSwitchChain(position.chainId);
     }
+    // Convert AavePosition → UserBorrowPosition for the repay modal
+    const borrowPos: UserBorrowPosition = {
+      assetAddress: position.assetAddress,
+      assetSymbol: position.assetSymbol,
+      assetName: position.assetName,
+      assetLogo: position.assetLogo,
+      chainId: position.chainId,
+      chainName: position.chainName,
+      currentVariableDebt: position.variableDebt,
+      currentStableDebt: 0n,
+      variableDebtFormatted: position.variableDebtFormatted,
+      stableDebtFormatted: '0',
+      variableBorrowAPY: position.borrowApy,
+      stableBorrowAPY: 0,
+      decimals: position.decimals,
+      rateMode: 'variable',
+    };
+    setRepayPosition(borrowPos);
+    setIsRepayModalOpen(true);
   }, [isConnected, walletChainId, handleSwitchChain]);
 
   // ─── Open position drawer ───
