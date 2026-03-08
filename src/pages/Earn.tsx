@@ -57,6 +57,10 @@ import { YourBorrowsSection } from '@/components/earn/YourBorrowsSection';
 import { AavePositionDrawer } from '@/components/earn/AavePositionDrawer';
 import { AaveReserveOverviewDrawer } from '@/components/earn/AaveReserveOverviewDrawer';
 import { AccountHealthBar } from '@/components/earn/AccountHealthBar';
+import { WithdrawModal } from '@/components/earn/WithdrawModal';
+import { RepayModal } from '@/components/earn/RepayModal';
+import { useAaveBorrow } from '@/hooks/useAaveBorrow';
+import type { UserBorrowPosition } from '@/hooks/useAaveBorrow';
 import { useLendingMarkets, SUPPORTED_CHAIN_IDS, LENDING_CHAINS } from '@/hooks/useLendingMarkets';
 import { useAavePositions } from '@/hooks/useAavePositions';
 
