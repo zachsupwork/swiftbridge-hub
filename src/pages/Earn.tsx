@@ -1332,6 +1332,22 @@ export default function Earn() {
         onRepay={handleRepay}
         onSwap={goToSwap}
       />
+
+      <WithdrawModal
+        position={withdrawPosition}
+        isOpen={isWithdrawModalOpen}
+        onClose={handleCloseModal}
+      />
+
+      <RepayModal
+        position={repayPosition}
+        isOpen={isRepayModalOpen}
+        onClose={handleCloseModal}
+        repayStep={repayStep}
+        repayError={repayError}
+        onRepay={repayFn}
+        onReset={resetRepayState}
+      />
     </Layout>
   );
 }
