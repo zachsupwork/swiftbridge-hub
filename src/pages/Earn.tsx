@@ -144,9 +144,19 @@ export default function Earn() {
     ? allVaults.filter(v => v.chainId === selectedChainId)
     : allVaults;
 
+  // ─── Borrow hook (for repay) ───
+  const {
+    repayStep,
+    repayError,
+    repay: repayFn,
+    resetRepayState,
+  } = useAaveBorrow();
+
   // ─── Modal state ───
   const [isSupplyModalOpen, setIsSupplyModalOpen] = useState(false);
   const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
   const [isVaultModalOpen, setIsVaultModalOpen] = useState(false);
   const [isPositionDrawerOpen, setIsPositionDrawerOpen] = useState(false);
   const [isOverviewDrawerOpen, setIsOverviewDrawerOpen] = useState(false);
@@ -154,6 +164,8 @@ export default function Earn() {
   const [selectedMarket, setSelectedMarket] = useState<LendingMarket | null>(null);
   const [overviewPosition, setOverviewPosition] = useState<AavePosition | null>(null);
   const [overviewMarket, setOverviewMarket] = useState<LendingMarket | null>(null);
+  const [withdrawPosition, setWithdrawPosition] = useState<AavePosition | null>(null);
+  const [repayPosition, setRepayPosition] = useState<UserBorrowPosition | null>(null);
   const [selectedVault, setSelectedVault] = useState<MorphoVault | null>(null);
   const [selectedVaultPosition, setSelectedVaultPosition] = useState<VaultPosition | null>(null);
   const [vaultModalTab, setVaultModalTab] = useState<'deposit' | 'withdraw'>('deposit');
