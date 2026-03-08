@@ -300,6 +300,8 @@ export default function Earn() {
   const handleCloseModal = useCallback(() => {
     setIsSupplyModalOpen(false);
     setIsBorrowModalOpen(false);
+    setIsWithdrawModalOpen(false);
+    setIsRepayModalOpen(false);
     setIsVaultModalOpen(false);
     setIsPositionDrawerOpen(false);
     setIsOverviewDrawerOpen(false);
@@ -307,6 +309,8 @@ export default function Earn() {
     setSelectedPosition(null);
     setOverviewPosition(null);
     setOverviewMarket(null);
+    setWithdrawPosition(null);
+    setRepayPosition(null);
     setSelectedVault(null);
     setSelectedVaultPosition(null);
     refreshMarkets();
