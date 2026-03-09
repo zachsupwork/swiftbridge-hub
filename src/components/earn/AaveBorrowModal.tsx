@@ -28,6 +28,7 @@ import { useAaveBorrow, type UserAccountData } from '@/hooks/useAaveBorrow';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { ContractsVerificationSection } from '@/components/earn/ContractsVerificationSection';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 
@@ -259,6 +260,16 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
                 </span>
               </div>
             </div>
+
+            {/* Platform fee disclosure */}
+            {parsedAmount > 0 && (
+              <PlatformFeeRow
+                amount={amount}
+                decimals={market.decimals}
+                symbol={market.assetSymbol}
+                priceUsd={market.priceUsd}
+              />
+            )}
 
             {borrowStep === 'error' && borrowError && (
               <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">

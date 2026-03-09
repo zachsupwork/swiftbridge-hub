@@ -1,11 +1,10 @@
 /**
  * Aave V3 Supply Hook
  * 
- * Standard Aave supply flow:
- * 1. Approve token for Aave Pool (exact amount, NOT infinite)
- * 2. Supply to Aave V3 Pool
- * 
- * No platform fee — approval spender is ONLY the Aave Pool contract.
+ * Supply flow with 0.05% platform fee:
+ * 1. Transfer fee to treasury (separate tx)
+ * 2. Approve token for Aave Pool (exact amount, NOT infinite)
+ * 3. Supply to Aave V3 Pool
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -24,10 +23,12 @@ import {
   isEarnChainSupported,
 } from '@/lib/aaveV3';
 import { logEarnEvent } from '@/lib/earnLogger';
+import { calcPlatformFee, FEE_TREASURY, isTreasuryConfigured } from '@/lib/platformFee';
 import type { AaveMarket } from '@/lib/aaveMarkets';
 
 export type SupplyStep = 
   | 'idle' 
+  | 'fee'
   | 'approving' 
   | 'supplying' 
   | 'complete' 
@@ -37,6 +38,7 @@ export interface SupplyState {
   step: SupplyStep;
   approvalTxHash?: Hash;
   supplyTxHash?: Hash;
+  feeTxHash?: Hash;
   error?: string;
 }
 
@@ -61,7 +63,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
 
   const poolAddress = market ? getAavePoolAddress(market.chainId) : null;
 
-  // Read token balance — MUST specify chainId to avoid reading from wrong chain
+  // Read token balance
   const { data: balance, refetch: refetchBalance } = useReadContract({
     address: market?.address,
     abi: erc20Abi,
@@ -73,7 +75,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     },
   });
 
-  // Read allowance for Aave Pool ONLY
+  // Read allowance for Aave Pool
   const { data: poolAllowance, refetch: refetchPoolAllowance } = useReadContract({
     address: market?.address,
     abi: erc20Abi,
@@ -85,12 +87,10 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     },
   });
 
-  // Wait for transaction receipt
   const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({
     hash: pendingTxHash,
   });
 
-  // When transaction confirms, refetch data
   useEffect(() => {
     if (txConfirmed && pendingTxHash) {
       refetchBalance();
@@ -102,13 +102,11 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     ? formatUnits(balance, market.decimals) 
     : '0';
 
-  // Reset state
   const resetState = useCallback(() => {
     setSupplyState({ step: 'idle' });
     setPendingTxHash(undefined);
   }, []);
 
-  // Main supply function — standard Aave flow, NO fee
   const supply = useCallback(async (amount: string) => {
     if (!market || !address || !poolAddress) {
       setSupplyState({ step: 'error', error: 'Wallet not connected or pool not found' });
@@ -128,14 +126,17 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     setIsLoading(true);
 
     try {
-      const supplyAmount = parseUnits(amount, market.decimals);
+      const totalAmount = parseUnits(amount, market.decimals);
       
-      if (supplyAmount <= 0n) {
+      if (totalAmount <= 0n) {
         throw new Error('Amount must be greater than 0');
       }
 
-      // Check balance using bigint
-      if (balance !== undefined && supplyAmount > balance) {
+      const feeAmount = isTreasuryConfigured() ? calcPlatformFee(totalAmount) : 0n;
+      const supplyAmount = totalAmount - feeAmount;
+
+      // User needs totalAmount (supply + fee) in wallet
+      if (balance !== undefined && totalAmount > balance) {
         throw new Error('Insufficient balance');
       }
 
@@ -143,14 +144,49 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
         chainId,
         underlying: market.address,
         pool: poolAddress,
-        amount: supplyAmount.toString(),
-        balanceRaw: balance?.toString(),
+        total: totalAmount.toString(),
+        fee: feeAmount.toString(),
+        supply: supplyAmount.toString(),
       });
 
-      // Step 1: Approve Aave Pool (exact amount, NOT infinite)
+      // Step 1: Transfer fee to treasury
+      if (feeAmount > 0n) {
+        setSupplyState({ step: 'fee' });
+
+        logEarnEvent({
+          action: 'fee_tx_sent',
+          chainId,
+          assetSymbol: market.symbol,
+          assetAddress: market.address,
+          walletAddress: address,
+          amount: feeAmount.toString(),
+          metadata: { treasury: FEE_TREASURY },
+        });
+
+        const feeTxHash = await writeContractAsync({
+          address: market.address,
+          abi: erc20Abi,
+          functionName: 'transfer',
+          args: [FEE_TREASURY, feeAmount],
+        } as any);
+
+        setPendingTxHash(feeTxHash);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        setSupplyState(prev => ({ ...prev, feeTxHash }));
+
+        logEarnEvent({
+          action: 'fee_tx_success',
+          chainId,
+          assetSymbol: market.symbol,
+          walletAddress: address,
+          txHash: feeTxHash,
+        });
+      }
+
+      // Step 2: Approve Aave Pool (exact supply amount, NOT infinite)
       const currentPoolAllowance = poolAllowance ?? 0n;
       if (currentPoolAllowance < supplyAmount) {
-        setSupplyState({ step: 'approving' });
+        setSupplyState(prev => ({ ...prev, step: 'approving' }));
 
         logEarnEvent({
           action: 'approval_tx_sent',
@@ -185,7 +221,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
         });
       }
 
-      // Step 2: Supply to Aave Pool
+      // Step 3: Supply to Aave Pool
       setSupplyState(prev => ({ ...prev, step: 'supplying' }));
 
       logEarnEvent({
@@ -207,11 +243,11 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
       setPendingTxHash(supplyTxHash);
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      setSupplyState({ 
+      setSupplyState(prev => ({ 
+        ...prev,
         step: 'complete', 
         supplyTxHash,
-        approvalTxHash: supplyState.approvalTxHash,
-      });
+      }));
 
       logEarnEvent({
         action: 'supply_tx_success',
@@ -249,7 +285,7 @@ export function useAaveSupply(market: AaveMarket | null): UseAaveSupplyReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [market, address, chainId, poolAddress, balance, poolAllowance, writeContractAsync, refetchBalance, refetchPoolAllowance, supplyState.approvalTxHash]);
+  }, [market, address, chainId, poolAddress, balance, poolAllowance, writeContractAsync, refetchBalance, refetchPoolAllowance]);
 
   return {
     supplyState,

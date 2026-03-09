@@ -30,6 +30,7 @@ import { useAaveSupply } from '@/hooks/useAaveSupply';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { ContractsVerificationSection } from '@/components/earn/ContractsVerificationSection';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { AaveMarket } from '@/lib/aaveMarkets';
@@ -157,6 +158,7 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
 
   const stepLabel = {
     idle: 'Supply',
+    fee: 'Transferring fee...',
     approving: 'Approving Aave Pool...',
     supplying: 'Supplying...',
     complete: 'Complete',
@@ -306,6 +308,16 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
                 targetTokenAddress={market.assetAddress}
                 targetSymbol={market.assetSymbol}
                 closeParentOnSwap={onClose}
+              />
+            )}
+
+            {/* Platform fee disclosure */}
+            {parsedAmount > 0 && !isInsufficientBalance && (
+              <PlatformFeeRow
+                amount={amount}
+                decimals={market.decimals}
+                symbol={market.assetSymbol}
+                priceUsd={market.priceUsd}
               />
             )}
 

@@ -16,6 +16,8 @@ import {
   useWaitForTransactionReceipt,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
+import { calcPlatformFee, FEE_TREASURY, isTreasuryConfigured } from '@/lib/platformFee';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +27,7 @@ import { TokenIcon } from '@/components/common/TokenIcon';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import type { AavePosition } from '@/hooks/useAavePositions';
 
-type WithdrawStep = 'idle' | 'withdrawing' | 'complete' | 'error';
+type WithdrawStep = 'idle' | 'withdrawing' | 'fee' | 'complete' | 'error';
 
 const POOL_WITHDRAW_ABI = [
   {
@@ -75,15 +77,8 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
     },
   });
 
-  // Wait for tx
-  const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => {
-    if (txConfirmed && txHash) {
-      setStep('complete');
-      refetchBalance();
-    }
-  }, [txConfirmed, txHash, refetchBalance]);
+  // Wait for tx (for UI receipt tracking only, step completion handled in handleWithdraw)
+  useWaitForTransactionReceipt({ hash: txHash });
 
   // Reset on close
   useEffect(() => {
@@ -131,6 +126,26 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
       } as any);
 
       setTxHash(hash);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Transfer platform fee from withdrawn tokens
+      if (isTreasuryConfigured()) {
+        const feeBase = isMax && aTokenBalance ? aTokenBalance : parsedAmount;
+        const feeAmount = calcPlatformFee(feeBase);
+        if (feeAmount > 0n) {
+          setStep('fee');
+          await writeContractAsync({
+            address: position.assetAddress,
+            abi: erc20Abi,
+            functionName: 'transfer',
+            args: [FEE_TREASURY, feeAmount],
+          } as any);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      setStep('complete');
+      refetchBalance();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Withdraw failed';
       if (msg.includes('User rejected') || msg.includes('User denied')) {
@@ -140,7 +155,7 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
       }
       setStep('error');
     }
-  }, [position, address, poolAddress, amount, aTokenBalance, writeContractAsync]);
+  }, [position, address, poolAddress, amount, aTokenBalance, writeContractAsync, refetchBalance]);
 
   if (!position) return null;
 
@@ -265,6 +280,15 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
                       </div>
                     </div>
 
+                    {/* Platform fee disclosure */}
+                    {amount && parseFloat(amount) > 0 && (
+                      <PlatformFeeRow
+                        amount={amount}
+                        decimals={position.decimals}
+                        symbol={position.assetSymbol}
+                      />
+                    )}
+
                     {/* Warning if withdrawing with active borrows */}
                     {position.variableDebt > 0n && (
                       <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-start gap-2">
@@ -301,6 +325,11 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
                         <>
                           <ArrowDownLeft className="w-4 h-4 mr-2" />
                           Withdraw
+                        </>
+                      ) : step === 'fee' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Transferring fee...
                         </>
                       ) : (
                         <>

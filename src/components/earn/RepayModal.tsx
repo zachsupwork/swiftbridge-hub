@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import type { UserBorrowPosition, BorrowStep } from '@/hooks/useAaveBorrow';
 
 interface RepayModalProps {
@@ -210,6 +211,15 @@ export function RepayModal({
                         </div>
                       </div>
                     </div>
+
+                    {/* Platform fee disclosure */}
+                    {amount && parseFloat(amount) > 0 && (
+                      <PlatformFeeRow
+                        amount={amount}
+                        decimals={position.decimals}
+                        symbol={position.assetSymbol}
+                      />
+                    )}
 
                     {/* Insufficient balance warning */}
                     {amount && parseFloat(amount) > parseFloat(balanceFormatted) && (
