@@ -133,6 +133,26 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
       } as any);
 
       setTxHash(hash);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Transfer platform fee from withdrawn tokens
+      if (isTreasuryConfigured()) {
+        const feeBase = isMax && aTokenBalance ? aTokenBalance : parsedAmount;
+        const feeAmount = calcPlatformFee(feeBase);
+        if (feeAmount > 0n) {
+          setStep('fee');
+          await writeContractAsync({
+            address: position.assetAddress,
+            abi: erc20Abi,
+            functionName: 'transfer',
+            args: [FEE_TREASURY, feeAmount],
+          } as any);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      setStep('complete');
+      refetchBalance();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Withdraw failed';
       if (msg.includes('User rejected') || msg.includes('User denied')) {
@@ -142,7 +162,7 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
       }
       setStep('error');
     }
-  }, [position, address, poolAddress, amount, aTokenBalance, writeContractAsync]);
+  }, [position, address, poolAddress, amount, aTokenBalance, writeContractAsync, refetchBalance]);
 
   if (!position) return null;
 
