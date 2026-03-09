@@ -16,6 +16,8 @@ import {
   useWaitForTransactionReceipt,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi, type Hash } from 'viem';
+import { calcPlatformFee, FEE_TREASURY, isTreasuryConfigured } from '@/lib/platformFee';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
