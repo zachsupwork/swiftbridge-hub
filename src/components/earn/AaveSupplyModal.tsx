@@ -312,6 +312,16 @@ export function AaveSupplyModal({ open, onClose, market }: AaveSupplyModalProps)
               />
             )}
 
+            {/* Platform fee disclosure */}
+            {parsedAmount > 0 && !isInsufficientBalance && (
+              <PlatformFeeRow
+                amount={amount}
+                decimals={market.decimals}
+                symbol={market.assetSymbol}
+                priceUsd={market.priceUsd}
+              />
+            )}
+
             {/* Error message */}
             {supplyState.step === 'error' && supplyState.error && (
               <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
