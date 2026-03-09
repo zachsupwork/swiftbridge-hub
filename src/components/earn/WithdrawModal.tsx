@@ -326,6 +326,11 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
                           <ArrowDownLeft className="w-4 h-4 mr-2" />
                           Withdraw
                         </>
+                      ) : step === 'fee' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Transferring fee...
+                        </>
                       ) : (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
