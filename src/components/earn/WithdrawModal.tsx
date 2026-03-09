@@ -287,6 +287,15 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
                       </div>
                     </div>
 
+                    {/* Platform fee disclosure */}
+                    {amount && parseFloat(amount) > 0 && (
+                      <PlatformFeeRow
+                        amount={amount}
+                        decimals={position.decimals}
+                        symbol={position.assetSymbol}
+                      />
+                    )}
+
                     {/* Warning if withdrawing with active borrows */}
                     {position.variableDebt > 0n && (
                       <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-start gap-2">
