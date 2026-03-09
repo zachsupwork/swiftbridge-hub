@@ -28,6 +28,7 @@ import { useAaveBorrow, type UserAccountData } from '@/hooks/useAaveBorrow';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { ContractsVerificationSection } from '@/components/earn/ContractsVerificationSection';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 
