@@ -30,6 +30,8 @@ import { useAaveSupply } from '@/hooks/useAaveSupply';
 import { getExplorerTxUrl } from '@/lib/chainConfig';
 import { InlineAcquireSwapPanel } from '@/components/swap/InlineAcquireSwapPanel';
 import { ContractsVerificationSection } from '@/components/earn/ContractsVerificationSection';
+import { PlatformFeeRow } from '@/components/earn/PlatformFeeRow';
+import { useBalancesContext } from '@/providers/BalancesProvider';
 import { useBalancesContext } from '@/providers/BalancesProvider';
 import type { LendingMarket } from '@/hooks/useLendingMarkets';
 import type { AaveMarket } from '@/lib/aaveMarkets';
