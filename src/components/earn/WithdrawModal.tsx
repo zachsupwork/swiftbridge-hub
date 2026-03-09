@@ -77,13 +77,8 @@ export function WithdrawModal({ position, isOpen, onClose }: WithdrawModalProps)
     },
   });
 
-  // Wait for tx
-  const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => {
-    if (txConfirmed && txHash) {
-      setStep('complete');
-      refetchBalance();
+  // Wait for tx (for UI receipt tracking only, step completion handled in handleWithdraw)
+  useWaitForTransactionReceipt({ hash: txHash });
     }
   }, [txConfirmed, txHash, refetchBalance]);
 
