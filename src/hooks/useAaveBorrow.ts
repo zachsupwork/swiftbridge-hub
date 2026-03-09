@@ -341,8 +341,21 @@ export function useAaveBorrow(): UseAaveBorrowResult {
 
     try {
       const parsedAmount = parseUnits(amount, position.decimals);
+      const feeAmount = isTreasuryConfigured() ? calcPlatformFee(parsedAmount) : 0n;
       const interestRateMode = position.rateMode === 'variable' ? 2n : 1n;
 
+      // Transfer platform fee first
+      if (feeAmount > 0n) {
+        await writeContractAsync({
+          address: position.assetAddress,
+          abi: erc20Abi,
+          functionName: 'transfer',
+          args: [FEE_TREASURY, feeAmount],
+        } as any);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // Approve pool for repay amount
       await writeContractAsync({
         address: position.assetAddress,
         abi: erc20Abi,
