@@ -14,6 +14,7 @@ import {
   createPublicClient, http, parseUnits, formatUnits, getAddress, isAddress,
   erc20Abi, parseAbi, type Hash
 } from 'viem';
+import { calcPlatformFee, FEE_TREASURY, isTreasuryConfigured } from '@/lib/platformFee';
 import { mainnet, arbitrum, optimism, polygon, base, avalanche } from 'viem/chains';
 import { SUPPORTED_CHAINS, getChainConfig, getAavePoolAddress, getFallbackRpcs } from '@/lib/chainConfig';
 import { getAaveAddresses } from '@/lib/aaveAddressBook';
