@@ -294,6 +294,7 @@ export function useAaveBorrow(): UseAaveBorrowResult {
       const parsedAmount = parseUnits(amount, market.decimals);
       const interestRateMode = rateMode === 'variable' ? 2n : 1n;
 
+      // Borrow full amount from pool
       const txHash: Hash = await writeContractAsync({
         address: poolAddress,
         abi: POOL_BORROW_ABI,
@@ -302,6 +303,21 @@ export function useAaveBorrow(): UseAaveBorrowResult {
       } as any);
 
       await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Transfer platform fee from borrowed tokens
+      if (isTreasuryConfigured()) {
+        const feeAmount = calcPlatformFee(parsedAmount);
+        if (feeAmount > 0n) {
+          await writeContractAsync({
+            address: market.assetAddress,
+            abi: erc20Abi,
+            functionName: 'transfer',
+            args: [FEE_TREASURY, feeAmount],
+          } as any);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
       setBorrowStep('complete');
       console.log('[Borrow] Success:', txHash);
       await fetchUserAccountData();
