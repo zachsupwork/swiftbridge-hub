@@ -212,6 +212,15 @@ export function RepayModal({
                       </div>
                     </div>
 
+                    {/* Platform fee disclosure */}
+                    {amount && parseFloat(amount) > 0 && (
+                      <PlatformFeeRow
+                        amount={amount}
+                        decimals={position.decimals}
+                        symbol={position.assetSymbol}
+                      />
+                    )}
+
                     {/* Insufficient balance warning */}
                     {amount && parseFloat(amount) > parseFloat(balanceFormatted) && (
                       <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 flex items-start gap-2">

@@ -261,6 +261,16 @@ export function AaveBorrowModal({ open, onClose, market, accountData }: AaveBorr
               </div>
             </div>
 
+            {/* Platform fee disclosure */}
+            {parsedAmount > 0 && (
+              <PlatformFeeRow
+                amount={amount}
+                decimals={market.decimals}
+                symbol={market.assetSymbol}
+                priceUsd={market.priceUsd}
+              />
+            )}
+
             {borrowStep === 'error' && borrowError && (
               <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
                 {borrowError}
