@@ -27,7 +27,7 @@ import { TokenIcon } from '@/components/common/TokenIcon';
 import { ChainIcon } from '@/components/common/ChainIcon';
 import type { AavePosition } from '@/hooks/useAavePositions';
 
-type WithdrawStep = 'idle' | 'withdrawing' | 'complete' | 'error';
+type WithdrawStep = 'idle' | 'withdrawing' | 'fee' | 'complete' | 'error';
 
 const POOL_WITHDRAW_ABI = [
   {
