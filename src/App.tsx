@@ -58,6 +58,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <WebSiteJsonLd />
           <SwapIntentDrawer />
           <Routes>
             <Route path="/" element={<Index />} />
