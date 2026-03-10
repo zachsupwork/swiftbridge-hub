@@ -1,12 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/(.*)",
-      "has": [{ "type": "host", "value": "www.cryptodefibridge.com" }],
-      "destination": "https://cryptodefibridge.com/$1",
-      "permanent": true
-    }
-  ],
   "rewrites": [
     { "source": "/((?!sitemap\\.xml|robots\\.txt|favicon\\.png|favicon\\.ico|og-image\\.png|assets/.*).*)", "destination": "/index.html" }
   ]
