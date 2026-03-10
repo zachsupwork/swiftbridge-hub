@@ -12,6 +12,7 @@ import { BitcoinWalletProvider, MultiWalletProvider } from "@/lib/wallets";
 import { BalancesProvider } from "@/providers/BalancesProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { SwapIntentDrawer } from "@/components/swap/SwapIntentDrawer";
+import { WebSiteJsonLd } from "@/components/seo";
 import Index from "./pages/Index";
 import Portfolio from "./pages/Portfolio";
 import Analytics from "./pages/Analytics";
@@ -57,6 +58,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <WebSiteJsonLd />
           <SwapIntentDrawer />
           <Routes>
             <Route path="/" element={<Index />} />
